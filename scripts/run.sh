@@ -6,6 +6,8 @@
 # The 'evidence:' line is a durable pointer to cite in task notes.
 # Usage: scripts/run.sh <label> <command> [args...]
 # The wrapper exits with the ORIGINAL exit code of the command.
+# Python compilation uses the log directory by default, including for external sources.
+# An explicit PYTHONPYCACHEPREFIX is preserved.
 set -u
 [ $# -ge 2 ] || { echo "usage: $0 <label> <command> [args...]" >&2; exit 2; }
 label=$1; shift
@@ -13,6 +15,7 @@ root=$(git rev-parse --show-toplevel 2>/dev/null) || root=
 if [ -n "$root" ]; then deflt="$root/.agent-logs"; else deflt="${TMPDIR:-/tmp}/agent-logs"; fi
 logdir=${AGENT_LOG_DIR:-$deflt}
 mkdir -p "$logdir"
+export PYTHONPYCACHEPREFIX="${PYTHONPYCACHEPREFIX:-$(cd "$logdir" && pwd)/python-cache}"
 [ -n "$root" ] && [ "$logdir" = "$root/.agent-logs" ] && [ ! -e "$logdir/.gitignore" ] && echo '*' >"$logdir/.gitignore"
 log="$logdir/$(date +%Y%m%d-%H%M%S)-${label//[^A-Za-z0-9_-]/_}-$$.log"  # PID keeps parallel runs with the same label apart
 start=$(date +%s)

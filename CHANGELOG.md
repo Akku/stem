@@ -2,6 +2,9 @@
 
 Newest first. Projects read the entries newer than their `STEM_VERSION` (see `stem-update` skill). Each entry: what changed and who benefits; renames and removals get a `Migration:` line (what to rename or delete) that `stem-update` carries out.
 
+## Unreleased
+- **External Python checks in restricted workspaces:** `scripts/run.sh` defaults Python bytecode caches to its log directory, so checks can compile modules from a read-only source checkout. An explicit `PYTHONPYCACHEPREFIX` remains effective. Benefits: maintainers and Codex users checking external projects. Migration: copy `scripts/run.sh`; no Claude settings or skill changes.
+
 ## 1.5.0
 - **Durable verification logs:** `scripts/run.sh` stores logs in git-ignored `.agent-logs/` inside the current repository and prints a repository-relative `evidence:` pointer. Outside Git it uses the temporary log directory; `AGENT_LOG_DIR` still overrides the location. Benefits: task evidence is easier to trace after a session ends. A real Mac-restart persistence check remains open in the development harness (TASK-63). Migration: copy `scripts/run.sh`; keep historical temporary-log pointers as historical evidence.
 - **Safer handoffs:** the handoff skill includes the STEM version and records pending questions with every option verbatim in task notes; session start warns when the handoff version differs from `STEM_VERSION`. Benefits: resumed sessions can find decisions without replaying the conversation and can detect stale handoffs. Migration: copy `.claude/skills/handoff/SKILL.md` and `scripts/session-start.sh`; rewrite the handoff using the updated format. Effects on clarification effort are still being measured (TASK-73).

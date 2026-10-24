@@ -258,6 +258,37 @@ class PreCommit(SandboxRepo):
         self.assertEqual(self.commit("example").returncode, 0)
 
 class RunWrapper(Sandbox):
+    def test_python_compile_from_readonly_source_uses_log_cache(self):
+        source = self.tmp / "external product"
+        source.mkdir()
+        module = source / "sample.py"
+        module.write_text("VALUE = 42\n")
+        source.chmod(0o555)
+        env = dict(os.environ, PYTHONPYCACHEPREFIX="")
+        env["AGENT_LOG_DIR"] = str(self.tmp / "logs with spaces")
+        try:
+            with self.assertRaises(PermissionError):
+                (source / "write-probe").write_text("must fail")
+            r = run(["bash", str(SCRIPTS / "run.sh"), "compile", sys.executable,
+                     "-m", "py_compile", str(module)], self.tmp, env)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertFalse(list(source.rglob("*.pyc")))
+            self.assertTrue(list((self.tmp / "logs with spaces/python-cache").rglob("sample*.pyc")))
+        finally:
+            source.chmod(0o755)
+
+    def test_python_cache_override_is_preserved(self):
+        module = self.tmp / "custom.py"
+        module.write_text("VALUE = 42\n")
+        cache = self.tmp / "explicit cache"
+        logs = self.tmp / "logs"
+        env = dict(os.environ, PYTHONPYCACHEPREFIX=str(cache), AGENT_LOG_DIR=str(logs))
+        r = run(["bash", str(SCRIPTS / "run.sh"), "compile", sys.executable,
+                 "-m", "py_compile", str(module)], self.tmp, env)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertTrue(list(cache.rglob("custom*.pyc")))
+        self.assertFalse((logs / "python-cache").exists())
+
     def test_parallel_runs_with_same_label_get_own_logs(self):
         env = dict(os.environ, AGENT_LOG_DIR=str(self.tmp / "logs"))
         procs = [subprocess.Popen(["bash", str(SCRIPTS / "run.sh"), "same", "true"], env=env, stdout=subprocess.DEVNULL) for _ in range(3)]
