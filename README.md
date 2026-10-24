@@ -6,7 +6,7 @@
 
 `[ you ]──▶[ STEM ]──▶[ more you ]`
 
-**Version 1.5.0** · ![License](https://img.shields.io/badge/license-MIT-green) ![Claude Code](https://img.shields.io/badge/Claude%20Code-tested-green) ![Codex · Copilot](https://img.shields.io/badge/Codex%20%C2%B7%20Copilot-adapters%2C%20untested-lightgrey)
+**Version 1.5.0** · ![License](https://img.shields.io/badge/license-MIT-green) ![Claude Code](https://img.shields.io/badge/Claude%20Code-tested-green) ![Codex](https://img.shields.io/badge/Codex-partially%20tested-yellow) ![Copilot](https://img.shields.io/badge/Copilot-adapter%2C%20untested-lightgrey)
 
 🇩🇪 **Deutsche Version: [README.de.md](README.de.md)**
 
@@ -14,7 +14,9 @@
 
 </div>
 
-STEM is a harness for working with a coding agent. A harness is the frame around the agent: rules, skills (step-by-step instructions for recurring jobs) and small scripts that steer how it works with you. You open the STEM folder in your agent (Claude Code; Codex and GitHub Copilot through adapters), describe your goal, and the agent works with Git and [Backlog.md](https://github.com/MrLesk/Backlog.md) task by task.
+STEM is a harness for working with a coding agent. A harness is the frame around the agent: rules, skills (step-by-step instructions for recurring jobs) and small scripts that steer how it works with you. You open the STEM folder in your agent (for example Claude Code), describe your goal, and the agent works with Git and [Backlog.md](https://github.com/MrLesk/Backlog.md) task by task.
+
+**Agent test status:** Claude Code is tested in real use. Codex is tested in an existing project with documented workarounds; fresh-project setup and native skill discovery are not yet proven. GitHub Copilot has an adapter and remains untested.
 
 *The name is a nod to the AI implant in the film [Upgrade](https://www.imdb.com/title/tt6499752/) (2018). Unlike there, you stay in charge here.*
 
@@ -83,7 +85,7 @@ Give this to the agent after opening the folder:
 | `AGENTS.md` | Shared core rules (Codex and compatible tools) |
 | `CLAUDE.md`, `.github/copilot-instructions.md` | Thin adapters pointing to `AGENTS.md` |
 | `.claude/skills/` | Skills: `retro`, `alignment`, `handoff`, `promote-learning`, `stem-update`; optional modules (chosen in setup): `testing-practices`, `market-analysis` |
-| `.agents/skills` | Link to `.claude/skills/`, so Codex reads the same skill files |
+| `.agents/skills` | Link to `.claude/skills/` for shared Codex skill sources; native discovery is not yet proven |
 | `.claude/agents/` | Agents: `ux-designer` (optional module, for projects with a UI) |
 | `scripts/githooks/pre-commit` | Guard against committing confidential source documents and common secrets (activated during setup) |
 | `STEM_VERSION`, `CHANGELOG.md` | STEM version this project is based on; what changed per version |

@@ -6,7 +6,7 @@
 
 `[ you ]──▶[ STEM ]──▶[ more you ]`
 
-**Version 1.5.0** · ![License](https://img.shields.io/badge/license-MIT-green) ![Claude Code](https://img.shields.io/badge/Claude%20Code-getestet-green) ![Codex · Copilot](https://img.shields.io/badge/Codex%20%C2%B7%20Copilot-Adapter%2C%20ungetestet-lightgrey)
+**Version 1.5.0** · ![License](https://img.shields.io/badge/license-MIT-green) ![Claude Code](https://img.shields.io/badge/Claude%20Code-getestet-green) ![Codex](https://img.shields.io/badge/Codex-teilweise%20getestet-yellow) ![Copilot](https://img.shields.io/badge/Copilot-Adapter%2C%20ungetestet-lightgrey)
 
 🇬🇧 **English version: [README.md](README.md)**
 
@@ -14,7 +14,9 @@
 
 </div>
 
-STEM ist ein Harness für die Arbeit mit einem Coding-Agenten. Ein Harness ist der Rahmen um den Agenten: Regeln, Skills (Schritt-für-Schritt-Anleitungen für wiederkehrende Aufgaben) und kleine Skripte, die steuern, wie er mit dir arbeitet. Du öffnest den STEM-Ordner in deinem Agenten (Claude Code; Codex und GitHub Copilot über Adapter), beschreibst dein Ziel, und der Agent arbeitet mit Git und [Backlog.md](https://github.com/MrLesk/Backlog.md) Task für Task.
+STEM ist ein Harness für die Arbeit mit einem Coding-Agenten. Ein Harness ist der Rahmen um den Agenten: Regeln, Skills (Schritt-für-Schritt-Anleitungen für wiederkehrende Aufgaben) und kleine Skripte, die steuern, wie er mit dir arbeitet. Du öffnest den STEM-Ordner in deinem Agenten (zum Beispiel Claude Code), beschreibst dein Ziel, und der Agent arbeitet mit Git und [Backlog.md](https://github.com/MrLesk/Backlog.md) Task für Task.
+
+**Teststand der Agenten:** Claude Code ist im praktischen Einsatz getestet. Codex ist in einem bestehenden Projekt mit dokumentierten Umgehungslösungen getestet; die Einrichtung eines neuen Projekts und die native Skill-Erkennung sind noch nicht nachgewiesen. Für GitHub Copilot gibt es einen Adapter; er ist noch ungetestet.
 
 *Der Name ist eine Anspielung auf das KI-Implantat im Film [Upgrade](https://www.imdb.com/title/tt6499752/) (2018). Anders als dort behältst du hier die Kontrolle.*
 
@@ -80,7 +82,7 @@ Gib dies dem Agenten, nachdem du den Ordner geöffnet hast:
 | --- | --- |
 | `STARTE_HIER.md` / `START_HERE.md` | Anleitung für Menschen (DE/EN) |
 | `.claude/skills/` | Skills: `retro`, `alignment`, `handoff`, `promote-learning`, `stem-update`; optionale Module (Auswahl beim Setup): `testing-practices`, `market-analysis` |
-| `.agents/skills` | Verweis auf `.claude/skills/`, damit Codex dieselben Skill-Dateien liest |
+| `.agents/skills` | Verweis auf `.claude/skills/` für gemeinsame Codex-Skill-Quellen; native Erkennung noch nicht nachgewiesen |
 | `.claude/agents/` | Agenten: `ux-designer` (optionales Modul, für Projekte mit Oberfläche) |
 | `SETUP.md` | Einmalige Setup-Anleitung für den Agenten (wird nach dem Setup gelöscht) |
 | `AGENTS.md` | Gemeinsame Kernregeln (Codex & kompatible Tools) |
