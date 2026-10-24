@@ -2,23 +2,41 @@
 
 <img src="docs/assets/stem-logo.svg" alt="STEM" width="320">
 
-**An Evolving Agentic Coding Harness** – You stay in charge; your agent keeps the thread and learns from every round.
-
-`[ you ]──▶[ STEM ]──▶[ more you ]`
+**An Evolving Agentic Coding Harness**
 
 **Version 1.5.0** · ![License](https://img.shields.io/badge/license-MIT-green) ![Claude Code](https://img.shields.io/badge/Claude%20Code-tested-green) ![Codex](https://img.shields.io/badge/Codex-partially%20tested-yellow) ![Copilot](https://img.shields.io/badge/Copilot-adapter%2C%20untested-lightgrey)
 
-🇩🇪 **Deutsche Version: [README.de.md](README.de.md)**
-
-[Why STEM](#why-stem) · [Get started](#get-started) · [When it does not fit](#when-stem-does-not-fit) · [How it works](#how-it-works) · [Updates](#staying-up-to-date) · [Contents](#contents)
+[Deutsch](README.de.md) · [Get started](#get-started) · [Why STEM](#why-stem) · [How it works](#how-it-works) · [Contents](#contents)
 
 </div>
 
-STEM is a harness for working with a coding agent. A harness is the frame around the agent: rules, skills (step-by-step instructions for recurring jobs) and small scripts that steer how it works with you. You open the STEM folder in your agent (for example Claude Code), describe your goal, and the agent works with Git and [Backlog.md](https://github.com/MrLesk/Backlog.md) task by task.
+STEM gives your coding agent a shared workflow for setting up a project, tracking work with [Backlog.md](https://github.com/MrLesk/Backlog.md), and carrying decisions between sessions.
 
-**Agent test status:** Claude Code is tested in real use. Codex is tested in an existing project with documented workarounds; fresh-project setup and native skill discovery are not yet proven. GitHub Copilot has an adapter and remains untested.
+## Get started
 
-*The name is a nod to the AI implant in the film [Upgrade](https://www.imdb.com/title/tt6499752/) (2018). Unlike there, you stay in charge here.*
+1. [Download the ZIP](https://github.com/Akku/stem/archive/refs/heads/main.zip) and unzip it. Keep the whole folder, including hidden files.
+2. Open that folder in your coding agent (for example the Claude desktop app, Code tab).
+3. Paste this prompt, replacing the placeholder with your idea:
+
+```text
+Set up this project: follow SETUP.md. Work in my language and install anything that is missing yourself (I will approve the steps).
+
+What I want to build is the following:
+<your idea: what, for whom, what "done" looks like – a few sentences>
+```
+
+Answer the agent's questions and approve installation steps as needed. It sets up the tools, vision, milestones and first tasks with you. Type installer passwords only into the installer, never into the chat.
+
+**Technical users:** click **Use this template** on GitHub, or clone the repository, then use the same prompt. [Detailed setup guide](START_HERE.md) for more help.
+
+<details>
+<summary>Agent and platform test status</summary>
+
+Claude Code is tested in real use. Codex is tested in an existing project with documented workarounds; fresh-project setup and native skill discovery are not yet proven. GitHub Copilot has an adapter and remains untested. See [Codex mechanics](docs/agent/CODEX.md) for prerequisites, session start, sandbox access and the context-warning fallback.
+
+macOS is tested; Windows is prepared but not yet tested.
+
+</details>
 
 ## Why STEM
 
@@ -28,20 +46,6 @@ STEM is a harness for working with a coding agent. A harness is the frame around
 4. **Traceability.** Every change runs through a task with acceptance criteria and recorded evidence, so you can see what the agent did and why it counts as done.
 
 Also: designed to keep the agent's context small (rules load on demand, long logs stay out of the chat), and a pre-commit guard blocks `.env` files and common API-token formats from being committed.
-
-## Get started
-
-1. [Download the ZIP](https://github.com/Akku/stem/archive/refs/heads/main.zip) and unzip it.
-2. Open the folder in your coding agent (for example the Claude desktop app, Code tab).
-3. Give it the prompt from [START_HERE.md](START_HERE.md).
-
-The agent then installs missing tools with you, sets up Git and Backlog.md, helps you sharpen the idea into a vertical slice, MVP and moonshot, adapts the harness to your goal, creates Backlog.md milestones and the first tasks. macOS is tested; Windows is prepared but not yet tested.
-
-**Technical users:** click **Use this template** on GitHub, or clone the repository, then use the same prompt.
-
-At the start of each session the agent runs `scripts/session-start.sh` (short state summary).
-
-**Using Codex:** see [Codex mechanics](docs/agent/CODEX.md) for tool prerequisites, manual session start, sandbox access and the context-warning fallback.
 
 ## When STEM does not fit
 
@@ -63,15 +67,11 @@ flowchart LR
 
 Reflect is the `retro` skill: learnings flow back into the harness (and, once proven, into STEM).
 
+At the start of each session the agent runs `scripts/session-start.sh` (short state summary).
+
 ## Staying up to date
 
 At the start of each session the agent checks (once per day) whether a newer STEM version exists and tells you. With your approval the `stem-update` skill reads the [changelog](CHANGELOG.md), picks what helps your project and merges it without overwriting your project-specific content. The `retro` skill checks STEM as well.
-
-## Prompt to start
-
-Give this to the agent after opening the folder:
-
-> Set up this project: follow `SETUP.md`. Work in my language and install anything that is missing yourself (I will approve the steps). What I want to build is the following: *<your idea: what, for whom, what "done" looks like – a few sentences>*
 
 ## Contents
 
@@ -116,3 +116,5 @@ Give this to the agent after opening the folder:
 ## Contributing
 
 Please contribute proven learnings via pull request (pattern: problem, pattern, applicability, evidence – see `docs/agent/PROCESS_IMPROVEMENTS.md` or the `promote-learning` skill). No project or company internals, no credentials – this repository is public. Details and checklist: [CONTRIBUTING.md](CONTRIBUTING.md).
+
+*The name is a nod to the AI implant in the film [Upgrade](https://www.imdb.com/title/tt6499752/) (2018).*

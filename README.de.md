@@ -2,23 +2,41 @@
 
 <img src="docs/assets/stem-logo.svg" alt="STEM" width="320">
 
-**An Evolving Agentic Coding Harness** – Du behältst die Kontrolle; dein Agent behält den Faden und lernt aus jeder Runde.
-
-`[ you ]──▶[ STEM ]──▶[ more you ]`
+**An Evolving Agentic Coding Harness**
 
 **Version 1.5.0** · ![License](https://img.shields.io/badge/license-MIT-green) ![Claude Code](https://img.shields.io/badge/Claude%20Code-getestet-green) ![Codex](https://img.shields.io/badge/Codex-teilweise%20getestet-yellow) ![Copilot](https://img.shields.io/badge/Copilot-Adapter%2C%20ungetestet-lightgrey)
 
-🇬🇧 **English version: [README.md](README.md)**
-
-[Warum STEM](#warum-stem) · [Loslegen](#loslegen) · [Wann es nicht passt](#wann-stem-nicht-passt) · [Ablauf](#ablauf) · [Updates](#aktuell-bleiben) · [Inhalt](#inhalt)
+[English](README.md) · [Loslegen](#loslegen) · [Warum STEM](#warum-stem) · [Ablauf](#ablauf) · [Inhalt](#inhalt)
 
 </div>
 
-STEM ist ein Harness für die Arbeit mit einem Coding-Agenten. Ein Harness ist der Rahmen um den Agenten: Regeln, Skills (Schritt-für-Schritt-Anleitungen für wiederkehrende Aufgaben) und kleine Skripte, die steuern, wie er mit dir arbeitet. Du öffnest den STEM-Ordner in deinem Agenten (zum Beispiel Claude Code), beschreibst dein Ziel, und der Agent arbeitet mit Git und [Backlog.md](https://github.com/MrLesk/Backlog.md) Task für Task.
+STEM gibt deinem Coding-Agenten einen gemeinsamen Ablauf: ein Projekt einrichten, Arbeit mit [Backlog.md](https://github.com/MrLesk/Backlog.md) verfolgen und Entscheidungen zwischen Sitzungen bewahren.
 
-**Teststand der Agenten:** Claude Code ist im praktischen Einsatz getestet. Codex ist in einem bestehenden Projekt mit dokumentierten Umgehungslösungen getestet; die Einrichtung eines neuen Projekts und die native Skill-Erkennung sind noch nicht nachgewiesen. Für GitHub Copilot gibt es einen Adapter; er ist noch ungetestet.
+## Loslegen
 
-*Der Name ist eine Anspielung auf das KI-Implantat im Film [Upgrade](https://www.imdb.com/title/tt6499752/) (2018). Anders als dort behältst du hier die Kontrolle.*
+1. [ZIP herunterladen](https://github.com/Akku/stem/archive/refs/heads/main.zip) und entpacken. Den ganzen Ordner einschließlich versteckter Dateien verwenden.
+2. Diesen Ordner in deinem Coding-Agenten öffnen (zum Beispiel in der Claude-Desktop-App, Tab Code).
+3. Diesen Prompt einfügen und den Platzhalter durch deine Idee ersetzen:
+
+```text
+Richte dieses Projekt ein: Folge SETUP.md. Arbeite in meiner Sprache und installiere alles, was fehlt, selbst (ich genehmige die Schritte).
+
+Was ich entwickeln will, ist folgendes:
+<deine Idee: was, für wen, woran erkennt man „fertig“ – ein paar Sätze>
+```
+
+Beantworte die Rückfragen des Agenten und genehmige nötige Installationsschritte. Er richtet mit dir Werkzeuge, Vision, Meilensteine und erste Tasks ein. Installer-Passwörter nur im Installer eingeben, nie im Chat.
+
+**Technisch Versierte:** auf GitHub **Use this template** wählen oder das Repository klonen, dann derselbe Prompt. Die [ausführliche Anleitung](STARTE_HIER.md) bietet weitere Hilfe.
+
+<details>
+<summary>Teststand der Agenten und Plattformen</summary>
+
+Claude Code ist im praktischen Einsatz getestet. Codex ist in einem bestehenden Projekt mit dokumentierten Umgehungslösungen getestet; die Einrichtung eines neuen Projekts und die native Skill-Erkennung sind noch nicht nachgewiesen. Für GitHub Copilot gibt es einen Adapter; er ist noch ungetestet. Die [Codex-Hinweise](docs/agent/CODEX.md) erklären Voraussetzungen, Sitzungsstart, Sandbox-Zugriff und das Vorgehen ohne Kontextwarnung (Agentenhinweise auf Englisch).
+
+macOS ist getestet; Windows ist vorbereitet, aber noch nicht getestet.
+
+</details>
 
 ## Warum STEM
 
@@ -28,20 +46,6 @@ STEM ist ein Harness für die Arbeit mit einem Coding-Agenten. Ein Harness ist d
 4. **Nachvollziehbarkeit.** Jede Änderung läuft über einen Task mit Akzeptanzkriterien und festgehaltenen Belegen. Du siehst, was der Agent getan hat und warum es als fertig gilt.
 
 Außerdem: darauf ausgelegt, den Kontext des Agenten klein zu halten (Regeln werden bei Bedarf geladen, lange Logs bleiben aus dem Chat), und ein Pre-Commit-Schutz verhindert, dass `.env`-Dateien und gängige API-Token-Formate committet werden.
-
-## Loslegen
-
-1. [ZIP herunterladen](https://github.com/Akku/stem/archive/refs/heads/main.zip) und entpacken.
-2. Den Ordner in deinem Coding-Agenten öffnen (zum Beispiel in der Claude-Desktop-App, Tab Code).
-3. Den Prompt aus [STARTE_HIER.md](STARTE_HIER.md) geben.
-
-Der Agent installiert dann fehlende Werkzeuge gemeinsam mit dir, richtet Git und Backlog.md ein, hilft dir, die Idee in Vertical Slice, MVP und Moonshot zu schärfen, passt das Harness an dein Ziel an und legt Backlog.md-Meilensteine und erste Tasks an. macOS ist getestet; Windows ist vorbereitet, aber noch nicht getestet.
-
-**Technisch Versierte:** auf GitHub **Use this template** wählen oder das Repository klonen, dann derselbe Prompt.
-
-Pro Sitzung führt der Agent `scripts/session-start.sh` aus (kurzer Zustandsüberblick).
-
-**Mit Codex:** [Codex-Hinweise](docs/agent/CODEX.md) beschreiben Werkzeugvoraussetzungen, manuellen Sitzungsstart, Sandbox-Zugriff und das Vorgehen ohne Kontextwarnung (Agentenhinweise auf Englisch).
 
 ## Wann STEM nicht passt
 
@@ -63,15 +67,11 @@ flowchart LR
 
 Reflect ist der Skill `retro`: Learnings fließen ins Harness zurück (und, wenn bewährt, in STEM).
 
+Pro Sitzung führt der Agent `scripts/session-start.sh` aus (kurzer Zustandsüberblick).
+
 ## Aktuell bleiben
 
 Zu Beginn jeder Sitzung prüft der Agent (einmal pro Tag), ob es eine neuere STEM-Version gibt, und sagt dir Bescheid. Mit deiner Zustimmung liest der Skill `stem-update` das [Changelog](CHANGELOG.md), wählt aus, was deinem Projekt nützt, und übernimmt es, ohne projektspezifische Inhalte zu überschreiben. Auch der Skill `retro` prüft STEM.
-
-## Start-Prompt
-
-Gib dies dem Agenten, nachdem du den Ordner geöffnet hast:
-
-> Richte dieses Projekt ein: Folge `SETUP.md`. Arbeite in meiner Sprache und installiere alles, was fehlt, selbst (ich genehmige die Schritte). Was ich entwickeln will, ist folgendes: *<deine Idee: was, für wen, woran erkennt man „fertig“ – ein paar Sätze>*
 
 ## Inhalt
 
@@ -115,3 +115,5 @@ Gib dies dem Agenten, nachdem du den Ordner geöffnet hast:
 ## Beitragen
 
 Bewährte Learnings aus Projekten bitte per Pull Request einbringen (Muster: Problem, Muster, Geltungsbereich, Evidenz – siehe `docs/agent/PROCESS_IMPROVEMENTS.md`). Keine Projekt- oder Firmeninterna, keine Zugangsdaten – das Repository ist öffentlich. Ablauf und Checkliste (englisch): [CONTRIBUTING.md](CONTRIBUTING.md).
+
+*Der Name ist eine Anspielung auf das KI-Implantat im Film [Upgrade](https://www.imdb.com/title/tt6499752/) (2018).*
