@@ -39,6 +39,8 @@ The agent then installs missing tools with you, sets up Git and Backlog.md, help
 
 At the start of each session the agent runs `scripts/session-start.sh` (short state summary).
 
+**Using Codex:** see [Codex mechanics](docs/agent/CODEX.md) for tool prerequisites, manual session start, sandbox access and the context-warning fallback.
+
 ## When STEM does not fit
 
 - One-off scripts and throwaway prototypes: the overhead outweighs the benefit; use the plain agent.

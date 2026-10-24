@@ -3,6 +3,7 @@
 Newest first. Projects read the entries newer than their `STEM_VERSION` (see `stem-update` skill). Each entry: what changed and who benefits; renames and removals get a `Migration:` line (what to rename or delete) that `stem-update` carries out.
 
 ## Unreleased
+- **Codex mechanics documented:** the linked agent guide covers tool availability in fresh tasks, manual session start, scoped sandbox access, external checks and the `R-BATCHING` context-signal fallback. Native skill discovery and fresh setup remain explicitly unproven. Benefits: Codex users; existing Claude configuration is unchanged. Migration: copy `docs/agent/CODEX.md` if useful.
 - **External Python checks in restricted workspaces:** `scripts/run.sh` defaults Python bytecode caches to its log directory, so checks can compile modules from a read-only source checkout. An explicit `PYTHONPYCACHEPREFIX` remains effective. Benefits: maintainers and Codex users checking external projects. Migration: copy `scripts/run.sh`; no Claude settings or skill changes.
 
 ## 1.5.0

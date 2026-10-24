@@ -39,6 +39,8 @@ Der Agent installiert dann fehlende Werkzeuge gemeinsam mit dir, richtet Git und
 
 Pro Sitzung führt der Agent `scripts/session-start.sh` aus (kurzer Zustandsüberblick).
 
+**Mit Codex:** [Codex-Hinweise](docs/agent/CODEX.md) beschreiben Werkzeugvoraussetzungen, manuellen Sitzungsstart, Sandbox-Zugriff und das Vorgehen ohne Kontextwarnung (Agentenhinweise auf Englisch).
+
 ## Wann STEM nicht passt
 
 - Einmal-Skripte und Wegwerf-Prototypen: Der Aufwand übersteigt den Nutzen; nimm den Agenten pur.
