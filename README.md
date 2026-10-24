@@ -4,9 +4,9 @@
 
 **An Evolving Agentic Coding Harness**
 
-**Version 1.5.0** · ![License](https://img.shields.io/badge/license-MIT-green) ![Claude Code](https://img.shields.io/badge/Claude%20Code-tested-green) ![Codex](https://img.shields.io/badge/Codex-partially%20tested-yellow) ![Copilot](https://img.shields.io/badge/Copilot-adapter%2C%20untested-lightgrey)
+**Version 1.5.1** · ![License](https://img.shields.io/badge/license-MIT-green) ![Claude Code](https://img.shields.io/badge/Claude%20Code-tested-green) ![Codex](https://img.shields.io/badge/Codex-partially%20tested-yellow) ![Copilot](https://img.shields.io/badge/Copilot-adapter%2C%20untested-lightgrey)
 
-[Deutsch](README.de.md) · [Get started](#get-started) · [Why STEM](#why-stem) · [How it works](#how-it-works) · [Contents](#contents)
+[🇩🇪 Deutsch](README.de.md) · [Get started](#get-started) · [Why STEM](#why-stem) · [How it works](#how-it-works) · [Contents](#contents)
 
 </div>
 
@@ -54,6 +54,8 @@ Also: designed to keep the agent's context small (rules load on demand, long log
 - You want full automation without approvals.
 - Projects where Git or Backlog.md cannot be used.
 - You want an AI to run your project without you. We've seen that story; it doesn't end well for the human.
+
+`[ You ]──▶[ STEM ]──▶[ More YOU ]`
 
 ## How it works
 

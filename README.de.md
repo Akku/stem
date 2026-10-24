@@ -4,9 +4,9 @@
 
 **An Evolving Agentic Coding Harness**
 
-**Version 1.5.0** · ![License](https://img.shields.io/badge/license-MIT-green) ![Claude Code](https://img.shields.io/badge/Claude%20Code-getestet-green) ![Codex](https://img.shields.io/badge/Codex-teilweise%20getestet-yellow) ![Copilot](https://img.shields.io/badge/Copilot-Adapter%2C%20ungetestet-lightgrey)
+**Version 1.5.1** · ![License](https://img.shields.io/badge/license-MIT-green) ![Claude Code](https://img.shields.io/badge/Claude%20Code-getestet-green) ![Codex](https://img.shields.io/badge/Codex-teilweise%20getestet-yellow) ![Copilot](https://img.shields.io/badge/Copilot-Adapter%2C%20ungetestet-lightgrey)
 
-[English](README.md) · [Loslegen](#loslegen) · [Warum STEM](#warum-stem) · [Ablauf](#ablauf) · [Inhalt](#inhalt)
+[🇬🇧 English](README.md) · [Loslegen](#loslegen) · [Warum STEM](#warum-stem) · [Ablauf](#ablauf) · [Inhalt](#inhalt)
 
 </div>
 
@@ -54,6 +54,8 @@ Außerdem: darauf ausgelegt, den Kontext des Agenten klein zu halten (Regeln wer
 - Du willst volle Automatisierung ohne Freigaben.
 - Projekte, in denen Git oder Backlog.md nicht nutzbar sind.
 - Du willst, dass eine KI dein Projekt ohne dich führt. Die Geschichte kennen wir; für den Menschen endet sie nicht gut.
+
+`[ You ]──▶[ STEM ]──▶[ More YOU ]`
 
 ## Ablauf
 

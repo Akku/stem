@@ -2,7 +2,7 @@
 
 *STEM – An Evolving Agentic Coding Harness*
 
-**Version 1.5.0** · 🇬🇧 **English version: [START_HERE.md](START_HERE.md)**
+**Version 1.5.1** · 🇬🇧 **English version: [START_HERE.md](START_HERE.md)**
 
 STEM ist ein Startpunkt für agentische Entwicklung mit Git und Backlog.md. Du gibst dem Agenten dein Projektziel; er installiert, was fehlt, richtet die Werkzeuge ein, passt die Regeln an dein Ziel an und arbeitet danach Task für Task. Im Standardweg installiert und erklärt der Agent die Werkzeuge für dich.
 
