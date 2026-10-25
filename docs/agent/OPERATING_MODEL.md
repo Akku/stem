@@ -87,6 +87,15 @@ The strategy should be proportional to the work:
 - normal work should identify the likely change surface and verification approach;
 - ambiguous, broad, or high-risk work may justify deeper planning or a separate planning pass.
 
+For a large task (size L in the project's existing sizing) or any interface/module-boundary change, the recorded plan must state:
+
+1. the observable result;
+2. the check that will prove it;
+3. likely failure cases;
+4. what the user must confirm.
+
+Obtain the user's approval of that plan before implementation. If the exact plan has already been explicitly approved, reference that decision instead of asking again. Do not infer plan approval merely from approval to work on a task or batch. Where no size scheme exists, treat broad work across several workflows or subsystems as large; do not introduce sizing machinery just for this gate. Smaller work without a boundary change keeps the proportional planning above. Independent review still follows `R-REVIEW`.
+
 Planning is a phase, not automatically a separate Planner agent.
 
 ### 1.3 Implement against the agreed task and strategy
