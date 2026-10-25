@@ -24,7 +24,7 @@ Ask in one short message: "Is the project **small** (a script, a small tool, a f
 
 | Module | What it gives you / what it costs | Small | Medium | Large |
 | --- | --- | --- | --- | --- |
-| Vision and milestones (M1-M3) | Written goal and a thin first slice, so work does not drift. Costs ~10 min up front. Small: one-sentence vision and M1 only. | short | on | on |
+| Vision and milestones (see `R-ROADMAP`) | Written goal and a thin first slice, so work does not drift. Costs ~10 min up front. Small: one-sentence vision and M1 only. | short | on | on |
 | Design interview (`alignment`) | The agent asks one question at a time before building, which avoids rework from misunderstandings. Costs your time: 2-4 questions small, 5-12 medium, 10-20 in rounds large. | on | on | on |
 | UX designer and concept phase | Mockups and screen reviews before UI code. Only useful with a user interface. | off | if UI | if UI |
 | Context warning hook (needs Python) | Warns when a session gets long and costly and suggests a fresh one. Costs a few lines of context only when it fires. | off | on | on |
@@ -39,7 +39,7 @@ What to do with the answers: delete the files of modules that are off (agent fil
 ## 2. Ask the user (one message, all questions together)
 Scale to the size from step 1b: small = goal in 1-2 sentences, stack, confidential inputs, GitHub; skip horizons beyond the vertical slice, agents and model questions (use defaults); medium/large = all questions.
 - Project goal in 3–5 sentences (what, for whom, what "done" looks like).
-- Three horizons (see `R-ROADMAP`): the **vertical slice** (thinnest end-to-end path that proves the idea), what belongs in the **MVP** (and what is explicitly out), and the **moonshot** (the dream version). If the user has no answer, propose one from the goal and ask for corrections.
+- Agree the four horizons in `R-ROADMAP`: **vertical slice**, **MVP**, **1.0**, then **Moonshot**. Ask for the scope and observable completion boundary of each; propose answers from the goal if needed. Keep distant horizons brief and revisable. Small projects defer horizons beyond the slice.
 - Stack/language preferences, or "decide for me".
 - Which agents will be used (Claude Code / Codex / Copilot)? Keep all adapters regardless (including the `.agents/skills` symlink); note the answer under `Project setup` in `docs/agent/NEXT_RETRO.md`.
 - Which model and effort level do you use today (e.g. the largest available one)? Note the answer for the recommendation at the end.
@@ -88,7 +88,7 @@ backlog config get autoCommit   # must be false: code and task changes are commi
 ## 7. First backlog
 If the goal is still vague, run the `alignment` skill (stoppable) with the depth from step 1b (small 2-4, medium 5-12, large 10-20 questions in rounds) before writing the vision.
 If the direction is unclear or the project has a user interface, follow `R-CONCEPT` first (concept phase); the `ux-designer` agent prepares the mockup rounds. Also check whether existing skill collections offer skills that fit the stack.
-Follow `R-ROADMAP`: write the vision (audience, core value, non-goals, moonshot ideas) as a Backlog.md doc (`backlog doc create "Vision"`, check `--help`), then create the milestones `backlog milestone add "M1 Vertical slice" -d "<goal + exit criterion>"`, `M2 MVP`, and `M3 Moonshot` (description only).
+Follow `R-ROADMAP`: write the vision (audience, core value, non-goals, moonshot ideas) as a Backlog.md doc (`backlog doc create "Vision"`, check `--help`), then create the milestones `backlog milestone add "M1 Vertical slice" -d "<goal + exit criterion>"`, `M2 MVP`, `M3 1.0`, and `M4 Moonshot` (later horizons: descriptions only). For small projects create only M1 initially. Existing projects adopt the model through the user-reviewed migration in `R-ROADMAP`, without automatic renumbering.
 Create 3–7 tasks for M1 with `backlog task create ... -m <milestone>` (check `--help`): small, each with checkable acceptance criteria. The first task is a walking skeleton that already runs the verification command end to end. Tasks for M2 are created later (`R-ROADMAP`).
 
 ## 8. Project README, commit and report

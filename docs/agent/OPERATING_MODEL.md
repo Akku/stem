@@ -580,15 +580,29 @@ If the answer is unclear, defer it and preserve only enough evidence to revisit 
 <!-- RULE:R-DECISION:END -->
 
 <!-- RULE:R-ROADMAP:START -->
-## 22. Milestones: vertical slice, MVP, moonshot
+## 22. Milestones: vertical slice, MVP, 1.0, Moonshot
 
-Use Backlog.md milestones (`backlog milestone add "<name>" -d "<goal and exit criteria>"`, assign with `backlog task create ... -m <milestone>`) to give tasks a direction.
+A milestone groups tasks around a goal and an observable exit criterion. Use Backlog.md milestones (`backlog milestone add "<name>" -d "<goal and exit criteria>"`, assign with `backlog task create ... -m <milestone>`).
 
-- **Three horizons** are agreed with the user during setup: *vertical slice* (thinnest end-to-end path that proves the idea and the verification chain), *MVP* (what must be included for a first real use, and what is explicitly out), *moonshot* (the dream version).
-- Each milestone description states its goal and an observable exit criterion. Create detailed tasks only for the current milestone; later milestones stay descriptions.
-- Moonshot ideas live in the vision document (`backlog doc`), not as tasks; park them there instead of keeping dormant tasks.
-- **Next work:** when the current milestone has no ready tasks left, propose the next 3-5 tasks derived from its description and the vision, each with reason and rough size; create them only after the user agrees. Between milestones, propose a re-slice if the exit criteria changed.
-- **Milestone completion:** check the exit criterion against evidence, record what was learned, and ask the user whether MVP and moonshot scope still hold. The `retro` skill covers this step. Add a design-health check (`R-DESIGN`): shallow or tangled modules, outdated `docs/ARCHITECTURE.md`, missing glossary terms; propose at most one design task to the user.
+Agree four horizons with the user; they describe scope, not a requirement to plan every future task:
+
+- **Vertical slice:** the thinnest end-to-end path proving the idea and verification chain. Exit: one representative path runs and its result is verified.
+- **MVP:** bounded core utility for a first real use, with explicit exclusions. Exit: intended early users can complete the agreed core job with the agreed checks.
+- **1.0:** the first complete product for the intended audience, after MVP and before Moonshot. Exit: the agreed audience can complete the promised product workflows at the agreed quality and support level; complete does not mean every imaginable feature.
+- **Moonshot:** the revisable long-term vision beyond 1.0. State the desired outcome and observable success boundary where known; revisit uncertain boundaries before turning them into delivery commitments.
+
+Create detailed tasks only for the current milestone; later milestones remain descriptions. Small projects can start with a one-sentence vision and the vertical slice alone, adding later horizons when useful. Moonshot ideas live in the vision document (`backlog doc`), not as dormant tasks.
+
+- **Next work:** when the current milestone has no ready tasks left, propose the next 3-5 tasks from its description and the vision, each with reason and rough size; create them only after user agreement.
+- **Milestone completion:** verify its exit criterion, record what was learned, and ask whether MVP, 1.0 and Moonshot scope still hold. Follow the `retro` skill; include the design-health check in `R-DESIGN` and propose at most one design task.
+- **Expansion:** when a large Moonshot becomes clearer, propose further milestones with goals, exit criteria and sequence. Obtain user agreement before creating, splitting or restructuring milestones or tasks. Keep the remaining vision revisable and detail only the next agreed milestone.
+- **Existing projects:** review the current plan with the user; identify whether an existing milestone already represents 1.0, or propose a distinct 1.0 between MVP and Moonshot. Preserve task history and milestone identifiers; never automatically renumber or move existing work.
+
+### Worked examples
+
+**Small tool:** a personal CSV converter starts with only a vertical slice: one sample converts and a comparison verifies its output. If continued, MVP handles the user's agreed everyday format, excluding batch processing. 1.0 completes the promised conversion workflow with understandable errors and documentation. Moonshot could add several formats; no tasks for that vision are created now.
+
+**Large service:** a booking service proves one end-to-end reservation as its slice. MVP lets one pilot venue manage bookings, excluding multi-venue administration. 1.0 completes the agreed customer and venue workflows, including cancellations, access control and operational support. Its Moonshot is an international venue network. After 1.0, learning may justify proposed milestones for multi-venue operations and then international rollout, each with measurable boundaries. The user approves that expansion before milestones are created; only the next one receives detailed tasks.
 <!-- RULE:R-ROADMAP:END -->
 
 <!-- RULE:R-STEM-UPDATE:START -->
