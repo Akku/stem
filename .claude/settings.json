@@ -22,9 +22,10 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$CLAUDE_PROJECT_DIR/scripts/session-start.sh\""
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && bash \"$CLAUDE_PROJECT_DIR/scripts/session-start.sh\""
           }
-        ]
+        ],
+        "matcher": "^(startup|clear)$"
       }
     ],
     "UserPromptSubmit": [

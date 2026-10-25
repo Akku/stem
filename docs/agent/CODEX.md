@@ -38,3 +38,13 @@ Replace the example path with the actual readable checkout. `run.sh` defaults Py
 ## Evidence boundary
 
 The Codex probe exercised a task lifecycle in an existing project with documented workarounds. It does not prove fresh-project setup, native project-skill invocation, long-context recovery or every stop condition. Cloud tool activation and saved-environment persistence also need a fresh-task check. Copilot remains an untested adapter. Do not infer these capabilities from a green product checker.
+
+## Project-local bootstrap adapters
+
+Local Codex can use the versioned `.codex/hooks.json` after trusting the project
+and hook definition; Claude uses its separate `.claude/settings.json`. Both
+bootstrap on startup/clear and enter the checkout root. Resume and compaction
+retain conversation context rather than rerunning the hook. The project
+`AGENTS.md` requires bootstrap before substantive work when output is missing.
+Cloud orchestration must use that fallback where local shell hooks do not run.
+Do not rely on a parent workspace file or a sibling repository.

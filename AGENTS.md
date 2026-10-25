@@ -5,14 +5,16 @@ If TODO: follow `SETUP.md` first (when the user asks to set up; otherwise ask on
 
 **Language:** talk to the user in the user's language; keep instruction files and task/rule text in English.
 
+## Session start
+Before substantive work in this repository, check whether this conversation already contains this project's session-start output, including `## handoff`. If present (from a hook or tool call), do not run it again. Otherwise run `bash scripts/session-start.sh` from this repository's root and read the output before continuing. Apply once per project per conversation; preserve that fact and handoff context in compaction summaries. A workspace marker is not proof that this conversation received the output. Do not replay history.
+
+Local Claude Code and Codex startup hooks provide this output where supported and trusted. In other environments, including Cloud, follow the instruction above. When starting above the checkout, locate and read the selected project's `AGENTS.md` before substantive work.
+
 **Communication** (messages to the user; one standard, no modes):
 - Explain technically what changed, why and what comes next; name files, commands and trade-offs; not every tool call. After each phase (setup step, finished task, session end) summarize it. Ask questions with options and a recommendation. The user's own instructions override this.
 - **Whenever the user should test, review or decide something, put the direct way in the same message:** for a running app the full URL with port and route (start the server yourself if needed), for files a clickable relative path, for PRs/CI the full URL, otherwise the exact command; plus what to check (2-4 bullets) and which answer you need.
 
 **Skills** (`.claude/skills/<name>/SKILL.md`; other tools read the file): `retro`, `alignment`, `handoff`, `promote-learning`, `testing-practices`, `market-analysis`, `stem-update`.
-
-## Session start
-In Claude Code a `SessionStart` hook (`.claude/settings.json`) injects `scripts/session-start.sh` output; if you do not see its output (other tools, hook disabled), run the script once per session (state summary; changes no project files). Do not replay history.
 
 ## Core rules (full text by ID: `docs/agent/OPERATING_MODEL.md`)
 1. **Task first** (`R-LIFECYCLE`): every change is a Backlog.md task: task → plan → implement → verify → evidence → done. Use the `backlog` CLI only; run `backlog instructions overview` once per session and `backlog <cmd> --help` for unknown commands.
