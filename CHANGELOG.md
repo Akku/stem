@@ -3,6 +3,8 @@
 Newest first. Projects read the entries newer than their `STEM_VERSION` (see `stem-update` skill). Each entry: what changed and who benefits; renames and removals get a `Migration:` line (what to rename or delete) that `stem-update` carries out.
 
 ## Unreleased
+
+## 1.6.0
 - **Independent project versions:** setup initializes an unversioned project at 0.1.0, preserving native manifests and existing versions. `R-LIFECYCLE` proposes one justified patch/minor/major change per delivery, with major changes for agreed important milestones and explicit compatibility/maturity checks. Benefits: projects track their own progress separately from adopted STEM. Migration: update `R-LIFECYCLE`/`R-ROADMAP`; initialize a missing project version and document its source, preserving `STEM_VERSION`; review existing release conventions with the user.
 - **Plan contract for large or boundary-changing work:** `R-LIFECYCLE` requires observable result, proving check, likely failures and user confirmation points, with plan approval before implementation. Risk-triggered review stays unchanged. Benefits: intent can be checked before costly implementation; measured effect remains open. Migration: update `R-LIFECYCLE`.
 - **Four planning horizons:** roadmap guidance distinguishes vertical slice, MVP, 1.0 and a revisable Moonshot, with small/large examples and user-approved expansion. Benefits: projects can distinguish first utility from a complete first product. Migration: update `R-ROADMAP`; review existing milestones with the user, preserving identifiers and history.
