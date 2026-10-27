@@ -3,6 +3,7 @@
 Newest first. Projects read the entries newer than their `STEM_VERSION` (see `stem-update` skill). Each entry: what changed and who benefits; renames and removals get a `Migration:` line (what to rename or delete) that `stem-update` carries out.
 
 ## Unreleased
+- **Cached remote context at startup:** the session summary reports the cached main tip and warns about restricted origin fetch mappings or known remote branches outside the checkout. This deterministic check makes potentially missed work visible without model calls, network access or automatic branch changes. Cached references can be stale; an active feature branch is not an instruction to merge it. Six isolated Git fixture tests cover the helper and startup integration. Migration: copy `scripts/check-remote-state.py` and merge its optional invocation into `scripts/session-start.sh`.
 
 ## 1.6.0
 - **Independent project versions:** setup initializes an unversioned project at 0.1.0, preserving native manifests and existing versions. `R-LIFECYCLE` proposes one justified patch/minor/major change per delivery, with major changes for agreed important milestones and explicit compatibility/maturity checks. Benefits: projects track their own progress separately from adopted STEM. Migration: update `R-LIFECYCLE`/`R-ROADMAP`; initialize a missing project version and document its source, preserving `STEM_VERSION`; review existing release conventions with the user.

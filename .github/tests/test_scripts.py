@@ -161,6 +161,68 @@ class RetroMetrics(SandboxRepo):
         self.assertIn("duplicate task id: task-1", r.stdout)
 
 
+class RemoteContext(SandboxRepo):
+    def setUp(self):
+        super().setUp()
+        self.commit("base")
+
+    def git(self, *args):
+        result = run(["git", *args], self.repo, self.env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return result.stdout.strip()
+
+    def check(self):
+        before = self.git("status", "--porcelain")
+        result = run([sys.executable, "scripts/check-remote-state.py"], self.repo, self.env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.git("status", "--porcelain"), before)
+        return result.stdout
+
+    def remote(self):
+        self.git("update-ref", "refs/remotes/origin/main", self.git("rev-parse", "HEAD"))
+        self.git("config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*")
+
+    def test_missing_refs_do_not_claim_live_coverage(self):
+        self.assertIn("no cached origin branches; live state not checked", self.check())
+
+    def test_narrow_fetch_warns_even_without_cached_branches(self):
+        self.git("config", "remote.origin.fetch", "+refs/heads/main:refs/remotes/origin/main")
+        self.assertIn("origin fetch is restricted", self.check())
+
+    def test_contained_refs_and_symbolic_head_do_not_warn(self):
+        self.remote()
+        self.git("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
+        out = self.check()
+        self.assertIn("cached, not a live check", out)
+        self.assertNotIn("WARNING", out)
+
+    def test_pending_refs_are_bounded_and_disappear_when_contained(self):
+        self.remote()
+        base = self.git("rev-parse", "HEAD")
+        self.git("commit", "--allow-empty", "-qm", "remote work")
+        tip = self.git("rev-parse", "HEAD")
+        for n in range(5):
+            self.git("update-ref", f"refs/remotes/origin/topic-{n}", tip)
+        self.git("checkout", "--detach", base)
+        out = self.check()
+        self.assertIn("origin/topic-0", out)
+        self.assertIn("(+2 more)", out)
+        self.assertNotIn("origin/topic-4", out)
+        self.git("checkout", "--detach", tip)
+        self.assertNotIn("WARNING", self.check())
+
+    def test_full_fetch_without_force_prefix_is_supported(self):
+        self.remote()
+        self.git("config", "remote.origin.fetch", "refs/heads/*:refs/remotes/origin/*")
+        self.assertNotIn("WARNING", self.check())
+
+    def test_session_summary_invokes_remote_context_check(self):
+        self.remote()
+        out = run(["bash", "scripts/session-start.sh"], self.repo,
+                  {**self.env, "STEM_OFFLINE": "1"}).stdout
+        self.assertIn("remote context (cached, not a live check)", out)
+
+
 class SessionStart(SandboxRepo):
     def start(self, extra_env=None):
         return run(["bash", "scripts/session-start.sh"], self.repo, {**self.env, **(extra_env or {})}).stdout

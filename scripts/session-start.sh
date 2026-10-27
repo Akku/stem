@@ -8,6 +8,9 @@ if git rev-parse --git-dir >/dev/null 2>&1; then
   [ "$(git config core.hooksPath)" = "scripts/githooks" ] || echo "WARNING: pre-commit guard inactive -> git config core.hooksPath scripts/githooks"
   echo "changes: $(git status --porcelain | wc -l | tr -d ' ') file(s)"
   git status --porcelain | head -10
+  if command -v python3 >/dev/null 2>&1 && [ -f scripts/check-remote-state.py ]; then
+    python3 scripts/check-remote-state.py
+  fi
   echo "recent commits:"; git log --oneline -5
 else
   echo "no git repository"
