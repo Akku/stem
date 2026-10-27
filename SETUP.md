@@ -81,6 +81,7 @@ backlog config get autoCommit   # must be false: code and task changes are commi
 - `AGENTS.md` stays minimal: no project overview or architecture prose, only requirements the agent cannot infer from the code (`R-SECURITY`, retro budget check).
 - Recommend (every project size), enable only on the user's yes: the tool's shell sandbox for macOS/Linux/WSL2 (Claude Code `sandbox.enabled`, see its docs; it can block installs or network access; not available on native Windows).
 - Adapt the summary `grep` in `scripts/run.sh` to the test runner's output format, if needed.
+- Establish the independent project version per `R-LIFECYCLE` 1.8: preserve an existing version/source, otherwise initialize 0.1.0 in the native manifest or root `VERSION` fallback, and document that source in the project README. Keep `STEM_VERSION` for the adopted harness version. Do not create a release or tag during initialization.
 - Create `docs/agent/HANDOFF.md` (max 2 KB, format in the `handoff` skill: state with SHA, approvals, next step, open evidence, blockers). `scripts/session-start.sh` prints it.
 - Add stack-specific pitfalls to `docs/agent/PITFALLS.md` only if already known.
 - Do not add further agents, skills, hooks or telemetry now (`R-DECISION`); the modules chosen in step 1b are the only optional pieces. Remove what is off.

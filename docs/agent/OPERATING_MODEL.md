@@ -125,6 +125,24 @@ Use the repository's existing completion mechanism to record what changed and th
 While working, the agent notices work that is out of scope for the current task: missing tests or docs, a related bug, a cleanup, an obvious next feature, review findings that were deferred. Do not expand the current task and do not lose the observation.
 
 When completing a task (or at a natural stopping point), list the useful follow-ups in the report to the user: at most three, each with a title, why it matters and a rough size. Prefer none over weak ideas. Create them as Backlog.md tasks only after the user agrees (use a label such as `Proposed` if the project wants them distinguishable); the user decides priority and order. Record deferred findings in the current task's notes so they are not lost if the user declines.
+
+### 1.8 Project versions and delivery proposals
+
+Each project has its own version, normally starting at **0.1.0**, independent of the adopted STEM version in `STEM_VERSION`. Preserve an existing project version and its versioning convention. Use the ecosystem's existing authoritative manifest (for example `package.json` or `pyproject.toml`, or an existing dynamic version source); otherwise create a root `VERSION` file containing the version and a newline. Document that location in the project README. Update derived lockfiles/generated version displays through their normal tooling rather than creating competing authorities. STEM itself keeps its existing release-version source; do not introduce a second one when maintaining STEM.
+
+At the end of a coherent, verified work package (a single task or an approved batch), inspect all changes since the last project version and propose **one** justified bump if there is deliverable change. Include the current and proposed version, the relevant changes and remaining release evidence. If that version has no recorded baseline yet, initialize/document the baseline instead of inventing an earlier release. Consolidate changes already proposed for the same delivery; do not ask again after every task, retro or handoff. No new deliverable change means no bump proposal.
+
+Default bump policy, subject to an existing project contract:
+
+- **Patch** for corrections/refinements only: `0.1.0` → `0.1.1`.
+- **Minor** for added functionality without an important milestone: `0.1.1` → `0.2.0` (reset patch).
+- **Major** when an explicitly user-designated important milestone is achieved and verified: `1.3.2` → `2.0.0` (reset minor and patch). Milestone completion invokes this check via `R-ROADMAP`; not every milestone is important enough for a major bump.
+
+Before 1.0, minor versions may contain incompatible changes, which must be disclosed in the proposal; never disguise an incompatible change as a patch. The first major bump, `0.x.y` → `1.0.0`, must also satisfy the agreed first-complete-product boundary in `R-ROADMAP`; if a milestone is important but that boundary is not met, explicitly discuss/defer the major proposal instead of claiming maturity. For an established compatibility promise, propose a major bump for breaking changes even outside a scheduled milestone, or retain the project's stricter existing policy.
+
+A proposal is not approval to edit the version, tag, publish, deploy or push. Apply a version increase after user agreement (an already-approved exact bump needs no repeat question); obtain the required release/publication authorization separately. Initializing 0.1.0 is part of authorized new-project setup, not a published release.
+
+Examples: a new Node project with no version initializes its manifest to 0.1.0; an existing Python project at 2.4.0 retains its source/version and proposes 2.4.1 for a fixes-only delivery; a small project without a manifest uses `VERSION`; a batch with two fixes and a feature proposes one minor bump after the batch, not three patch bumps. An achieved important milestone proposes a major bump with its exit evidence, and a pure administrative update does not trigger a release.
 <!-- RULE:R-LIFECYCLE:END -->
 
 <!-- RULE:R-INSTRUCTIONS:START -->
@@ -603,7 +621,7 @@ Agree four horizons with the user; they describe scope, not a requirement to pla
 Create detailed tasks only for the current milestone; later milestones remain descriptions. Small projects can start with a one-sentence vision and the vertical slice alone, adding later horizons when useful. Moonshot ideas live in the vision document (`backlog doc`), not as dormant tasks.
 
 - **Next work:** when the current milestone has no ready tasks left, propose the next 3-5 tasks from its description and the vision, each with reason and rough size; create them only after user agreement.
-- **Milestone completion:** verify its exit criterion, record what was learned, and ask whether MVP, 1.0 and Moonshot scope still hold. Follow the `retro` skill; include the design-health check in `R-DESIGN` and propose at most one design task.
+- **Milestone completion:** verify its exit criterion, record what was learned, and ask whether MVP, 1.0 and Moonshot scope still hold. Check the project-version proposal in `R-LIFECYCLE` 1.8. Follow the `retro` skill; include the design-health check in `R-DESIGN` and propose at most one design task.
 - **Expansion:** when a large Moonshot becomes clearer, propose further milestones with goals, exit criteria and sequence. Obtain user agreement before creating, splitting or restructuring milestones or tasks. Keep the remaining vision revisable and detail only the next agreed milestone.
 - **Existing projects:** review the current plan with the user; identify whether an existing milestone already represents 1.0, or propose a distinct 1.0 between MVP and Moonshot. Preserve task history and milestone identifiers; never automatically renumber or move existing work.
 
