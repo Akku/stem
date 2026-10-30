@@ -134,9 +134,30 @@ class RetroMetrics(SandboxRepo):
     def test_since_time_applies_to_commits_and_accepted_tasks(self):
         self.task(1, updated="2026-10-23 08:00"); self.task(2, updated="2026-10-23 12:00")
         self.commit("TASK-1 done")
-        out = run(["bash", "scripts/retro-metrics.sh", "2026-10-23 10:00"], self.repo, self.env).stdout
+        out = run(["bash", "scripts/retro-metrics.sh", "2026-10-23 10:00"], self.repo, {**self.env, "TZ": "UTC"}).stdout
         self.assertIn("since 2026-10-23 10:00", out)
-        self.assertIn("accepted tasks in period (Done, updated since 2026-10-23 10:00): 1", out)
+        self.assertRegex(out, r"accepted tasks in period \(Done, updated since 2026-10-23 10:00 local = 2026-10-23 10:00 UTC\): 1")
+
+    def test_since_time_is_converted_to_utc_for_task_dates(self):
+        self.task(1, updated="2026-10-30 22:37")  # UTC = 23:37 in Europe/Berlin (CET)
+        self.commit("TASK-1 done")
+        env = {**self.env, "TZ": "Europe/Berlin"}
+        def accepted(since):
+            return run(["bash", "scripts/retro-metrics.sh", since], self.repo, env).stdout
+        out = accepted("2026-10-30 22:55")  # local 22:55 = 21:55 UTC, before the update
+        self.assertIn("2026-10-30 21:55 UTC): 1", out)
+        self.assertIn("2026-10-30 22:40 UTC): 0", accepted("2026-10-30 23:40"))  # local 23:40 = 22:40 UTC, after it
+        env["TZ"] = "UTC"
+        self.assertIn("2026-10-30 22:55 UTC): 0", accepted("2026-10-30 22:55"))
+
+    def test_context_report_since_is_local_time(self):
+        d = self.tmp / "tr"; d.mkdir()
+        rec = lambda ts: json.dumps({"type": "assistant", "timestamp": ts, "message": {"usage": {"input_tokens": 1, "output_tokens": 1}}})
+        (d / "s.jsonl").write_text(rec("2026-10-30T22:37:00.000Z") + "\n")
+        def turns(since):
+            r = run([sys.executable, str(SCRIPTS / "context-report.py"), "--since", since, str(d)], self.tmp, {**self.env, "TZ": "Europe/Berlin"})
+            return r.stdout
+        self.assertNotEqual(turns("2026-10-30 22:55"), turns("2026-10-30 23:40"))  # 22:37 UTC is in the first window only
 
     def test_new_process_lines(self):
         self.task(1, updated="2026-10-23 12:00"); self.task(2, status="In Progress", extra="- [ ] #1 open")

@@ -13,7 +13,10 @@ repos=()
 while [ "${1:-}" = "--repo" ]; do repos+=("$2"); shift 2; done
 since=${1:-$(date -v-14d +%Y-%m-%d 2>/dev/null || date -d '14 days ago' +%Y-%m-%d)}
 case "$since" in *\ *) sincefull=$since ;; *) sincefull="$since 00:00" ;; esac   # all windows below use the same start time
-echo "== retro metrics since $since =="
+# Backlog dates are UTC, the since-time and git --since are local: convert once for task-date comparisons.
+epoch=$(date -j -f "%Y-%m-%d %H:%M" "$sincefull" +%s 2>/dev/null || date -d "$sincefull" +%s)
+sinceutc=$(date -u -r "$epoch" "+%Y-%m-%d %H:%M" 2>/dev/null || date -u -d "@$epoch" "+%Y-%m-%d %H:%M")
+echo "== retro metrics since $since (local; $sinceutc UTC for task dates) =="
 files=(backlog/tasks/*.md)
 done_n=$(grep -l '^status: Done' "${files[@]}" | wc -l | tr -d ' ')
 open_n=$(grep -L '^status: Done' "${files[@]}" | wc -l | tr -d ' ')
@@ -68,13 +71,13 @@ for f in "${files[@]}"; do
   [ -f "$f" ] || continue
   grep -q '^status: Done' "$f" || continue
   u=$(awk -F"'" '/^updated_date:/{print substr($2,1,16); exit}' "$f")
-  [ -n "$u" ] && [ "$u" \> "$sincefull" -o "$u" = "$sincefull" ] && done_p=$((done_p+1))
+  [ -n "$u" ] && [ "$u" \> "$sinceutc" -o "$u" = "$sinceutc" ] && done_p=$((done_p+1))
 done
-echo "accepted tasks in period (Done, updated since $since): $done_p"
+echo "accepted tasks in period (Done, updated since $since local = $sinceutc UTC): $done_p"
 created_p=0
 for f in "${files[@]}"; do
   c=$(awk -F"'" '/^created_date:/{print substr($2,1,16); exit}' "$f")
-  [ -n "$c" ] && [ "$c" \> "$sincefull" -o "$c" = "$sincefull" ] && created_p=$((created_p+1))
+  [ -n "$c" ] && [ "$c" \> "$sinceutc" -o "$c" = "$sinceutc" ] && created_p=$((created_p+1))
 done
 echo "task intake in period: $created_p created, $done_p done"
 waiting=""

@@ -5,13 +5,20 @@ Usage: scripts/context-report.py [--since YYYY-MM-DD[ HH:MM]] [--brief] [transcr
 Prints numbers only. Labels may contain tool names, file base names and the first two words of a shell command:
 review before copying anything into notes. The transcript format is undocumented; unknown format -> "not evaluable".
 Estimates are rough (characters / 4; assumes a result stays in context until the session ends, so compaction makes it an upper bound)."""
-import collections, glob, json, os, re, sys
+import collections, datetime as dt, glob, json, os, re, sys
 
 RULE_ID = re.compile(r"\bR-[A-Z][A-Z-]+[A-Z]\b")
 
+def utc_since(since):
+    """--since is local time, transcript timestamps are UTC: convert (date only = local midnight); unparsable input is kept."""
+    for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%d"):
+        try: return dt.datetime.strptime(since, fmt).astimezone(dt.timezone.utc).strftime("%Y-%m-%d %H:%M")
+        except ValueError: pass
+    return since
+
 def main():
     args = sys.argv[1:]
-    since = args[args.index("--since") + 1] if "--since" in args else ""
+    since = utc_since(args[args.index("--since") + 1]) if "--since" in args else ""
     brief = "--brief" in args
     pos = [a for i, a in enumerate(args) if not a.startswith("--") and (i == 0 or args[i - 1] != "--since")]
     d = pos[0] if pos else os.path.expanduser("~/.claude/projects/" + re.sub(r"[^A-Za-z0-9]", "-", os.getcwd()))
