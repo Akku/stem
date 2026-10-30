@@ -147,6 +147,19 @@ class RetroMetrics(SandboxRepo):
         self.assertIn("In Progress with unchecked criteria (possibly waiting on an outside event): TASK-2", out)
         self.assertIn("oldest open task: TASK-2, created 2026-10-01", out)
 
+    def test_sync_commits_and_retro_skill_growth(self):
+        self.task(1); sk = self.repo / ".claude/skills/retro"; sk.mkdir(parents=True, exist_ok=True)
+        (sk / "SKILL.md").write_text("x" * 100)
+        old = "2020-01-01T10:00:00"; os.environ.update(GIT_AUTHOR_DATE=old, GIT_COMMITTER_DATE=old)
+        try: self.commit("TASK-1 retro skill")
+        finally: del os.environ["GIT_AUTHOR_DATE"], os.environ["GIT_COMMITTER_DATE"]
+        (sk / "SKILL.md").write_text("x" * 160); self.commit("TASK-1: synced from product")
+        out = run(["bash", "scripts/retro-metrics.sh", "2000-01-01"], self.repo, self.env).stdout
+        self.assertRegex(out, r"this repo: harness-product sync commits 1 \(50 %")
+        self.assertIn("retro skill size: 160 bytes (no earlier version before 2000-01-01)", out)
+        out = run(["bash", "scripts/retro-metrics.sh", "2021-01-01"], self.repo, self.env).stdout
+        self.assertIn("retro skill size: 160 bytes (growth since 2021-01-01: 60 bytes)", out)
+
     def test_repo_option_adds_second_repository(self):
         self.task(1); self.commit("TASK-1 done")
         other = self.tmp / "product"; other.mkdir(); run(["git", "init", "-q", "-b", "main"], other)
@@ -309,6 +322,165 @@ class RunWrapper(Sandbox):
         env.update(TMPDIR=str(self.tmp), GIT_CEILING_DIRECTORIES=str(self.tmp.parent))
         r = run(["bash", str(SCRIPTS / "run.sh"), "chk", "true"], self.tmp, env)
         self.assertIn("evidence: run.sh chk PASS %s/agent-logs/" % self.tmp, r.stdout)
+
+
+class RetroTopics(Sandbox):
+    """scripts/retro-topics.py: selection order, rotation, resumability, local overrides, bad input."""
+    def setUp(self):
+        super().setUp()
+        run(["git", "init", "-q", "-b", "main"], self.tmp)
+        (self.tmp / "docs/agent").mkdir(parents=True)
+        (self.tmp / "backlog/tasks").mkdir(parents=True)
+        self.topics = [
+            {"id": "once-a", "kind": "once", "title": "Once A", "ask": "qa"},
+            {"id": "rep-b", "kind": "repeatable", "title": "Rep B", "ask": "qb"},
+            {"id": "rep-c", "kind": "repeatable", "title": "Rep C", "ask": "qc"},
+            {"id": "wip", "kind": "repeatable", "title": "WIP", "ask": "qw", "signal": {"type": "status_count", "status": "In Progress", "min": 2}},
+            {"id": "due12", "kind": "once", "title": "Due", "ask": "qd", "trigger": {"type": "done_total", "min": 3}},
+        ]
+
+    def catalog(self, topics=None, local=None, cooldown=1):
+        topics = [dict({"cooldown_retros": cooldown} if cooldown is not None else {}, **t) for t in topics or self.topics]  # tests rotate fast unless they test the default
+        (self.tmp / "docs/agent/retro-topics.json").write_text(json.dumps({"topics": topics}))
+        if local is not None:
+            (self.tmp / "docs/agent/retro-topics.local.json").write_text(json.dumps({"topics": local}))
+
+    def task(self, n, status, updated="2026-10-20 10:00"):
+        (self.tmp / f"backlog/tasks/task-{n} - x.md").write_text(f"---\nid: TASK-{n}\ntitle: x\nstatus: {status}\nupdated_date: '{updated}'\n---\n")
+
+    def topics_of(self, *args, **kw):
+        r = run([sys.executable, str(SCRIPTS / "retro-topics.py"), "--root", str(self.tmp), "--now", kw.get("now", "2026-10-30"), *args], self.tmp)
+        return r, re.findall(r"^TOPIC (\S+) \[(\S+)\]", r.stdout, re.M)
+
+    def state(self):
+        return json.loads((self.tmp / "docs/agent/retro-topics-state.json").read_text())
+
+    def test_signal_and_due_come_first_without_cap_then_fill_once(self):
+        self.catalog()
+        for n in (1, 2, 3): self.task(n, "Done")
+        for n in (4, 5, 6): self.task(n, "In Progress")
+        r, got = self.topics_of()
+        self.assertEqual(got, [("due12", "due"), ("wip", "signal")])  # two forced topics, already at the fill target
+        self.assertIn("3 Done tasks in total", r.stdout)
+        self.assertIn("3 tasks 'In Progress'", r.stdout)
+
+    def test_once_is_given_once_and_repeatable_waits_for_all_once(self):
+        self.catalog([t for t in self.topics if t["id"] in ("once-a", "rep-b", "rep-c")])
+        _, got = self.topics_of("--retro", "r1")
+        self.assertEqual(got, [("once-a", "once")])  # repeatable topics wait while a once topic was not yet given
+        _, got = self.topics_of("--retro", "r2", now="2026-10-31")
+        self.assertEqual(got, [("rep-b", "rotation"), ("rep-c", "rotation")])
+        _, got = self.topics_of("--retro", "r3", now="2026-11-01")
+        self.assertNotIn("once-a", [g[0] for g in got])  # never again
+        self.assertEqual(len(self.state()["runs"]), 3)
+
+    def test_rotation_prefers_longest_ago(self):
+        self.catalog([t for t in self.topics if t["id"] in ("rep-b", "rep-c")])
+        self.topics_of("--retro", "r1", "--fill", "1")
+        _, got = self.topics_of("--retro", "r2", "--fill", "1", now="2026-10-31")
+        self.assertEqual(got, [("rep-c", "rotation")])  # rep-b ran first, so rep-c is next
+        _, got = self.topics_of("--retro", "r3", "--fill", "1", now="2026-11-01")
+        self.assertEqual(got, [("rep-b", "rotation")])
+
+    def test_same_retro_label_repeats_the_answer(self):
+        self.catalog()
+        _, first = self.topics_of("--retro", "r1")
+        r, again = self.topics_of("--retro", "r1")
+        self.assertEqual([g[0] for g in first], [g[0] for g in again])
+        self.assertIn("already given", r.stdout)
+        self.assertEqual(len(self.state()["runs"]), 1)
+
+    def test_dry_run_records_nothing(self):
+        self.catalog()
+        self.topics_of("--dry-run")
+        self.assertFalse((self.tmp / "docs/agent/retro-topics-state.json").exists())
+
+    def test_signal_not_repeated_in_consecutive_retros(self):
+        self.catalog([t for t in self.topics if t["id"] == "wip"], cooldown=None)
+        for n in (4, 5, 6): self.task(n, "In Progress")
+        self.assertEqual(self.topics_of("--retro", "r1")[1], [("wip", "signal")])
+        for i in (2, 3, 4):  # default cooldown: three retros
+            self.assertEqual(self.topics_of("--retro", f"r{i}", now=f"2026-11-0{i}")[1], [], f"r{i}")
+        self.assertEqual(self.topics_of("--retro", "r5", now="2026-11-05")[1], [("wip", "signal")])
+
+    def test_below_threshold_gives_no_signal(self):
+        self.catalog([t for t in self.topics if t["id"] == "wip"])
+        self.task(4, "In Progress"); self.task(5, "In Progress")  # exactly the threshold: not "more than"
+        r, got = self.topics_of()
+        self.assertEqual(got, [("wip", "rotation")])  # only as rotation filler
+        self.assertIn("rotation", r.stdout)
+
+    def test_local_catalog_adds_replaces_and_disables(self):
+        self.catalog(local=[{"id": "rep-b", "disabled": True},
+                            {"id": "wip", "kind": "repeatable", "title": "WIP local", "ask": "q", "signal": {"type": "status_count", "status": "In Progress", "min": 0}},
+                            {"id": "mine", "kind": "once", "title": "Mine", "ask": "q", "trigger": {"type": "done_total", "min": 1}}])
+        self.task(1, "Done"); self.task(2, "In Progress")
+        r, got = self.topics_of("--fill", "0")
+        self.assertEqual({g[0] for g in got}, {"due12", "mine", "wip"} - {"due12"})
+        self.assertIn("WIP local", r.stdout)
+        self.assertNotIn("rep-b", r.stdout)
+
+    def test_done_since_commit_trigger(self):
+        self.catalog([{"id": "audit", "kind": "once", "title": "Audit", "ask": "q", "trigger": {"type": "done_since_commit", "commit": "HEAD", "min": 2}}])
+        (self.tmp / "f").write_text("x"); run(["git", "add", "."], self.tmp)
+        run(["git", "commit", "-qm", "base"], self.tmp, {"GIT_COMMITTER_DATE": "2026-10-10T10:00:00", "GIT_AUTHOR_DATE": "2026-10-10T10:00:00"})
+        self.task(1, "Done", "2026-10-09 10:00")  # before the commit: not counted
+        self.task(2, "Done", "2026-10-12 10:00")
+        self.assertEqual(self.topics_of("--dry-run")[1], [])
+        self.task(3, "Done", "2026-10-13 10:00")
+        self.assertEqual(self.topics_of("--dry-run")[1], [("audit", "due")])
+
+    def test_file_pct_and_growth_signals(self):
+        (self.tmp / "AGENTS.md").write_text("x" * 95)
+        self.catalog([{"id": "dup", "kind": "repeatable", "title": "Dup", "ask": "q", "signal": {"type": "file_pct", "path": "AGENTS.md", "limit_bytes": 100, "min_pct": 90}},
+                      {"id": "grow", "kind": "repeatable", "title": "Grow", "ask": "q", "signal": {"type": "files_growth", "paths": ["AGENTS.md"], "min_pct": 20}}])
+        r, got = self.topics_of("--retro", "r1", "--fill", "0")
+        self.assertEqual(got, [("dup", "signal")])  # growth has no earlier record, so no signal
+        (self.tmp / "AGENTS.md").write_text("x" * 130)
+        self.state_sizes = self.topics_of("--retro", "r2", "--fill", "2", now="2026-10-31")  # records sizes of rotation picks
+        self.assertEqual(self.state()["sizes"].get("grow", {}).get("AGENTS.md"), 130)
+        (self.tmp / "AGENTS.md").write_text("x" * 200)
+        self.topics_of("--retro", "r3", "--fill", "0", now="2026-11-01")  # cooldown retro: grow was given in r2
+        _, got = self.topics_of("--retro", "r4", "--fill", "0", now="2026-11-02")
+        self.assertIn(("grow", "signal"), got)
+
+    def test_bad_catalog_and_state_fail_with_exit_2(self):
+        r, _ = self.topics_of()
+        self.assertEqual((r.returncode, "catalog missing" in r.stderr), (2, True))
+        self.catalog([{"id": "x", "kind": "sometimes", "title": "t", "ask": "q"}])
+        self.assertIn("kind must be", self.topics_of()[0].stderr)
+        self.catalog([{"id": "x", "kind": "once", "title": "t", "ask": "q", "signal": {"type": "nope"}}])
+        self.assertIn("unknown signal type", self.topics_of()[0].stderr)
+        self.catalog()
+        (self.tmp / "docs/agent/retro-topics-state.json").write_text("{broken")
+        r = self.topics_of()[0]
+        self.assertEqual((r.returncode, "not valid JSON" in r.stderr), (2, True))
+
+    def test_days_signal_needs_a_first_run_and_finished_milestones_are_not_starved(self):
+        self.catalog([{"id": "d", "kind": "repeatable", "title": "D", "ask": "q", "signal": {"type": "days_since_topic", "min": 5}},
+                      {"id": "vis", "kind": "repeatable", "title": "V", "ask": "q", "signal": {"type": "vision", "max_age_days": 9999}}])
+        (self.tmp / "backlog/docs").mkdir(); (self.tmp / "backlog/docs/doc-1 - Vision.md").write_text("v")
+        (self.tmp / "backlog/milestones").mkdir()
+        (self.tmp / "backlog/milestones/m-0.md").write_text("---\nid: m-0\n---\n")
+        (self.tmp / "backlog/milestones/m-1.md").write_text("---\nid: m-1\n---\n")
+        for n, st, ms in ((1, "Done", "m-0"), (2, "In Progress", "m-1")):
+            (self.tmp / f"backlog/tasks/task-{n} - x.md").write_text(f"---\nid: TASK-{n}\nstatus: {st}\nmilestone: {ms}\nupdated_date: '2026-10-01 10:00'\n---\n")
+        run(["git", "add", "."], self.tmp); run(["git", "commit", "-qm", "v"], self.tmp)
+        r, got = self.topics_of("--retro", "r1", "--fill", "0")
+        self.assertEqual(got, [("vis", "signal")])  # d has no clock yet; only m-1 lacks To Do tasks
+        self.assertIn("m-1", r.stdout); self.assertNotIn("m-0", r.stdout)
+        _, got = self.topics_of("--retro", "r2", "--fill", "0", now="2026-10-31")
+        self.assertEqual(got, [])
+        _, got = self.topics_of("--retro", "r3", "--fill", "2", now="2026-11-01")
+        self.assertEqual(got, [("vis", "signal"), ("d", "rotation")])  # signal first, then the never-given topic by rotation
+
+    def test_shipped_catalog_is_valid_and_has_reasons(self):
+        shutil.copy(ROOT / "docs/agent/retro-topics.json", self.tmp / "docs/agent/retro-topics.json")
+        r, got = self.topics_of("--dry-run")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        data = json.loads((ROOT / "docs/agent/retro-topics.json").read_text())["topics"]
+        self.assertGreaterEqual(len(data), 10)
+        self.assertTrue(all(t.get("why") for t in data), "every threshold needs a documented reason")
 
 
 class RetiredNames(Sandbox):

@@ -604,6 +604,8 @@ For every proposed piece of agent infrastructure, ask:
 > Does this reduce expected total cost of accepted changes after accounting for its own token, maintenance, coordination, verification, and cognitive overhead?
 
 If the answer is unclear, defer it and preserve only enough evidence to revisit the hypothesis later.
+
+**Decision records.** When a decision changes a rule, an interface or module boundary, a cost trade-off, or the direction the user chose, record it once with `backlog decision create "<title>"` (check `--help`): Context, Decision, Consequences, status. One decision per file; to change it, create a new record that supersedes the old one and set the old status to `superseded by <id>`. Routine task choices stay in task notes.
 <!-- RULE:R-DECISION:END -->
 
 <!-- RULE:R-ROADMAP:START -->

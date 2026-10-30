@@ -45,9 +45,19 @@ commit_stats() {  # $1 = repo path, $2 = label
     if [ "$n" -gt 1 ] || echo "$subj" | grep -qiE 'task[- ]?[0-9]+[/,+&][0-9]+'; then multi=$((multi+1)); fi
   done < <(git -C "$1" log --since="$sincefull" --format=%s)
   echo "$2: releases (tags) $releases, commits with several task IDs $multi"
+  sync=$(git -C "$1" log --since="$sincefull" --format=%s | grep -ciE 'sync|update harness' || true)
+  echo "$2: harness-product sync commits $sync ($([ "$all" -gt 0 ] && echo $((100*sync/all)) || echo 0) % of commits; high values mean changes exist twice)"
   echo "$2: $all commits, $hand handoff, $notask without task ID ($([ "$all" -gt 0 ] && echo $((100*notask/all)) || echo 0) %), fix/review $(git -C "$1" log --since="$sincefull" --format=%s | grep -ciE 'fix|review' || true)"
 }
 commit_stats . "this repo"
+# Retro skill size (loaded when a retro runs) and growth since the start date.
+rs=.claude/skills/retro/SKILL.md
+if [ -f "$rs" ]; then
+  now=$(wc -c < "$rs" | tr -d ' ')
+  rev=$(git log --before="$sincefull" -1 --format=%H -- "$rs")
+  if [ -n "$rev" ]; then old=$(git show "$rev:$rs" | wc -c | tr -d ' '); echo "retro skill size: $now bytes (growth since $since: $((now-old)) bytes)"
+  else echo "retro skill size: $now bytes (no earlier version before $since)"; fi
+fi
 for r in "${repos[@]+"${repos[@]}"}"; do commit_stats "$r" "repo $r"; done
 if command -v gh >/dev/null 2>&1; then
   echo "CI runs since $since (conclusions):"; gh run list --limit 100 --json conclusion,createdAt --jq "[.[]|select(.createdAt>=\"$since\")]|group_by(.conclusion)|map({(.[0].conclusion):length})|add" 2>/dev/null | sed 's/^/  /'

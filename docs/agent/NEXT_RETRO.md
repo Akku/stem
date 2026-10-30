@@ -8,10 +8,6 @@ Add here what a later retro must look at: observations that matter beyond one ta
 
 ## Observations
 
-## Every retro
-
-- [STEM / every retro] Skill discovery: check whether official or well-known skill collections and plugin marketplaces (e.g. the Anthropic skills repository, vendor plugin catalogs) now offer skills that fit this project (stack, testing, accessibility, design, release). Adopt only what has a concrete use; note source, license and version in the task or a notices file (`R-DECISION`).
-
 ## First retro
 
 Process every item in this section at the first retro, then delete the section.
