@@ -441,6 +441,24 @@ class RetroTopics(Sandbox):
         r = self.topics_of()[0]
         self.assertEqual((r.returncode, "not valid JSON" in r.stderr), (2, True))
 
+    def test_days_signal_needs_a_first_run_and_finished_milestones_are_not_starved(self):
+        self.catalog([{"id": "d", "kind": "repeatable", "title": "D", "ask": "q", "signal": {"type": "days_since_topic", "min": 5}},
+                      {"id": "vis", "kind": "repeatable", "title": "V", "ask": "q", "signal": {"type": "vision", "max_age_days": 9999}}])
+        (self.tmp / "backlog/docs").mkdir(); (self.tmp / "backlog/docs/doc-1 - Vision.md").write_text("v")
+        (self.tmp / "backlog/milestones").mkdir()
+        (self.tmp / "backlog/milestones/m-0.md").write_text("---\nid: m-0\n---\n")
+        (self.tmp / "backlog/milestones/m-1.md").write_text("---\nid: m-1\n---\n")
+        for n, st, ms in ((1, "Done", "m-0"), (2, "In Progress", "m-1")):
+            (self.tmp / f"backlog/tasks/task-{n} - x.md").write_text(f"---\nid: TASK-{n}\nstatus: {st}\nmilestone: {ms}\nupdated_date: '2026-10-01 10:00'\n---\n")
+        run(["git", "add", "."], self.tmp); run(["git", "commit", "-qm", "v"], self.tmp)
+        r, got = self.topics_of("--retro", "r1", "--fill", "0")
+        self.assertEqual(got, [("vis", "signal")])  # d has no clock yet; only m-1 lacks To Do tasks
+        self.assertIn("m-1", r.stdout); self.assertNotIn("m-0", r.stdout)
+        _, got = self.topics_of("--retro", "r2", "--fill", "0", now="2026-10-31")
+        self.assertEqual(got, [])
+        _, got = self.topics_of("--retro", "r3", "--fill", "2", now="2026-11-01")
+        self.assertEqual(got, [("vis", "signal"), ("d", "rotation")])  # signal first, then the never-given topic by rotation
+
     def test_shipped_catalog_is_valid_and_has_reasons(self):
         shutil.copy(ROOT / "docs/agent/retro-topics.json", self.tmp / "docs/agent/retro-topics.json")
         r, got = self.topics_of("--dry-run")

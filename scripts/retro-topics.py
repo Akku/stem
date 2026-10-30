@@ -106,8 +106,8 @@ def sig_done_since_topic(c, t, p):
 
 def sig_days_since_topic(c, t, p):
     last = c.last_run(t["id"])
-    n = p["min"] if last is None else (c.now - last).days  # never discussed counts as exactly due
-    return n, p["min"], ("never discussed" if last is None else f"{n} days since this topic last ran") + f" (threshold {p['min']})"
+    n = 0 if last is None else (c.now - last).days  # a topic never given has no clock yet: it comes through rotation, not as a signal
+    return n, p["min"], ("never discussed, clock starts at its first run" if last is None else f"{n} days since this topic last ran") + f" (threshold {p['min']})"
 
 
 def sig_status_count(c, t, p):
@@ -159,7 +159,8 @@ def sig_vision(c, t, p):
         return age, p["max_age_days"], f"vision {docs[0].name} unchanged for {age} days (threshold {p['max_age_days']})", True
     todo = {t.get("milestone") for t in c.tasks if t.get("status") == "To Do"}
     ms = [m for m in sorted((c.root / "backlog/milestones").glob("*.md"))] if (c.root / "backlog/milestones").is_dir() else []
-    empty = [front(m).get("id") for m in ms if front(m).get("id") not in todo]
+    open_ms = {t.get("milestone") for t in c.tasks if t.get("status") != "Done"}  # a milestone with only Done tasks is finished, not starved
+    empty = [front(m).get("id") for m in ms if front(m).get("id") in open_ms and front(m).get("id") not in todo]
     if empty:
         return len(empty), 1, f"milestone(s) without To Do tasks: {', '.join(empty)}", True
     return 0, 1, "vision recent, every milestone has To Do tasks", False
