@@ -3,6 +3,7 @@
 Newest first. Projects read the entries newer than their `STEM_VERSION` (see `stem-update` skill). Each entry: what changed and who benefits; renames and removals get a `Migration:` line (what to rename or delete) that `stem-update` carries out.
 
 ## Unreleased
+- **Retro topic injector:** `scripts/retro-topics.py` (retro skill step 0) adds topics to a retro from `docs/agent/retro-topics.json` (process, skills, duplicate information, git state, open and in-progress task counts, vision, LLM-workable structure, new harness features, determinism): due fixed triggers and signals above documented thresholds without cap, filled up to 2 with once or rotating topics; state in `docs/agent/retro-topics-state.json`, project additions in `retro-topics.local.json`. Benefits: retros cover recurring process questions only when evidence says they pay off. Migration: the `Every retro` skill-discovery entry of `NEXT_RETRO.md` moved into the `skills` topic; delete it there.
 
 ## 1.6.0
 - **Independent project versions:** setup initializes an unversioned project at 0.1.0, preserving native manifests and existing versions. `R-LIFECYCLE` proposes one justified patch/minor/major change per delivery, with major changes for agreed important milestones and explicit compatibility/maturity checks. Benefits: projects track their own progress separately from adopted STEM. Migration: update `R-LIFECYCLE`/`R-ROADMAP`; initialize a missing project version and document its source, preserving `STEM_VERSION`; review existing release conventions with the user.
