@@ -147,6 +147,19 @@ class RetroMetrics(SandboxRepo):
         self.assertIn("In Progress with unchecked criteria (possibly waiting on an outside event): TASK-2", out)
         self.assertIn("oldest open task: TASK-2, created 2026-10-01", out)
 
+    def test_sync_commits_and_retro_skill_growth(self):
+        self.task(1); sk = self.repo / ".claude/skills/retro"; sk.mkdir(parents=True, exist_ok=True)
+        (sk / "SKILL.md").write_text("x" * 100)
+        old = "2020-01-01T10:00:00"; os.environ.update(GIT_AUTHOR_DATE=old, GIT_COMMITTER_DATE=old)
+        try: self.commit("TASK-1 retro skill")
+        finally: del os.environ["GIT_AUTHOR_DATE"], os.environ["GIT_COMMITTER_DATE"]
+        (sk / "SKILL.md").write_text("x" * 160); self.commit("TASK-1: synced from product")
+        out = run(["bash", "scripts/retro-metrics.sh", "2000-01-01"], self.repo, self.env).stdout
+        self.assertRegex(out, r"this repo: harness-product sync commits 1 \(50 %")
+        self.assertIn("retro skill size: 160 bytes (no earlier version before 2000-01-01)", out)
+        out = run(["bash", "scripts/retro-metrics.sh", "2021-01-01"], self.repo, self.env).stdout
+        self.assertIn("retro skill size: 160 bytes (growth since 2021-01-01: 60 bytes)", out)
+
     def test_repo_option_adds_second_repository(self):
         self.task(1); self.commit("TASK-1 done")
         other = self.tmp / "product"; other.mkdir(); run(["git", "init", "-q", "-b", "main"], other)
