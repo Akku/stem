@@ -5,7 +5,7 @@ Catalog: docs/agent/retro-topics.json (STEM-owned) + docs/agent/retro-topics.loc
 "disabled": true removes). State: docs/agent/retro-topics-state.json (commit it with the retro notes).
 Selection: (1) due triggers, (2) topics whose signal fired (strongest first), both without cap; then fill up to N (default 2) with
 (3) never-given `once` topics and, only when no such topic is left, (4) `repeatable` topics, longest ago first.
-A topic given in the previous retro is skipped for signals (`cooldown_retros`). Re-running with the same --retro label repeats
+A topic given in the previous retro is skipped for signals (`cooldown_retros`, default 3: a persistent signal returns at most every 4th retro). Re-running with the same --retro label repeats
 the earlier answer (resumable). --dry-run records nothing. Exit 2: unusable catalog or state."""
 import argparse, datetime as dt, json, pathlib, re, subprocess, sys
 
@@ -226,7 +226,7 @@ def evaluate(c, t):
 
 
 def select(c, topics, fill):
-    cooldown_hit = lambda t: any(t["id"] in r["topics"] for r in c.state["runs"][-t.get("cooldown_retros", 1):])
+    cooldown_hit = lambda t: any(t["id"] in r["topics"] for r in c.state["runs"][-t.get("cooldown_retros", 3):])
     due, signal, once, rep = [], [], [], []
     for t in topics:
         ev = evaluate(c, t)

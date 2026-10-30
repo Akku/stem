@@ -326,8 +326,9 @@ class RetroTopics(Sandbox):
             {"id": "due12", "kind": "once", "title": "Due", "ask": "qd", "trigger": {"type": "done_total", "min": 3}},
         ]
 
-    def catalog(self, topics=None, local=None):
-        (self.tmp / "docs/agent/retro-topics.json").write_text(json.dumps({"topics": topics or self.topics}))
+    def catalog(self, topics=None, local=None, cooldown=1):
+        topics = [dict({"cooldown_retros": cooldown} if cooldown is not None else {}, **t) for t in topics or self.topics]  # tests rotate fast unless they test the default
+        (self.tmp / "docs/agent/retro-topics.json").write_text(json.dumps({"topics": topics}))
         if local is not None:
             (self.tmp / "docs/agent/retro-topics.local.json").write_text(json.dumps({"topics": local}))
 
@@ -382,11 +383,12 @@ class RetroTopics(Sandbox):
         self.assertFalse((self.tmp / "docs/agent/retro-topics-state.json").exists())
 
     def test_signal_not_repeated_in_consecutive_retros(self):
-        self.catalog([t for t in self.topics if t["id"] == "wip"])
+        self.catalog([t for t in self.topics if t["id"] == "wip"], cooldown=None)
         for n in (4, 5, 6): self.task(n, "In Progress")
         self.assertEqual(self.topics_of("--retro", "r1")[1], [("wip", "signal")])
-        self.assertEqual(self.topics_of("--retro", "r2", now="2026-10-31")[1], [])  # cooldown of one retro
-        self.assertEqual(self.topics_of("--retro", "r3", now="2026-11-01")[1], [("wip", "signal")])
+        for i in (2, 3, 4):  # default cooldown: three retros
+            self.assertEqual(self.topics_of("--retro", f"r{i}", now=f"2026-11-0{i}")[1], [], f"r{i}")
+        self.assertEqual(self.topics_of("--retro", "r5", now="2026-11-05")[1], [("wip", "signal")])
 
     def test_below_threshold_gives_no_signal(self):
         self.catalog([t for t in self.topics if t["id"] == "wip"])
