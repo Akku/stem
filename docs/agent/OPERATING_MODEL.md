@@ -87,14 +87,16 @@ The strategy should be proportional to the work:
 - normal work should identify the likely change surface and verification approach;
 - ambiguous, broad, or high-risk work may justify deeper planning or a separate planning pass.
 
-For a large task (size L in the project's existing sizing) or any interface/module-boundary change, the recorded plan must state:
+When creating a task, estimate its size and record it as a label: `size-S`, `size-M` or `size-L`; an interface/module-boundary change is always `size-L`. The agent proposes the estimate before work starts and the user may correct it at plan approval; do not change it afterwards, so it stays a usable measurement point.
+
+For a large task (`size-L`) or any interface/module-boundary change, the recorded plan must state:
 
 1. the observable result;
 2. the check that will prove it;
 3. likely failure cases;
 4. what the user must confirm.
 
-Obtain the user's approval of that plan before implementation. If the exact plan has already been explicitly approved, reference that decision instead of asking again. Do not infer plan approval merely from approval to work on a task or batch. Where no size scheme exists, treat broad work across several workflows or subsystems as large; do not introduce sizing machinery just for this gate. Smaller work without a boundary change keeps the proportional planning above. Independent review still follows `R-REVIEW`.
+Obtain the user's approval of that plan before implementation. If the exact plan has already been explicitly approved, reference that decision instead of asking again. Do not infer plan approval merely from approval to work on a task or batch. For tasks created before the label existed, treat broad work across several workflows or subsystems as large. Smaller work without a boundary change keeps the proportional planning above. Independent review still follows `R-REVIEW`.
 
 Planning is a phase, not automatically a separate Planner agent.
 
