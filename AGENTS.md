@@ -41,4 +41,4 @@ ID=R-REVIEW; sed -n "/<!-- RULE:${ID}:START -->/,/<!-- RULE:${ID}:END -->/p" doc
 <!-- Filled in during setup (SETUP.md): project goal, stack, verification commands. -->
 - Goal: _(set during setup)_
 - Verify: _(command, always via `scripts/run.sh`)_
-- Model: _(default model and effort, set during setup; escalate only per `R-ROUTING`)_
+- Model: _(default model and effort, set during setup; escalate only per `R-ROUTING` in `docs/agent/ADVANCED.md`)_
