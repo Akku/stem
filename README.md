@@ -75,6 +75,29 @@ At the start of each session the agent runs `scripts/session-start.sh` (short st
 
 At the start of each session the agent checks (once per day) whether a newer STEM version exists and tells you. With your approval the `stem-update` skill reads the [changelog](CHANGELOG.md), picks what helps your project and merges it without overwriting your project-specific content. The `retro` skill checks STEM as well.
 
+## STEM or the plain agent?
+
+Coding agents such as Claude Code or Codex work well on their own. STEM adds a workflow around them, and that workflow costs extra steps. A rough guide:
+
+| Your situation | Plain agent | With STEM |
+| --- | --- | --- |
+| One-off script or quick prototype | Usually enough | Setup and task steps cost more than they bring |
+| A project over many sessions | You re-explain the state or keep your own notes | Backlog, handoff note and session summary carry the state; costs a short handoff at the end of each session |
+| You have no technical background | You install and configure the tools yourself | The agent installs and explains Git, Node.js and Backlog.md with you; costs an approval per installation step |
+| You want to see what the agent did and whether it is done | You read the chat and the changes | Every change is a task with acceptance criteria and recorded evidence; costs a check per task |
+| You want your setup to improve over time | Changes happen ad hoc | Short retros turn friction into rule changes; costs a retro every few tasks |
+| A team with its own process, CI and review | The agent fits into your process | STEM's process would duplicate yours; not a fit |
+
+Tested agents and platforms: see *Agent and platform test status* under [Get started](#get-started).
+
+**Other approaches.** Several open-source projects add structure to coding agents too; strengths overlap.
+
+- **Spec-first toolkits** (for example [Spec Kit](https://github.com/github/spec-kit), [OpenSpec](https://github.com/Fission-AI/OpenSpec)): strong at turning each change into an agreed spec, plan and tasks before code is written. STEM sharpens the idea once at setup and focuses on the project-wide loop of backlog, handoff and retro.
+- **Skill libraries** (for example [Superpowers](https://github.com/obra/superpowers)): strong at engineering discipline per piece of work, such as design, test-driven development, review and verification. STEM does not prescribe these engineering steps; its focus is continuity across sessions.
+- **Role-based agile methods** (for example [BMad Method](https://github.com/bmad-code-org/BMAD-METHOD)): strong at structured planning with role agents, a backlog and retrospectives; the closest to STEM. STEM is smaller and aims its guided setup at people without a technical background.
+
+Based on each project's own documentation as of November 2026; these projects change quickly.
+
 ## Contents
 
 <details>

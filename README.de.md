@@ -75,6 +75,29 @@ Pro Sitzung führt der Agent `scripts/session-start.sh` aus (kurzer Zustandsübe
 
 Zu Beginn jeder Sitzung prüft der Agent (einmal pro Tag), ob es eine neuere STEM-Version gibt, und sagt dir Bescheid. Mit deiner Zustimmung liest der Skill `stem-update` das [Changelog](CHANGELOG.md), wählt aus, was deinem Projekt nützt, und übernimmt es, ohne projektspezifische Inhalte zu überschreiben. Auch der Skill `retro` prüft STEM.
 
+## STEM oder der Agent pur?
+
+Coding-Agenten wie Claude Code oder Codex funktionieren auch allein gut. STEM legt einen Arbeitsablauf darum, und der kostet zusätzliche Schritte. Eine grobe Orientierung:
+
+| Deine Situation | Agent pur | Mit STEM |
+| --- | --- | --- |
+| Einmal-Skript oder schneller Prototyp | Reicht meist | Setup und Task-Schritte kosten mehr, als sie bringen |
+| Ein Projekt über viele Sitzungen | Du erklärst den Stand neu oder führst eigene Notizen | Backlog, Übergabenotiz und Sitzungsüberblick tragen den Stand; kostet eine kurze Übergabe am Ende jeder Sitzung |
+| Du hast keinen technischen Hintergrund | Du installierst und konfigurierst die Werkzeuge selbst | Der Agent installiert und erklärt Git, Node.js und Backlog.md mit dir; kostet eine Freigabe pro Installationsschritt |
+| Du willst sehen, was der Agent getan hat und ob es fertig ist | Du liest den Chat und die Änderungen | Jede Änderung ist ein Task mit Akzeptanzkriterien und festgehaltenen Nachweisen; kostet eine Prüfung pro Task |
+| Dein Setup soll mit der Zeit besser werden | Änderungen passieren nebenbei | Kurze Retros machen aus Reibung Regeländerungen; kostet alle paar Tasks eine Retro |
+| Ein Team mit eigenem Prozess, eigener CI und Review | Der Agent fügt sich in euren Prozess | Der STEM-Prozess würde euren doppeln; passt nicht |
+
+Getestete Agenten und Plattformen: siehe *Teststand der Agenten und Plattformen* unter [Loslegen](#loslegen).
+
+**Andere Ansätze.** Mehrere Open-Source-Projekte geben Coding-Agenten ebenfalls Struktur; die Stärken überschneiden sich.
+
+- **Spec-first-Werkzeuge** (zum Beispiel [Spec Kit](https://github.com/github/spec-kit), [OpenSpec](https://github.com/Fission-AI/OpenSpec)): stark darin, jede Änderung vor dem Code in eine abgestimmte Spezifikation, einen Plan und Tasks zu fassen. STEM schärft die Idee einmal beim Setup und legt den Schwerpunkt auf die projektweite Schleife aus Backlog, Übergabe und Retro.
+- **Skill-Bibliotheken** (zum Beispiel [Superpowers](https://github.com/obra/superpowers)): stark in der Engineering-Disziplin pro Arbeitspaket, etwa Entwurf, testgetriebene Entwicklung, Review und Verifikation. STEM schreibt diese Engineering-Schritte nicht vor; sein Schwerpunkt ist die Kontinuität über Sitzungen.
+- **Rollenbasierte agile Methoden** (zum Beispiel [BMad Method](https://github.com/bmad-code-org/BMAD-METHOD)): stark in strukturierter Planung mit Rollen-Agenten, Backlog und Retrospektiven; am nächsten an STEM. STEM ist kleiner und richtet das geführte Setup auf Menschen ohne technischen Hintergrund aus.
+
+Stand laut eigener Dokumentation der Projekte, November 2026; diese Projekte ändern sich schnell.
+
 ## Inhalt
 
 <details>
