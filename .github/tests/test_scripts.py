@@ -239,6 +239,36 @@ class SessionStart(SandboxRepo):
         self.task(1, extra="- [ ] #1 open box")
         self.assertIn("TASK-1: Done with 1 unchecked box", self.start())
 
+    def test_waiting_task_reboot_condition(self):
+        self.task(1, status="In Progress", extra="Wait: reboot-since 2026-10-23T02:40Z file-exists logs/a.log -- check AC3")
+        before, after = "1792627200", "1792800000"  # 2026-10-22 / 2026-10-24 UTC
+        self.assertNotIn("TASK-1", self.start({"STEM_BOOT_TIME": before}))
+        out = self.start({"STEM_BOOT_TIME": after})
+        self.assertIn("READY: TASK-1 rebooted", out); self.assertIn("logs/a.log is MISSING -> check AC3", out)
+        (self.repo / "logs").mkdir(); (self.repo / "logs/a.log").write_text("x")
+        self.assertIn("logs/a.log exists", self.start({"STEM_BOOT_TIME": after}))
+
+    def test_waiting_task_done_count_condition(self):
+        (self.repo / "x").write_text("x"); self.commit("base")
+        rev = run(["git", "rev-parse", "--short", "HEAD"], self.repo).stdout.strip()
+        self.task(1, status="In Progress", extra=f"Wait: done-count-since {rev} 2 labels=size-M")
+        self.task(2, updated="2099-01-01 10:00", extra="labels: x")
+        (self.repo / "backlog/tasks/task-3 - T3.md").write_text("---\nid: TASK-3\nstatus: Done\nupdated_date: '2099-01-01 10:00'\nlabels:\n  - size-M\n---\n")
+        self.assertNotIn("READY", self.start())  # only one task has the label
+        (self.repo / "backlog/tasks/task-4 - T4.md").write_text("---\nid: TASK-4\nstatus: Done\nupdated_date: '2099-01-02 10:00'\nlabels: [size-M]\n---\n")
+        self.task(5, updated="2000-01-01 10:00")  # before the commit: not counted
+        self.assertIn(f"READY: TASK-1 2 of 2 Done tasks (labels=size-M) since {rev}", self.start())
+
+    def test_waiting_task_unknown_kind_is_reported_not_run(self):
+        marker = self.tmp / "ran"
+        self.task(1, status="In Progress", extra=f"Wait: touch {marker}\nWait: done-count-since HEAD;rm 3")
+        self.task(2, extra=f"Wait: touch {marker}")  # Done tasks are ignored
+        out = self.start()
+        self.assertIn("WAIT PROBLEM: TASK-1: unknown kind 'touch' (not run)", out)
+        self.assertIn("WAIT PROBLEM: TASK-1: expected 'done-count-since", out)
+        self.assertNotIn("TASK-2", out.split("## backlog check")[0].split("## backlog")[-1])
+        self.assertFalse(marker.exists())
+
     def test_offline_opt_out_skips_version_check(self):
         (self.repo / "STEM_VERSION").write_text("version: 1.0.0\nrepo: https://github.com/x/stem\n")
         marker = self.tmp / "curl-called"

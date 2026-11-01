@@ -63,6 +63,8 @@ if [ -d backlog/tasks ]; then
     echo "RETRO DUE: $n tasks done since ${lrd:-the start} (threshold ${RETRO_DUE_AFTER:-8}); offer the retro skill, do not start unasked"
   fi
 fi
+# waiting tasks whose outside event happened (fixed condition kinds only, see the script)
+[ -d backlog/tasks ] && [ -f scripts/wait-check.py ] && python3 scripts/wait-check.py 2>/dev/null
 echo; echo "## backlog check"; scripts/check-backlog.sh 2>/dev/null | head -10; [ "${PIPESTATUS[0]:-0}" -eq 0 ] && echo "ok"
 echo; echo "## handoff"
 if [ -f docs/agent/HANDOFF.md ]; then
