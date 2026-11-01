@@ -406,7 +406,7 @@ class RetroTopics(Sandbox):
     def state(self):
         return json.loads((self.tmp / "docs/agent/retro-topics-state.json").read_text())
 
-    def test_signal_and_due_come_first_without_cap_then_fill_once(self):
+    def test_signal_and_due_come_first_then_fill_once(self):
         self.catalog()
         for n in (1, 2, 3): self.task(n, "Done")
         for n in (4, 5, 6): self.task(n, "In Progress")
@@ -414,6 +414,16 @@ class RetroTopics(Sandbox):
         self.assertEqual(got, [("due12", "due"), ("wip", "signal")])  # two forced topics, already at the fill target
         self.assertIn("3 Done tasks in total", r.stdout)
         self.assertIn("3 tasks 'In Progress'", r.stdout)
+
+    def test_cap_keeps_the_strongest_and_holds_back_the_rest(self):
+        self.catalog(self.topics + [{"id": "wip-low", "kind": "repeatable", "title": "WIP low", "ask": "q", "signal": {"type": "status_count", "status": "In Progress", "min": 1}}])
+        for n in (1, 2, 3): self.task(n, "Done")
+        for n in (4, 5, 6): self.task(n, "In Progress")
+        r, got = self.topics_of("--retro", "r1")
+        self.assertEqual(got, [("due12", "due"), ("wip-low", "signal")])  # due first, then the stronger signal (3/1 > 3/2)
+        self.assertIn("held back by the cap of 2 (not recorded, may return next retro): wip", r.stdout)
+        self.assertEqual(self.state()["runs"][0]["topics"], ["due12", "wip-low"])
+        self.assertEqual(self.topics_of("--retro", "r2", now="2026-10-31")[1][0], ("wip", "signal"))  # held-back topic returns
 
     def test_once_is_given_once_and_repeatable_waits_for_all_once(self):
         self.catalog([t for t in self.topics if t["id"] in ("once-a", "rep-b", "rep-c")])

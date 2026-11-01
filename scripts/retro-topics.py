@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Proposes extra retro topics (TASK-91 harness design). Called at the start of a retro (skill `retro`).
-Usage: scripts/retro-topics.py [--retro LABEL] [--dry-run] [--fill N] [--root DIR] [--now YYYY-MM-DD]
+Usage: scripts/retro-topics.py [--retro LABEL] [--dry-run] [--fill N] [--max N] [--root DIR] [--now YYYY-MM-DD]
 Catalog: docs/agent/retro-topics.json (STEM-owned) + docs/agent/retro-topics.local.json (project-owned; same id replaces,
 "disabled": true removes). State: docs/agent/retro-topics-state.json (commit it with the retro notes).
-Selection: (1) due triggers, (2) topics whose signal fired (strongest first), both without cap; then fill up to N (default 2) with
-(3) never-given `once` topics and, only when no such topic is left, (4) `repeatable` topics, longest ago first.
+Selection, at most --max topics (default 2) in this rank order: (1) due triggers, (2) topics whose signal fired, both strongest
+first; then fill up to --fill (default 2) with (3) never-given `once` topics and, only when no such topic is left, (4) `repeatable`
+topics, longest ago first.
+Topics cut by the cap are named but not recorded, so they can return in the next retro.
 A topic given in the previous retro is skipped for signals (`cooldown_retros`, default 3: a persistent signal returns at most every 4th retro). Re-running with the same --retro label repeats
 the earlier answer (resumable). --dry-run records nothing. Exit 2: unusable catalog or state."""
 import argparse, datetime as dt, json, pathlib, re, subprocess, sys
@@ -225,7 +227,7 @@ def evaluate(c, t):
     return None
 
 
-def select(c, topics, fill):
+def select(c, topics, fill, cap):
     cooldown_hit = lambda t: any(t["id"] in r["topics"] for r in c.state["runs"][-t.get("cooldown_retros", 3):])
     due, signal, once, rep = [], [], [], []
     for t in topics:
@@ -239,13 +241,11 @@ def select(c, topics, fill):
             once.append((0, t, "once", "not given yet" + (f"; {ev[3]}" if ev else "")))
         elif t["kind"] == "repeatable" and not cooldown_hit(t) and not (ev and ev[0] == "trigger"):
             rep.append((last or dt.date.min, t, "rotation", "rotation: " + ("never given" if last is None else f"last given {last}")))
-    picked = sorted(due, key=lambda x: -x[0]) + sorted(signal, key=lambda x: -x[0])
+    ranked = sorted(due, key=lambda x: -x[0]) + sorted(signal, key=lambda x: -x[0])
+    picked, held = ranked[:cap], [t["id"] for _, t, _, _ in ranked[cap:]]
     for pool in (once, [] if once else sorted(rep, key=lambda x: x[0])):  # repeatable topics return only after every once topic was given
-        for item in pool:
-            if len(picked) >= fill:
-                break
-            picked.append(item)
-    return [(t, why, reason) for _, t, why, reason in picked]
+        picked += pool[:max(min(fill, cap) - len(picked), 0)]
+    return [(t, why, reason) for _, t, why, reason in picked], held
 
 
 def sizes_for(c, topics):
@@ -262,7 +262,7 @@ def sizes_for(c, topics):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--retro"), ap.add_argument("--dry-run", action="store_true"), ap.add_argument("--fill", type=int, default=2)
+    ap.add_argument("--retro"), ap.add_argument("--dry-run", action="store_true"), ap.add_argument("--fill", type=int, default=2), ap.add_argument("--max", type=int, default=2)
     ap.add_argument("--root", default=str(pathlib.Path(__file__).resolve().parent.parent)), ap.add_argument("--now")
     a = ap.parse_args()
     root = pathlib.Path(a.root)
@@ -278,12 +278,12 @@ def main():
     topics = load_catalog(root)
     by_id = {t["id"]: t for t in topics}
     c = Ctx(root, state, now)
-    earlier = next((r for r in state["runs"] if r["retro"] == label), None)
+    earlier, held = next((r for r in state["runs"] if r["retro"] == label), None), []
     if earlier:
         chosen = [(by_id[i], "given-before", earlier["reasons"].get(i, "")) for i in earlier["topics"] if i in by_id]
         note = f"retro {label}: topics were already given, repeated unchanged"
     else:
-        chosen = select(c, topics, a.fill)
+        chosen, held = select(c, topics, a.fill, max(a.max, 0))
         note = f"retro {label}: {len(chosen)} topic(s)" + (" (dry run, nothing recorded)" if a.dry_run else "")
         if not a.dry_run:
             state["runs"].append({"retro": label, "date": now.isoformat(), "topics": [t["id"] for t, _, _ in chosen], "reasons": {t["id"]: r for t, _, r in chosen}})
@@ -292,6 +292,8 @@ def main():
     print(f"## retro topics\n{note}")
     for t, why, reason in chosen:
         print(f"\nTOPIC {t['id']} [{why}] {t['title']}\n  reason: {reason}\n  ask: {t['ask']}")
+    if held:
+        print(f"\nheld back by the cap of {a.max} (not recorded, may return next retro): {', '.join(held)}")
     if not chosen:
         print("no topic is due or has a signal; nothing to add")
 

@@ -3,6 +3,7 @@
 Newest first. Projects read the entries newer than their `STEM_VERSION` (see `stem-update` skill). Each entry: what changed and who benefits; renames and removals get a `Migration:` line (what to rename or delete) that `stem-update` carries out.
 
 ## Unreleased
+- **At most 2 retro topics:** `scripts/retro-topics.py` gives at most 2 topics per retro (`--max N`, default 2), most important first: due triggers, then signals, both strongest first, then once or rotating topics. Topics cut by the cap are named in one line and not recorded, so they return in a later retro. Benefits: retros stay short when many signals fire at once.
 - **Bootstrap when Claude Code starts in a subdirectory:** `CLAUDE.md` tells Claude Code that started in a subdirectory it gets no project hooks and may not expand `@AGENTS.md` (external import without approval), so it runs `bash scripts/session-start.sh` from the repository root and reads `AGENTS.md` first instead of reading the handoff directly. Headless probe: subdirectory start failed before, passes 3/3 after; root start unchanged. Benefits: the handoff and rules arrive before substantive work wherever the session starts. Migration: copy `CLAUDE.md` (keep project-specific lines).
 
 ## 1.8.0
