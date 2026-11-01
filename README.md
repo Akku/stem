@@ -71,6 +71,13 @@ Reflect is the `retro` skill: learnings flow back into the harness (and, once pr
 
 At the start of each session the agent runs `scripts/session-start.sh` (short state summary).
 
+## Principles
+
+- Information architecture over "answer shorter": short entry points, deeper detail on demand, full logs outside the context.
+- One authoritative source per rule; adapters only point to it.
+- The harness grows through retros, not by stockpiling (`R-DECISION`).
+- Humans read English/German docs; agent instructions are English; agents talk to users in the user's language.
+
 ## Staying up to date
 
 At the start of each session the agent checks (once per day) whether a newer STEM version exists and tells you. With your approval the `stem-update` skill reads the [changelog](CHANGELOG.md), picks what helps your project and merges it without overwriting your project-specific content. The `retro` skill checks STEM as well.
@@ -82,7 +89,7 @@ Coding agents such as Claude Code or Codex work well on their own. STEM adds a w
 | Your situation | Plain agent | With STEM |
 | --- | --- | --- |
 | One-off script or quick prototype | Usually enough | Setup and task steps cost more than they bring |
-| A project over many sessions | You re-explain the state or keep your own notes | Backlog, handoff note and session summary carry the state; costs a short handoff at the end of each session |
+| A project over many sessions | You re-explain the state or keep your own notes | Backlog, handoff note and session summary carry the state; a short handoff at the end of each session is read automatically in the next one |
 | You have no technical background | You install and configure the tools yourself | The agent installs and explains Git, Node.js and Backlog.md with you; costs an approval per installation step |
 | You want to see what the agent did and whether it is done | You read the chat and the changes | Every change is a task with acceptance criteria and recorded evidence; costs a check per task |
 | You want your setup to improve over time | Changes happen ad hoc | Short retros turn friction into rule changes; costs a retro every few tasks |
@@ -130,13 +137,6 @@ Based on each project's own documentation as of November 2026; these projects ch
 | `docs/agent/PROCESS_IMPROVEMENTS.md` | Retro handling and feeding learnings back into STEM |
 
 </details>
-
-## Principles
-
-- Information architecture over "answer shorter": short entry points, deeper detail on demand, full logs outside the context.
-- One authoritative source per rule; adapters only point to it.
-- The harness grows through retros, not by stockpiling (`R-DECISION`).
-- Humans read English/German docs; agent instructions are English; agents talk to users in the user's language.
 
 ## Contributing
 

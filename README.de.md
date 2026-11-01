@@ -71,6 +71,12 @@ Reflect ist der Skill `retro`: Learnings fließen ins Harness zurück (und, wenn
 
 Pro Sitzung führt der Agent `scripts/session-start.sh` aus (kurzer Zustandsüberblick).
 
+## Prinzipien
+
+- Informationsarchitektur statt „kürzer antworten": kurze Einstiege, Vertiefung nach Bedarf, Volllogs außerhalb des Kontexts.
+- Eine verbindliche Quelle je Regel; Adapter verweisen nur.
+- Das Harness wächst durch Retros, nicht durch Vorrat (`R-DECISION`).
+
 ## Aktuell bleiben
 
 Zu Beginn jeder Sitzung prüft der Agent (einmal pro Tag), ob es eine neuere STEM-Version gibt, und sagt dir Bescheid. Mit deiner Zustimmung liest der Skill `stem-update` das [Changelog](CHANGELOG.md), wählt aus, was deinem Projekt nützt, und übernimmt es, ohne projektspezifische Inhalte zu überschreiben. Auch der Skill `retro` prüft STEM.
@@ -82,7 +88,7 @@ Coding-Agenten wie Claude Code oder Codex funktionieren auch allein gut. STEM le
 | Deine Situation | Agent pur | Mit STEM |
 | --- | --- | --- |
 | Einmal-Skript oder schneller Prototyp | Reicht meist | Setup und Task-Schritte kosten mehr, als sie bringen |
-| Ein Projekt über viele Sitzungen | Du erklärst den Stand neu oder führst eigene Notizen | Backlog, Übergabenotiz und Sitzungsüberblick tragen den Stand; kostet eine kurze Übergabe am Ende jeder Sitzung |
+| Ein Projekt über viele Sitzungen | Du erklärst den Stand neu oder führst eigene Notizen | Backlog, Übergabenotiz und Sitzungsüberblick tragen den Stand; eine kurze Übergabe am Ende jeder Sitzung wird in der nächsten automatisch gelesen |
 | Du hast keinen technischen Hintergrund | Du installierst und konfigurierst die Werkzeuge selbst | Der Agent installiert und erklärt Git, Node.js und Backlog.md mit dir; kostet eine Freigabe pro Installationsschritt |
 | Du willst sehen, was der Agent getan hat und ob es fertig ist | Du liest den Chat und die Änderungen | Jede Änderung ist ein Task mit Akzeptanzkriterien und festgehaltenen Nachweisen; kostet eine Prüfung pro Task |
 | Dein Setup soll mit der Zeit besser werden | Änderungen passieren nebenbei | Kurze Retros machen aus Reibung Regeländerungen; kostet alle paar Tasks eine Retro |
@@ -130,12 +136,6 @@ Stand laut eigener Dokumentation der Projekte, November 2026; diese Projekte än
 | `docs/agent/PROCESS_IMPROVEMENTS.md` | Retro-Behandlung und Rückfluss in STEM |
 
 </details>
-
-## Prinzipien
-
-- Informationsarchitektur statt „kürzer antworten": kurze Einstiege, Vertiefung nach Bedarf, Volllogs außerhalb des Kontexts.
-- Eine verbindliche Quelle je Regel; Adapter verweisen nur.
-- Das Harness wächst durch Retros, nicht durch Vorrat (`R-DECISION`).
 
 ## Beitragen
 
