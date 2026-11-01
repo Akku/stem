@@ -3,6 +3,9 @@
 Newest first. Projects read the entries newer than their `STEM_VERSION` (see `stem-update` skill). Each entry: what changed and who benefits; renames and removals get a `Migration:` line (what to rename or delete) that `stem-update` carries out.
 
 ## Unreleased
+- **STEM version check in every retro:** the `retro` skill's new *STEM version* section checks for a newer STEM in light retros too and records source, time and result; unreachable counts as not checked, never as current. Benefits: projects notice updates without waiting for a full retro. Migration: copy `.claude/skills/retro/` (SKILL.md, full-stage.md) and update `R-RETRO`/`R-STEM-UPDATE`.
+- **Task dates in UTC for since-time filters:** `scripts/retro-metrics.sh` and `scripts/context-report.py` convert the since-time to UTC before comparing task dates, so tasks near midnight in non-UTC zones are no longer missed or double-counted. Benefits: correct retro metrics. Migration: copy both scripts.
+- **Retro independent read with one agent:** the full stage's independent read and structural review run in one read-only agent instead of two subagents. Benefits: less token cost, same questions. Migration: copy `.claude/skills/retro/full-stage.md`.
 - **Codex test status upgraded:** English/German READMEs and `docs/agent/CODEX.md` report Codex as tested: an automated probe run passed fresh setup, native skill listing, the alignment interview, stopping to ask and one task to Done. Not covered: project hooks, the Codex UI, Codex Cloud, long context. Copilot stays an untested adapter. Benefits: readers can choose Codex with known limits. Migration: none.
 
 ## 1.7.0

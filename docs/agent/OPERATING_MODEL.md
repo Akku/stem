@@ -548,7 +548,7 @@ Run a process retrospective when there is enough evidence to make it worthwhile:
 
 Inputs should remain bounded:
 
-- new findings in the central STEM repository from other projects (first input of every retro; procedure in the `retro` skill);
+- the current STEM version (every retro, light too) and new findings in the central STEM repository from other projects (first input of every retro; procedure in the `retro` skill);
 - notable task-local `Learning:` observations;
 - `PROCESS_IMPROVEMENTS.md`, if used;
 - a representative sample of completed tasks/batches;
@@ -641,7 +641,7 @@ Create detailed tasks only for the current milestone; later milestones remain de
 
 - Tell the user once about a newer version (one sentence) and offer the `stem-update` skill. Never update without the user's approval; never overwrite project-specific content (`Project specifics` in `AGENTS.md`, `PITFALLS.md`, `NEXT_RETRO.md`, skills the project changed).
 - Updates are normal backlog tasks: read the STEM `CHANGELOG.md` entries since the local version, pick what helps this project, apply, verify, commit.
-- If STEM is unreachable, continue silently; the retro checks again.
+- If STEM is unreachable, continue silently; the retro's *STEM version* section records it as not checked.
 <!-- RULE:R-STEM-UPDATE:END -->
 
 <!-- RULE:R-DESIGN:START -->

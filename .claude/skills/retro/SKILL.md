@@ -9,6 +9,9 @@ Rules: `R-RETRO`, `R-LEARNING` (`docs/agent/OPERATING_MODEL.md`) and `R-MEASUREM
 
 **Stage.** *Light* (default, e.g. after "RETRO DUE" or recurring friction): the sections up to *Close*. *Full*: also read `full-stage.md` (next to this file) and do its sections, when a milestone was completed, a STEM update was adopted, about 20 or more tasks have passed since the last retro, or the user asks. No retro notes yet means the first retro: also do "First retro". Say the stage in one line before starting.
 
+## STEM version
+Every retro (light too), unless `stem-update` already ran this session: do its *Versions and clone* step and note source, time and result in the retro notes. Offline or unreachable is "not checked", never "current". A newer version: show the user its `CHANGELOG.md` entries and let them choose update or keep (with a reason in the notes); never update unasked (`stem-update` does the update as its own task).
+
 ## Extra topics
 Run `python3 scripts/retro-topics.py` (second retro on the same day: `--retro YYYY-MM-DDb`). It records what it gives in `docs/agent/retro-topics-state.json` (commit it with the retro notes) and prints topics with reason and a guiding question: due fixed triggers and signals without cap, filled up to 2 with once or rotating topics. Treat them as topics of *Pick*, exempt from its pick limit; each one ends as a decision, a task, or a dropped item with a reason. Catalog and thresholds: `docs/agent/retro-topics.json` (project additions: `retro-topics.local.json`). Exit 2 or an error: say so, continue without.
 
