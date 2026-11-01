@@ -4,6 +4,8 @@ This file is the one-time setup procedure. Delete it as the last step (see step 
 
 Talk to the user in their language. Follow the `Communication` standard in `AGENTS.md` (explain what you do and why, define new terms at first use, summarize each step, give links for anything the user should test or decide). Ask before anything with side effects outside this folder (global installs, creating remote repositories, pushing); the tool-permission prompt counts as asking.
 
+**Questions: one per message.** Every step that asks the user something asks exactly one question per message, with options and a recommendation where they make sense, then waits for the answer before the next question. Never bundle several questions into one message, even when a step lists several topics.
+
 ## 0. Check that STEM arrived complete
 The ZIP route sometimes loses hidden folders (names starting with a dot are hidden on macOS Finder). Check that these exist: `.claude/skills/`, `.agents/skills` (a link to `../.claude/skills` so Codex finds the skills; the ZIP route and Windows clones without symlink support turn it into a one-line text file: delete that file and recreate the link with `ln -s ../.claude/skills .agents/skills` on macOS/Linux or `mklink /J .agents\skills .claude\skills` on Windows (a junction, no admin rights needed), then run `git update-index --skip-worktree .agents/skills` so git ignores the changed type; Claude Code and Copilot read `.claude/skills` and work without it), `.claude/settings.json`, `.github/`, `.gitignore`, `scripts/githooks/pre-commit`. If something is missing: tell the user in one sentence, then restore it yourself: download `<repo>/archive/refs/heads/main.zip` (`repo` from `STEM_VERSION`) into a temp folder outside the project, unzip it there, and copy only the missing files/folders (never overwrite existing ones). If the download is not possible, ask the user to copy the extracted folder as a whole (macOS: Cmd+Shift+. shows hidden files).
 
@@ -20,7 +22,7 @@ Ask in one short message how the agent should write to the user: "**1** Expert (
 Record the profile under `Project setup` in `docs/agent/NEXT_RETRO.md`. Later change: the user tells the agent, which rewrites the block (and the `outputStyle` entry). Step 3 keeps assuming a non-technical user for installs, whatever the profile.
 
 ## 1b. Project size and modules (ask first, before step 2)
-Ask in one short message: "Is the project **small** (a script, a small tool, a few days), **medium** (an app or service with several features, weeks) or **large** (many parts, several people or long-running)? If unsure: medium." Then show the checklist below with the size's preselection, each line with its effect in plain words, and let the user toggle any item. The core is always on and is not offered as a choice: tasks (Backlog.md), commit guard, handoff and session start, `scripts/run.sh`, `AGENTS.md`.
+Ask in one short message: "Is the project **small** (a script, a small tool, a few days), **medium** (an app or service with several features, weeks) or **large** (many parts, several people or long-running)? If unsure: medium." After the answer, in a separate message, show the checklist below with the size's preselection, each line with its effect in plain words, and let the user toggle any item. The core is always on and is not offered as a choice: tasks (Backlog.md), commit guard, handoff and session start, `scripts/run.sh`, `AGENTS.md`.
 
 | Module | What it gives you / what it costs | Small | Medium | Large |
 | --- | --- | --- | --- | --- |
@@ -36,8 +38,8 @@ Ask in one short message: "Is the project **small** (a script, a small tool, a f
 
 What to do with the answers: delete the files of modules that are off (agent file `ux-designer.md`, skill folders `testing-practices`, `market-analysis`, hook entry and `scripts/context-check.py`; glossary and architecture are only created when on) and drop their names from the `Skills` and `Agents` lines in `AGENTS.md` (an empty `Agents` line goes away), so they cost no context and nothing points at missing files. Record the chosen size and modules under `Project setup` in `docs/agent/NEXT_RETRO.md` (retro checks which were used).
 
-## 2. Ask the user (one message, all questions together)
-Scale to the size from step 1b: small = goal in 1-2 sentences, stack, confidential inputs, GitHub; skip horizons beyond the vertical slice, agents and model questions (use defaults); medium/large = all questions.
+## 2. Ask the user (one question per message, in this order)
+Ask the topics below one at a time and wait for each answer; propose a default where one is given. Scale to the size from step 1b: small = goal in 1-2 sentences, stack, confidential inputs, GitHub; skip horizons beyond the vertical slice, agents and model questions (use defaults); medium/large = all questions.
 - Project goal in 3–5 sentences (what, for whom, what "done" looks like).
 - Agree the four horizons in `R-ROADMAP`: **vertical slice**, **MVP**, **1.0**, then **Moonshot**. Ask for the scope and observable completion boundary of each; propose answers from the goal if needed. Keep distant horizons brief and revisable. Small projects defer horizons beyond the slice.
 - Stack/language preferences, or "decide for me".
