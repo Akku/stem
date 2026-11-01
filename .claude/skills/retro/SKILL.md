@@ -44,6 +44,6 @@ After the notes are written.
 
 **First retro** (no `docs/agent/retros/` notes yet): also work through the `First retro` section of `NEXT_RETRO.md`, then delete that section. The communication question (*User input*, b) is mandatory here; keep changes to the `Communication` block small.
 
-Output to the user: decisions needed, changes made, open criteria. Max 15 lines; list every open criterion even beyond that.
+Output to the user: decisions needed, changes made, and every open criterion, in as few lines as the content allows.
 
 If a step did not fit or you deviated from it: `Learning: skill retro: <what> -> <change>` in the task notes.
