@@ -17,7 +17,7 @@ Local Claude Code and Codex startup hooks provide this output where supported an
 **Skills** (`.claude/skills/<name>/SKILL.md`; other tools read the file): `retro`, `alignment`, `handoff`, `promote-learning`, `testing-practices`, `market-analysis`, `stem-update`.
 
 ## Core rules (full text by ID: `docs/agent/OPERATING_MODEL.md`)
-1. **Task first** (`R-LIFECYCLE`): every change is a Backlog.md task: task → plan → implement → verify → evidence → done. Use the `backlog` CLI only; run `backlog instructions overview` once per session and `backlog <cmd> --help` for unknown commands.
+1. **Task first** (`R-LIFECYCLE`): every change is a Backlog.md task (label `size-S|M|L` at creation, `R-LIFECYCLE` 1.2): task → plan → implement → verify → evidence → done. Use the `backlog` CLI only; run `backlog instructions overview` once per session and `backlog <cmd> --help` for unknown commands.
 1b. **Follow-ups** (`R-LIFECYCLE` 1.7): when finishing a task, propose useful out-of-scope follow-up tasks (max. 3, with reason and rough size) to the user; create them only after agreement. Do not silently expand the current task.
 1c. **Roadmap and batches** (`R-ROADMAP`, `R-BATCHING`): work belongs to a milestone; when one runs out of ready tasks, propose the next 3-5 (user agrees before creation). When choosing the next work, offer related ready tasks as a batch and wait for approval; an approved batch continues without further questions.
 1d. **Design** (`R-DESIGN`, skill `alignment`): unclear or new feature: align first, one question at a time, the user may stop. Interface or module-boundary changes are the user's decision.
