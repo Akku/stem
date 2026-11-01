@@ -4,7 +4,7 @@
 
 **An Evolving Agentic Coding Harness**
 
-**Version 1.7.0** · ![License](https://img.shields.io/badge/license-MIT-green) ![Claude Code](https://img.shields.io/badge/Claude%20Code-tested-green) ![Codex](https://img.shields.io/badge/Codex-partially%20tested-yellow) ![Copilot](https://img.shields.io/badge/Copilot-adapter%2C%20untested-lightgrey)
+**Version 1.7.0** · ![License](https://img.shields.io/badge/license-MIT-green) ![Claude Code](https://img.shields.io/badge/Claude%20Code-tested-green) ![Codex](https://img.shields.io/badge/Codex-tested-green) ![Copilot](https://img.shields.io/badge/Copilot-adapter%2C%20untested-lightgrey)
 
 [🇩🇪 Deutsch](README.de.md) · [Get started](#get-started) · [Why STEM](#why-stem) · [How it works](#how-it-works) · [Contents](#contents)
 
@@ -32,7 +32,7 @@ Answer the agent's questions and approve installation steps as needed. It sets u
 <details>
 <summary>Agent and platform test status</summary>
 
-Claude Code is tested in real use. Codex is tested in an existing project with documented workarounds; fresh-project setup and native skill discovery are not yet proven. GitHub Copilot has an adapter and remains untested. See [Codex mechanics](docs/agent/CODEX.md) for prerequisites, session start, sandbox access and the context-warning fallback.
+Claude Code is tested in real use. Codex is tested by an automated probe run (fresh setup, native skill listing, alignment interview, one task to Done) and in an existing project with documented workarounds; project hooks, the Codex UI, Codex Cloud and long-context behaviour are not covered. GitHub Copilot has an adapter and remains untested. See [Codex mechanics](docs/agent/CODEX.md) for prerequisites, session start, sandbox access and the context-warning fallback.
 
 macOS is tested; Windows is prepared but not yet tested.
 
@@ -87,7 +87,7 @@ At the start of each session the agent checks (once per day) whether a newer STE
 | `AGENTS.md` | Shared core rules (Codex and compatible tools) |
 | `CLAUDE.md`, `.github/copilot-instructions.md` | Thin adapters pointing to `AGENTS.md` |
 | `.claude/skills/` | Skills: `retro`, `alignment`, `handoff`, `promote-learning`, `stem-update`; optional modules (chosen in setup): `testing-practices`, `market-analysis` |
-| `.agents/skills` | Link to `.claude/skills/` for shared Codex skill sources; native discovery is not yet proven |
+| `.agents/skills` | Link to `.claude/skills/` for shared Codex skill sources; Codex lists these skills natively (automated probe) |
 | `.claude/agents/` | Agents: `ux-designer` (optional module, for projects with a UI) |
 | `scripts/githooks/pre-commit` | Guard against committing confidential source documents and common secrets (activated during setup) |
 | `STEM_VERSION`, `CHANGELOG.md` | STEM version this project is based on; what changed per version |

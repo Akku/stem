@@ -19,7 +19,7 @@ backlog instructions overview
 
 ## Skills and context
 
-`.agents/skills` links to the same sources in `.claude/skills`. A readable `SKILL.md` proves file access only. To claim native skill discovery, observe the project's skill in Codex's native skill listing and, where supported, invoke it by name. Fresh-project setup and native discovery are not established by the existing-project workflow probe. A later shell `cd` does not prove the task's startup skill catalog was refreshed.
+`.agents/skills` links to the same sources in `.claude/skills`. A readable `SKILL.md` proves file access only. To claim native skill discovery, observe the project's skill in Codex's native skill listing and, where supported, invoke it by name. An automated probe run (development harness TASK-110, codex-cli 0.166.0) observed fresh-project setup and the project skills in Codex's native skill listing; it read `SKILL.md` files rather than invoking skills through the UI. A later shell `cd` does not prove the task's startup skill catalog was refreshed.
 
 No Claude `UserPromptSubmit` context-warning hook is assumed to run in Codex. Follow `R-BATCHING` and its proxy fallback when no native context-size signal is available. Do not invent a token count or treat the session-start handoff-size warning as a context-window warning. Long-context behavior remains a separate test.
 
@@ -37,7 +37,7 @@ Replace the example path with the actual readable checkout. `run.sh` defaults Py
 
 ## Evidence boundary
 
-The Codex probe exercised a task lifecycle in an existing project with documented workarounds. It does not prove fresh-project setup, native project-skill invocation, long-context recovery or every stop condition. Cloud tool activation and saved-environment persistence also need a fresh-task check. Copilot remains an untested adapter. Do not infer these capabilities from a green product checker.
+Two Codex probes exist: a task lifecycle in an existing project with documented workarounds, and an automated non-interactive run (fresh setup, native skill listing, alignment, stops and asks, one task to Done) without project hooks and with fixed replies. One passing run is one observation. Neither proves UI skill invocation, hook delivery, long-context recovery or every stop condition. Cloud tool activation and saved-environment persistence also need a fresh-task check. Copilot remains an untested adapter. Do not infer these capabilities from a green product checker.
 
 ## Project-local bootstrap adapters
 

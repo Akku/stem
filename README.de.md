@@ -4,7 +4,7 @@
 
 **An Evolving Agentic Coding Harness**
 
-**Version 1.7.0** · ![License](https://img.shields.io/badge/license-MIT-green) ![Claude Code](https://img.shields.io/badge/Claude%20Code-getestet-green) ![Codex](https://img.shields.io/badge/Codex-teilweise%20getestet-yellow) ![Copilot](https://img.shields.io/badge/Copilot-Adapter%2C%20ungetestet-lightgrey)
+**Version 1.7.0** · ![License](https://img.shields.io/badge/license-MIT-green) ![Claude Code](https://img.shields.io/badge/Claude%20Code-getestet-green) ![Codex](https://img.shields.io/badge/Codex-getestet-green) ![Copilot](https://img.shields.io/badge/Copilot-Adapter%2C%20ungetestet-lightgrey)
 
 [🇬🇧 English](README.md) · [Loslegen](#loslegen) · [Warum STEM](#warum-stem) · [Ablauf](#ablauf) · [Inhalt](#inhalt)
 
@@ -32,7 +32,7 @@ Beantworte die Rückfragen des Agenten und genehmige nötige Installationsschrit
 <details>
 <summary>Teststand der Agenten und Plattformen</summary>
 
-Claude Code ist im praktischen Einsatz getestet. Codex ist in einem bestehenden Projekt mit dokumentierten Umgehungslösungen getestet; die Einrichtung eines neuen Projekts und die native Skill-Erkennung sind noch nicht nachgewiesen. Für GitHub Copilot gibt es einen Adapter; er ist noch ungetestet. Die [Codex-Hinweise](docs/agent/CODEX.md) erklären Voraussetzungen, Sitzungsstart, Sandbox-Zugriff und das Vorgehen ohne Kontextwarnung (Agentenhinweise auf Englisch).
+Claude Code ist im praktischen Einsatz getestet. Codex ist durch einen automatisierten Testlauf getestet (Einrichtung eines neuen Projekts, native Skill-Liste, Abstimmungsgespräch, eine Aufgabe bis Done) sowie in einem bestehenden Projekt mit dokumentierten Umgehungslösungen; Projekt-Hooks, die Codex-Oberfläche, Codex Cloud und das Verhalten bei langem Kontext sind nicht abgedeckt. Für GitHub Copilot gibt es einen Adapter; er ist noch ungetestet. Die [Codex-Hinweise](docs/agent/CODEX.md) erklären Voraussetzungen, Sitzungsstart, Sandbox-Zugriff und das Vorgehen ohne Kontextwarnung (Agentenhinweise auf Englisch).
 
 macOS ist getestet; Windows ist vorbereitet, aber noch nicht getestet.
 
@@ -84,7 +84,7 @@ Zu Beginn jeder Sitzung prüft der Agent (einmal pro Tag), ob es eine neuere STE
 | --- | --- |
 | `STARTE_HIER.md` / `START_HERE.md` | Anleitung für Menschen (DE/EN) |
 | `.claude/skills/` | Skills: `retro`, `alignment`, `handoff`, `promote-learning`, `stem-update`; optionale Module (Auswahl beim Setup): `testing-practices`, `market-analysis` |
-| `.agents/skills` | Verweis auf `.claude/skills/` für gemeinsame Codex-Skill-Quellen; native Erkennung noch nicht nachgewiesen |
+| `.agents/skills` | Verweis auf `.claude/skills/` für gemeinsame Codex-Skill-Quellen; Codex listet diese Skills nativ (automatisierter Testlauf) |
 | `.claude/agents/` | Agenten: `ux-designer` (optionales Modul, für Projekte mit Oberfläche) |
 | `SETUP.md` | Einmalige Setup-Anleitung für den Agenten (wird nach dem Setup gelöscht) |
 | `AGENTS.md` | Gemeinsame Kernregeln (Codex & kompatible Tools) |
