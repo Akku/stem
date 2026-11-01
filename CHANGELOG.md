@@ -2,7 +2,7 @@
 
 Newest first. Projects read the entries newer than their `STEM_VERSION` (see `stem-update` skill). Each entry: what changed and who benefits; renames and removals get a `Migration:` line (what to rename or delete) that `stem-update` carries out.
 
-## Unreleased
+## 1.8.0
 - **Retro output without a line cap:** the `retro` skill no longer says "Max 15 lines" next to "list every open criterion even beyond that"; it asks for decisions, changes and every open criterion in as few lines as the content allows. Benefits: no contradictory instruction. Migration: copy `.claude/skills/retro/SKILL.md`.
 - **Optional technical analysis at setup:** `SETUP.md` step 7 offers, after vision and milestones and before the M1 tasks, an agent-led technical analysis (recommended for medium/large, skip recommended for small). The agent asks only what it cannot decide, one question per message, records technical decisions as decision records and proposes the resulting tasks with size label and milestone before creating them. Benefits: technical risks surface before the first tasks. Migration: none (setup runs once).
 - **Setup asks one question per message:** `SETUP.md` states once that every setup question comes alone, with options and a recommendation, and waits for the answer; step 2 no longer bundles all questions, and the step 1b checklist follows the size answer in its own message. Benefits: no wall of questions at setup. Migration: none (setup runs once).
