@@ -355,7 +355,7 @@ Requirements:
 - retain full output outside the active context, preferably in temporary/ignored storage or the CI system rather than committed logs;
 - on failure, load only the relevant error section first and expand further only as needed;
 - avoid re-reading the same large output after it has already been summarized and persisted;
-- when a tool stored a large output in a file, load only the needed part (`grep`, `sed -n 'a,bp'`), never the whole file; read source files by range instead of `cat` of the whole file (observed: such results stay in context for the rest of the session and are re-read every turn);
+- when a tool stored a large output in a file, load only the needed part (`grep`, `sed -n 'a,bp'`), never the whole file; read source files by range instead of `cat` of the whole file; when exploring data (database rows, extracted text, XML/JSON, long CLI guides), limit it at the source (`LIMIT`, column list, `head`) or redirect it to a scratch file and read that by range (observed: such results stay in context for the rest of the session and are re-read every turn);
 - apply the same principle to GitHub/CI CLI output and other verbose automation.
 
 Token efficiency is therefore an information-architecture problem, not merely an instruction to "answer briefly".
