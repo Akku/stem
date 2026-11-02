@@ -474,6 +474,8 @@ Examples:
 
 Prefer realistic fixtures and integration boundaries where the failure risk justifies them. Use deterministic time, controlled responses, cleanup/isolation, characterization tests, or mutation-style checks when those techniques materially strengthen the evidence.
 
+Never disable, skip or weaken a test or check to get a green result; fix the code, or change the test openly with the reason named in the task.
+
 Manual or environment-specific evidence should remain visible as an open criterion until performed.
 <!-- RULE:R-VERIFY:END -->
 
@@ -653,6 +655,7 @@ Generated code is cheap to produce and expensive to change; without deliberate d
 - **Align first** when requirements are unclear: `alignment` skill (short, stoppable), not a plan built on guesses.
 - **Feedback rate is the speed limit:** produce small increments and run the cheapest check after each (type check, linter, test, looking at the UI). Do not write large amounts of code before the first check. For UI work give the agent a way to see the result (browser tool or screenshots).
 - **Deep modules:** prefer few modules with a simple interface and much behavior behind it over many shallow ones; they are easier to test and to navigate (read the interface, not the internals).
+- **No speculative structure:** introduce an abstraction only for two real uses, and no dependency for about 20 lines of code.
 - **Owned interfaces:** a new or changed public interface or module boundary is a decision for the user (propose, then agree); the inside of a module can be delegated. Treat low-risk modules as gray boxes tested from outside; money, security and personal data get closer scrutiny and review (`R-REVIEW`).
 - **Module map (`docs/ARCHITECTURE.md`, create once the project has about three modules):** one page: module, purpose, public interface, gray box or scrutinized, how it is tested. Update it in the task that changes a boundary. Load it instead of reading code to orient.
 - **Glossary (optional, `docs/GLOSSARY.md`):** only if the user asked for it at setup or the domain has many terms or several languages (e.g. German UI, English code): term, definition, code name, UI text. Use these terms in tasks, code and UI text; add a term when it appears.

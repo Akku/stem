@@ -5,7 +5,7 @@ description: Short, interruptible interview that builds a shared understanding b
 
 # Design alignment ("grill", small and stoppable)
 
-Rules: `R-CONCEPT` (product/UI direction), `R-DESIGN`, `R-AUTONOMY` (do not invent product decisions). Idea adapted from public talks on AI-assisted development; hypothesis, effect to be checked in the retro.
+Rules: `R-CONCEPT` (product/UI direction), `R-DESIGN`, `R-AUTONOMY` (do not invent product decisions).
 
 1. **Scope the budget first, tell the user:** small change 2-4 questions; feature 5-12; new product 10-20 in rounds with a pause in between. Say "stop any time; for the rest I decide and write down my assumptions".
 2. **Explore before asking:** whatever the repository, vision doc, glossary (`docs/GLOSSARY.md` if it exists) or `docs/ARCHITECTURE.md` already answers, do not ask.

@@ -3,6 +3,7 @@
 Newest first. Projects read the entries newer than their `STEM_VERSION` (see `stem-update` skill). Each entry: what changed and who benefits; renames and removals get a `Migration:` line (what to rename or delete) that `stem-update` carries out.
 
 ## Unreleased
+- **Three guardrails and two skill cleanups:** `R-DESIGN` adds "no speculative structure" (abstraction only for two real uses, no dependency for about 20 lines); `R-VERIFY` adds "never disable, skip or weaken a test to get green"; `testing-practices` asks TDD tests to fail first for the right reason and generalizes the one-off contrast/NaN lesson to "unparsable input must fail"; the `alignment` skill drops an origin sentence. Source: SPARC rules analysis and the 2026-11-02 prompt audit. Benefits: fewer over-built changes and fewer silently weakened checks. Migration: copy `.claude/skills/alignment/SKILL.md` and `.claude/skills/testing-practices/SKILL.md`; update `R-DESIGN` and `R-VERIFY` in `docs/agent/OPERATING_MODEL.md`.
 - **Warning on whole-file reads of large files:** `scripts/large-read-warn.py` (PreToolUse hook on Read and Bash in `.claude/settings.json`) adds one line to the agent's context when a Read without offset/limit or a plain `cat FILE` targets a text file over 8 KB (`LARGE_READ_BYTES`). It warns, never blocks. Benefits: a whole script or skill read once is no longer carried unnoticed through 100+ turns. Migration: copy `scripts/large-read-warn.py` and add the `PreToolUse` entry from `.claude/settings.json` (keep project hooks).
 
 ## 1.9.0
