@@ -49,8 +49,8 @@ Also: designed to keep the agent's context small (rules load on demand, long log
 
 ## When STEM does not fit
 
-- One-off scripts and throwaway prototypes: the overhead outweighs the benefit; use the plain agent.
-- Teams with their own process, CI and review culture.
+For one-off scripts and teams with their own process, see [STEM or the plain agent?](#stem-or-the-plain-agent).
+
 - You want full automation without approvals.
 - Projects where Git or Backlog.md cannot be used.
 - You want an AI to run your project without you. We've seen that story; it doesn't end well for the human.
@@ -68,8 +68,6 @@ flowchart LR
 ```
 
 Reflect is the `retro` skill: learnings flow back into the harness (and, once proven, into STEM).
-
-At the start of each session the agent runs `scripts/session-start.sh` (short state summary).
 
 ## Principles
 
@@ -89,10 +87,10 @@ Coding agents such as Claude Code or Codex work well on their own. STEM adds a w
 | Your situation | Plain agent | With STEM |
 | --- | --- | --- |
 | One-off script or quick prototype | Usually enough | Setup and task steps cost more than they bring |
-| A project over many sessions | You re-explain the state or keep your own notes | Backlog, handoff note and session summary carry the state; a short handoff at the end of each session is read automatically in the next one |
-| You have no technical background | You install and configure the tools yourself | The agent installs and explains Git, Node.js and Backlog.md with you; costs an approval per installation step |
-| You want to see what the agent did and whether it is done | You read the chat and the changes | Every change is a task with acceptance criteria and recorded evidence; costs a check per task |
-| You want your setup to improve over time | Changes happen ad hoc | Short retros turn friction into rule changes; costs a retro every few tasks |
+| A project over many sessions | You re-explain the state or keep your own notes | Handoff note and state summary, read automatically in the next session |
+| You have no technical background | You install and configure the tools yourself | The agent installs and explains the tools; one approval per installation step |
+| You want to see what the agent did and whether it is done | You read the chat and the changes | A task with acceptance criteria and evidence; one check per task |
+| You want your setup to improve over time | Changes happen ad hoc | Retros turn friction into rule changes; a retro every few tasks |
 | A team with its own process, CI and review | The agent fits into your process | STEM's process would duplicate yours; not a fit |
 
 Tested agents and platforms: see *Agent and platform test status* under [Get started](#get-started).

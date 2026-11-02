@@ -49,8 +49,8 @@ Außerdem: darauf ausgelegt, den Kontext des Agenten klein zu halten (Regeln wer
 
 ## Wann STEM nicht passt
 
-- Einmal-Skripte und Wegwerf-Prototypen: Der Aufwand übersteigt den Nutzen; nimm den Agenten pur.
-- Teams mit eigenem Prozess, eigener CI und Review-Kultur.
+Für Einmal-Skripte und Teams mit eigenem Prozess siehe [STEM oder der Agent pur?](#stem-oder-der-agent-pur).
+
 - Du willst volle Automatisierung ohne Freigaben.
 - Projekte, in denen Git oder Backlog.md nicht nutzbar sind.
 - Du willst, dass eine KI dein Projekt ohne dich führt. Die Geschichte kennen wir; für den Menschen endet sie nicht gut.
@@ -69,8 +69,6 @@ flowchart LR
 
 Reflect ist der Skill `retro`: Learnings fließen ins Harness zurück (und, wenn bewährt, in STEM).
 
-Pro Sitzung führt der Agent `scripts/session-start.sh` aus (kurzer Zustandsüberblick).
-
 ## Prinzipien
 
 - Informationsarchitektur statt „kürzer antworten": kurze Einstiege, Vertiefung nach Bedarf, Volllogs außerhalb des Kontexts.
@@ -88,10 +86,10 @@ Coding-Agenten wie Claude Code oder Codex funktionieren auch allein gut. STEM le
 | Deine Situation | Agent pur | Mit STEM |
 | --- | --- | --- |
 | Einmal-Skript oder schneller Prototyp | Reicht meist | Setup und Task-Schritte kosten mehr, als sie bringen |
-| Ein Projekt über viele Sitzungen | Du erklärst den Stand neu oder führst eigene Notizen | Backlog, Übergabenotiz und Sitzungsüberblick tragen den Stand; eine kurze Übergabe am Ende jeder Sitzung wird in der nächsten automatisch gelesen |
-| Du hast keinen technischen Hintergrund | Du installierst und konfigurierst die Werkzeuge selbst | Der Agent installiert und erklärt Git, Node.js und Backlog.md mit dir; kostet eine Freigabe pro Installationsschritt |
-| Du willst sehen, was der Agent getan hat und ob es fertig ist | Du liest den Chat und die Änderungen | Jede Änderung ist ein Task mit Akzeptanzkriterien und festgehaltenen Nachweisen; kostet eine Prüfung pro Task |
-| Dein Setup soll mit der Zeit besser werden | Änderungen passieren nebenbei | Kurze Retros machen aus Reibung Regeländerungen; kostet alle paar Tasks eine Retro |
+| Ein Projekt über viele Sitzungen | Du erklärst den Stand neu oder führst eigene Notizen | Übergabenotiz und Zustandsüberblick, in der nächsten Sitzung automatisch gelesen |
+| Du hast keinen technischen Hintergrund | Du installierst und konfigurierst die Werkzeuge selbst | Der Agent installiert und erklärt die Werkzeuge; eine Freigabe pro Installationsschritt |
+| Du willst sehen, was der Agent getan hat und ob es fertig ist | Du liest den Chat und die Änderungen | Ein Task mit Akzeptanzkriterien und Nachweisen; eine Prüfung pro Task |
+| Dein Setup soll mit der Zeit besser werden | Änderungen passieren nebenbei | Retros machen aus Reibung Regeländerungen; alle paar Tasks eine Retro |
 | Ein Team mit eigenem Prozess, eigener CI und Review | Der Agent fügt sich in euren Prozess | Der STEM-Prozess würde euren doppeln; passt nicht |
 
 Getestete Agenten und Plattformen: siehe *Teststand der Agenten und Plattformen* unter [Loslegen](#loslegen).
