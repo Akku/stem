@@ -356,6 +356,7 @@ Requirements:
 - on failure, load only the relevant error section first and expand further only as needed;
 - avoid re-reading the same large output after it has already been summarized and persisted;
 - when a tool stored a large output in a file, load only the needed part (`grep`, `sed -n 'a,bp'`), never the whole file; read source files by range instead of `cat` of the whole file (observed: such results stay in context for the rest of the session and are re-read every turn);
+- when exploring data (database rows, extracted text, XML/JSON, long CLI guides), redirect the listing to a scratch file first and read it with `head`/`grep`/`sed -n`, or limit it in the query (`LIMIT`, column list); a one-shot dump of 15-25k characters stays in context and is re-read every turn (hypothesis, evidence G1: in a data-heavy sample project such dumps were the largest carried results, about 12 % of cache-read, each carried for 100+ turns);
 - apply the same principle to GitHub/CI CLI output and other verbose automation.
 
 Token efficiency is therefore an information-architecture problem, not merely an instruction to "answer briefly".
