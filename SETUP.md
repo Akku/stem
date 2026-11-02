@@ -21,6 +21,14 @@ Ask in one short message how the agent should write to the user: "**1** Expert (
 
 Record the profile under `Project setup` in `docs/agent/NEXT_RETRO.md`. Later change: the user tells the agent, which rewrites the block (and the `outputStyle` entry). Step 3 keeps assuming a non-technical user for installs, whatever the profile.
 
+## 1a-2. Backlog language (ask after 1a, before 1b)
+Ask in one short message: "Do you want to read the backlog yourself (in a web page on your computer)? If yes, I write task titles, descriptions and acceptance criteria in your language instead of English; my working notes and the instruction files stay English. **I recommend yes** if you want to follow the progress." If unsure or unanswered: no. Then replace the `**Language:**` line in `AGENTS.md`:
+
+1. No: leave the line as it is.
+2. Yes: `**Language:** talk to the user in the user's language; write task and doc titles, descriptions and acceptance criteria in the user's language too (the user reads the backlog). Keep instruction files, rule text, implementation notes and evidence lines in English.`
+
+Record the answer under `Project setup` in `docs/agent/NEXT_RETRO.md`. If yes, remember step 8 item 5 (web view and optional autostart). Later change: the user tells the agent, which rewrites the line.
+
 ## 1b. Project size and modules (ask first, before step 2)
 Ask in one short message: "Is the project **small** (a script, a small tool, a few days), **medium** (an app or service with several features, weeks) or **large** (many parts, several people or long-running)? If unsure: medium." After the answer, in a separate message, show the checklist below with the size's preselection, each line with its effect in plain words, and let the user toggle any item. The core is always on and is not offered as a choice: tasks (Backlog.md), commit guard, handoff and session start, `scripts/run.sh`, `AGENTS.md`.
 
@@ -105,6 +113,10 @@ Finish all project files first, then commit once, so the setup commit is the com
 2. Set `Setup status:` in `AGENTS.md` to `DONE` and delete the line `If TODO: follow ...` and the HTML comment after it; delete `SETUP.md` (its description would otherwise cost context in every session).
 3. Commit "Set up agentic harness"; `git status` must be clean afterwards. Optionally push if the user agreed to a remote.
 4. Tell the user what exists, the milestones, which commands to use and which task comes first (~12 lines with a one-line explanation per item). Mention that the first retro (after the first milestone) revisits the way of working, including how much the agent explains and whether links and explanations were helpful.
+5. Only if the user wants to read the backlog (step 1a-2): pick a free port (default 6420), add the start command `backlog browser -p <port>` (opens `http://127.0.0.1:<port>`, this computer only; stop with Ctrl+C) to the project README before the commit, then open the web view with the user and show where tasks are. Then offer autostart (ask, change nothing before the yes, say how to undo it, record the result in the README):
+   - macOS: a launchd user agent `~/Library/LaunchAgents/<project>.backlog.plist` (outside the project folder) that runs `backlog browser --no-open --non-interactive -p <port>` in the project folder at login. Undo: `launchctl bootout gui/$(id -u) <plist>`, delete the file.
+   - Windows: a `SessionStart` hook in the project `.claude/settings.json` that starts the same command in the background unless the port already answers (Claude Code only; untested). Undo: delete the hook entry.
+   - Other systems or "no": README start command only.
 
 ## Later
 - First retro: run `R-RETRO`; it works through the `First retro` section of `docs/agent/NEXT_RETRO.md`.
