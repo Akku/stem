@@ -2,6 +2,9 @@
 
 Newest first. Projects read the entries newer than their `STEM_VERSION` (see `stem-update` skill). Each entry: what changed and who benefits; renames and removals get a `Migration:` line (what to rename or delete) that `stem-update` carries out.
 
+## Unreleased
+- **Warning on whole-file reads of large files:** `scripts/large-read-warn.py` (PreToolUse hook on Read and Bash in `.claude/settings.json`) adds one line to the agent's context when a Read without offset/limit or a plain `cat FILE` targets a text file over 8 KB (`LARGE_READ_BYTES`). It warns, never blocks. Benefits: a whole script or skill read once is no longer carried unnoticed through 100+ turns. Migration: copy `scripts/large-read-warn.py` and add the `PreToolUse` entry from `.claude/settings.json` (keep project hooks).
+
 ## 1.9.0
 - **README: title, audience and comparison:** the tagline is now "An Agile Agentic Coding Harness". New sections "Who it is for" (solo developers, company subscription, own subscription for another company) with "Why not Claude only?", and "STEM or the plain agent?" (situations with cost, other approaches by category); duplicates removed, Principles moved after How it works, version note in "Staying up to date". Helps newcomers decide whether STEM fits.
 - **Copilot no longer named:** README badge, test status, contents table, SETUP.md and agent docs no longer mention Copilot, which was never tested; `.github/copilot-instructions.md` stays in place. Fewer untested claims.

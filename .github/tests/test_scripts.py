@@ -564,5 +564,29 @@ class RetiredNames(Sandbox):
         self.assertNotIn("b.md", r.stdout)
 
 
+class LargeReadWarn(Sandbox):
+    """scripts/large-read-warn.py: warns on whole-file Read or plain cat above the limit, silent otherwise, never fails."""
+    def hook(self, data, env=None):
+        return run([sys.executable, str(SCRIPTS / "large-read-warn.py")], self.tmp, env, stdin=json.dumps(data))
+
+    def test_warns_only_for_whole_reads_of_large_files(self):
+        big, small = self.tmp / "big.py", self.tmp / "small.py"
+        big.write_text("x" * 9000); small.write_text("x" * 100)
+        for data in ({"tool_name": "Read", "tool_input": {"file_path": str(big)}}, {"tool_name": "Bash", "tool_input": {"command": f"cat {big}"}}):
+            r = self.hook(data)
+            self.assertEqual(r.returncode, 0)
+            self.assertIn("Large read: big.py is 8 KB", json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"])
+        for data in ({"tool_name": "Read", "tool_input": {"file_path": str(big), "limit": 50}},
+                     {"tool_name": "Read", "tool_input": {"file_path": str(small)}},
+                     {"tool_name": "Bash", "tool_input": {"command": f"cat {big} | head -5"}},
+                     {"tool_name": "Bash", "tool_input": {"command": f"grep x {big}"}}):
+            self.assertEqual(self.hook(data).stdout, "")
+
+    def test_silent_on_bad_input(self):
+        for stdin in ("not json", "{}", json.dumps({"tool_name": "Read", "tool_input": {"file_path": "/missing/file"}})):
+            r = run([sys.executable, str(SCRIPTS / "large-read-warn.py")], self.tmp, stdin=stdin)
+            self.assertEqual((r.returncode, r.stdout), (0, ""))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)

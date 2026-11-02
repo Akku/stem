@@ -37,6 +37,17 @@
           }
         ]
       }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Read|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "for p in python3 python \"py -3\"; do $p -c \"import sys; sys.exit(sys.version_info[0] < 3)\" 2>/dev/null && { $p \"$CLAUDE_PROJECT_DIR/scripts/large-read-warn.py\" 2>/dev/null; break; }; done; true"
+          }
+        ]
+      }
     ]
   }
 }
