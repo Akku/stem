@@ -31,4 +31,7 @@ Sections agree with each other, approvals are still valid, evidence names the SH
 3. Pending user decision: write the question and every option (a/b/c) verbatim into the task notes, and point to the task from `Blockers / decisions`. "User decides X" alone is not enough; the next session must not search the transcript for the wording.
 4. Notable detours or high context cost: add `Learning:` to the task (only if it happened).
 
+## 4. Suggest the next prompt
+End your final message with one ready-to-paste prompt for the next session (the concrete next task or action). Do not mention the handoff or ask to read it: session start loads it automatically.
+
 If a step did not fit or you deviated from it: `Learning: skill handoff: <what> -> <change>` in the task notes (`R-LEARNING`).
