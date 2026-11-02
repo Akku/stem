@@ -2,7 +2,7 @@
 
 <img src="docs/assets/stem-logo.svg" alt="STEM" width="320">
 
-**An Evolving Agentic Coding Harness**
+**An Agile Agentic Coding Harness**
 
 **Version 1.8.0** · ![License](https://img.shields.io/badge/license-MIT-green) ![Claude Code](https://img.shields.io/badge/Claude%20Code-getestet-green) ![Codex](https://img.shields.io/badge/Codex-getestet-green)
 
@@ -10,7 +10,7 @@
 
 </div>
 
-STEM gibt deinem Coding-Agenten einen gemeinsamen Ablauf: ein Projekt einrichten, Arbeit mit [Backlog.md](https://github.com/MrLesk/Backlog.md) verfolgen und Entscheidungen zwischen Sitzungen bewahren.
+STEM gibt deinem Coding-Agenten einen gemeinsamen Ablauf: ein Projekt einrichten, Arbeit mit [Backlog.md](https://github.com/MrLesk/Backlog.md) verfolgen und Entscheidungen zwischen Sitzungen bewahren. STEM setzt auf dem Coding-Agenten auf, den du schon nutzt (Claude Code oder Codex), und folgt dessen Änderungen mit versionierten Releases.
 
 ## Loslegen
 
@@ -47,6 +47,14 @@ macOS ist getestet; Windows ist vorbereitet, aber noch nicht getestet.
 
 Außerdem: darauf ausgelegt, den Kontext des Agenten klein zu halten (Regeln werden bei Bedarf geladen, lange Logs bleiben aus dem Chat), und ein Pre-Commit-Schutz verhindert, dass `.env`-Dateien und gängige API-Token-Formate committet werden.
 
+## Für wen
+
+- **Einzelentwickler mit eigenen Ideen:** Du bringst die Idee mit; der Agent führt mit dir Vision, Meilensteine und Backlog, damit die Idee viele Sitzungen übersteht.
+- **Teams mit Firmen-Abo für einen Coding-Agenten:** STEM braucht kein zusätzliches Konto, keinen Server und kein weiteres Abo. Es läuft im Agenten, den deine Firma schon bezahlt, und seine Regeln und Aufzeichnungen sind einfache Dateien in deinem Repository.
+- **Eigenes Abo, Arbeit für eine andere Firma:** STEM steht unter MIT-Lizenz. Ob dein Agenten-Abo für diese Arbeit genutzt werden darf, regeln die Bedingungen deines Anbieters und der Firma; prüfe sie vor dem Start.
+
+**Warum nicht nur Claude?** Jeder unterstützte Agent liest dieselben Regeln (`AGENTS.md`), dasselbe Backlog und dieselbe Übergabenotiz; der Projektstand hängt also nicht an einem Agenten. Codex ist bei einer neuen Einrichtung und in einem bestehenden STEM-Projekt getestet.
+
 ## Wann STEM nicht passt
 
 Für Einmal-Skripte und Teams mit eigenem Prozess siehe [STEM oder der Agent pur?](#stem-oder-der-agent-pur).
@@ -78,6 +86,8 @@ Reflect ist der Skill `retro`: Learnings fließen ins Harness zurück (und, wenn
 ## Aktuell bleiben
 
 Zu Beginn jeder Sitzung prüft der Agent (einmal pro Tag), ob es eine neuere STEM-Version gibt, und sagt dir Bescheid. Mit deiner Zustimmung liest der Skill `stem-update` das [Changelog](CHANGELOG.md), wählt aus, was deinem Projekt nützt, und übernimmt es, ohne projektspezifische Inhalte zu überschreiben. Auch der Skill `retro` prüft STEM.
+
+STEM-Releases tragen Versionsnummern nach dem Muster `MAJOR.MINOR.PATCH`; Umbenennungen und Entfernungen stehen mit Migrationshinweis im Changelog. Dein Projekt hat eine eigene Version, beginnend bei 0.1.0, unabhängig von der STEM-Version in `STEM_VERSION`: Nach einem abgeschlossenen Arbeitspaket schlägt der Agent einen Patch-, Minor- oder Major-Sprung vor und setzt ihn nur mit deiner Zustimmung um.
 
 ## STEM oder der Agent pur?
 
