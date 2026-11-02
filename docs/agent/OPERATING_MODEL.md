@@ -157,8 +157,7 @@ A practical shape is:
 ```text
 AGENTS.md                         # shared core rules + Codex / AGENTS-compatible entry
 CLAUDE.md                         # Claude Code adapter (imports AGENTS.md)
-.github/copilot-instructions.md  # GitHub Copilot adapter, when used
-.agents/skills                    # symlink to .claude/skills (Codex skill path; Copilot reads .claude/skills itself)
+.agents/skills                    # symlink to .claude/skills (Codex skill path)
 docs/agent/OPERATING_MODEL.md    # authoritative shared cross-provider rules
 ```
 
@@ -196,7 +195,7 @@ The shared operating model should contain cross-provider development rules, not 
 
 This split is primarily a consistency and maintenance optimization. It becomes a token optimization only if agents retrieve the relevant rule sections instead of reading the complete operating model every time.
 
-Role assignment is independent of provider. Claude Code, Codex, GitHub Copilot coding agent, or another capable coding agent may act as Implementer, Reviewer, Planner, or bounded subagent when the task economics justify that role.
+Role assignment is independent of provider. Claude Code, Codex, or another capable coding agent may act as Implementer, Reviewer, Planner, or bounded subagent when the task economics justify that role.
 <!-- RULE:R-INSTRUCTIONS:END -->
 
 <!-- RULE:R-STATE:START -->
@@ -365,7 +364,7 @@ Token efficiency is therefore an information-architecture problem, not merely an
 <!-- RULE:R-AGENT-TOPOLOGY:START -->
 ## 9. Default agent topology: one agent first; provider is interchangeable
 
-Do not treat Planner, Implementer, Reviewer, Orchestrator, and Harness Maintainer as permanently separate agents, and do not bind those roles permanently to Claude, Codex, Copilot, or any other provider.
+Do not treat Planner, Implementer, Reviewer, Orchestrator, and Harness Maintainer as permanently separate agents, and do not bind those roles permanently to Claude, Codex, or any other provider.
 
 They are capabilities or modes that may be separated only when useful.
 

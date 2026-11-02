@@ -37,7 +37,7 @@ Replace the example path with the actual readable checkout. `run.sh` defaults Py
 
 ## Evidence boundary
 
-Two Codex probes exist: a task lifecycle in an existing project with documented workarounds, and an automated non-interactive run (fresh setup, native skill listing, alignment, stops and asks, one task to Done) without project hooks and with fixed replies. One passing run is one observation. Neither proves UI skill invocation, hook delivery, long-context recovery or every stop condition. Cloud tool activation and saved-environment persistence also need a fresh-task check. Copilot remains an untested adapter. Do not infer these capabilities from a green product checker.
+Two Codex probes exist: a task lifecycle in an existing project with documented workarounds, and an automated non-interactive run (fresh setup, native skill listing, alignment, stops and asks, one task to Done) without project hooks and with fixed replies. One passing run is one observation. Neither proves UI skill invocation, hook delivery, long-context recovery or every stop condition. Cloud tool activation and saved-environment persistence also need a fresh-task check. Do not infer these capabilities from a green product checker.
 
 ## Project-local bootstrap adapters
 

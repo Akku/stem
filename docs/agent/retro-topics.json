@@ -34,7 +34,7 @@
    "signal": {"type": "files_growth", "paths": ["AGENTS.md", ".claude/skills/retro/SKILL.md", "docs/agent/OPERATING_MODEL.md"], "min_pct": 20},
    "why": "Instruction files grow by accretion; 20 % growth since the last look is large enough to change loading cost and small enough to catch early."},
   {"id": "harness-features", "kind": "repeatable", "title": "New technical options of the used LLM harnesses for more determinism",
-   "ask": "Which new hooks, settings, permissions or skill features of Claude Code, Codex or Copilot could replace a written rule with a machine check? Check release notes, adopt only with a concrete use.",
+   "ask": "Which new hooks, settings, permissions or skill features of Claude Code or Codex could replace a written rule with a machine check? Check release notes, adopt only with a concrete use.",
    "signal": [{"type": "cmd_version", "cmds": ["claude", "codex"]}, {"type": "days_since_topic", "min": 30}],
    "why": "A changed CLI version is the cheapest local sign of new features; 30 days is the fallback when the CLI is missing or offline."},
   {"id": "determinism", "kind": "repeatable", "title": "Which instructions could be made deterministic?",

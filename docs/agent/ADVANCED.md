@@ -74,7 +74,7 @@ Rules that cost context in every session or change every session's behavior (con
 <!-- RULE:R-ROUTING:START -->
 ## 18. Provider/model routing and minimal local-worker preparation
 
-Do not build routing infrastructure before there is enough volume to justify it. Roles are provider-neutral: Claude Code, Codex, GitHub Copilot coding agent, and future agents can be swapped according to capability, cost, availability, and task risk.
+Do not build routing infrastructure before there is enough volume to justify it. Roles are provider-neutral: Claude Code, Codex, and future agents can be swapped according to capability, cost, availability, and task risk.
 
 **Default for newcomers and small/medium projects:** a mid-tier model at medium effort (observed in the maintainer's small to medium projects: sufficient and clearly cheaper than the largest model; anecdotal, to be checked in the retro). Escalate model or effort only for a concrete reason and de-escalate afterwards; lower effort is fine for mechanical tasks. Name the reason in the task notes when escalating. Cost grows with model size, effort and session length (see `R-BATCHING`).
 

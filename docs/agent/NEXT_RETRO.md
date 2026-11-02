@@ -12,7 +12,7 @@ Add here what a later retro must look at: observations that matter beyond one ta
 
 Process every item in this section at the first retro, then delete the section.
 
-- [STEM / first retro] Adapter structure: three adapters (Codex, Claude, Copilot) are kept so STEM works with all of them. In the first retro check whether Codex/Copilot were really used and whether the neutrality caused overhead → simplify or keep.
+- [STEM / first retro] Adapter structure: adapters for Codex and Claude are kept so STEM works with both. In the first retro check whether Codex was really used and whether the neutrality caused overhead → simplify or keep.
 - [STEM / first retro] Rule loading: were rules loaded by ID as intended, or did agents read whole files? Was `scripts/run.sh` actually used, and did it hide anything needed for diagnosis → adjust the wrapper or the instructions.
 - [STEM / first retro] UX designer agent: STEM now ships `.claude/agents/ux-designer.md` for projects with a UI. Was it used? Check especially the concept phase at the start (mockups and UX review before the first UI tasks) and later reviews of new screens → keep, adapt, or remove if it was never used.
 - [STEM / first retro] Rule inventory: which rules in `OPERATING_MODEL.md` were never loaded? → move to `ADVANCED.md` or delete.
