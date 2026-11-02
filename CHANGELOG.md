@@ -2,7 +2,7 @@
 
 Newest first. Projects read the entries newer than their `STEM_VERSION` (see `stem-update` skill). Each entry: what changed and who benefits; renames and removals get a `Migration:` line (what to rename or delete) that `stem-update` carries out.
 
-## Unreleased
+## 1.9.0
 - **README: title, audience and comparison:** the tagline is now "An Agile Agentic Coding Harness". New sections "Who it is for" (solo developers, company subscription, own subscription for another company) with "Why not Claude only?", and "STEM or the plain agent?" (situations with cost, other approaches by category); duplicates removed, Principles moved after How it works, version note in "Staying up to date". Helps newcomers decide whether STEM fits.
 - **Copilot no longer named:** README badge, test status, contents table, SETUP.md and agent docs no longer mention Copilot, which was never tested; `.github/copilot-instructions.md` stays in place. Fewer untested claims.
 - **At most 2 retro topics:** `scripts/retro-topics.py` gives at most 2 topics per retro (`--max N`, default 2), most important first: due triggers, then signals, both strongest first, then once or rotating topics. Topics cut by the cap are named in one line and not recorded, so they return in a later retro. Benefits: retros stay short when many signals fire at once.
