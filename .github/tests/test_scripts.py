@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Fixture tests for STEM scripts (STEM maintenance only; run by stem-check.py or directly: python3 .github/tests/test_scripts.py).
 Each test builds its own sandbox repository or transcript folder in a temp dir, so nothing depends on the real project."""
-import json, os, pathlib, re, shutil, subprocess, sys, tempfile, unittest
+import json, os, pathlib, re, shutil, subprocess, sys, tempfile, time, unittest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent.parent
 SCRIPTS = ROOT / "scripts"
@@ -437,6 +437,27 @@ class RunWrapper(Sandbox):
         procs = [subprocess.Popen(["bash", str(SCRIPTS / "run.sh"), "same", "true"], env=env, stdout=subprocess.DEVNULL) for _ in range(3)]
         for p in procs: p.wait()
         self.assertEqual(len(list((self.tmp / "logs").glob("*-same-*.log"))), 3)
+
+    def test_old_uncited_logs_are_pruned_cited_ones_kept(self):
+        run(["git", "init", "-q"], self.tmp)
+        env = {k: v for k, v in os.environ.items() if k not in ("AGENT_LOG_DIR", "AGENT_LOG_KEEP_DAYS", "AGENT_LOG_REFS")}
+        logs = self.tmp / ".agent-logs"; logs.mkdir()
+        old = time.time() - 40 * 86400
+        names = ["20250101-000000-cited-1.log", "20250101-000000-uncited-2.log", "20250101-000000-extra-3.log"]
+        for n in names:
+            (logs / n).write_text("x\n"); os.utime(logs / n, (old, old))
+        (logs / "20250101-000000-recent-4.log").write_text("x\n")
+        (self.tmp / "backlog" / "tasks").mkdir(parents=True)
+        (self.tmp / "backlog" / "tasks" / "task-1.md").write_text("AC#1: E2 run.sh x PASS .agent-logs/" + names[0] + "\n")
+        (self.tmp / "other.md").write_text(names[2] + "\n")
+        r = run(["bash", str(SCRIPTS / "run.sh"), "check", "true"], self.tmp, {**env, "AGENT_LOG_REFS": str(self.tmp / "other.md")})
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertTrue((logs / names[0]).exists())
+        self.assertFalse((logs / names[1]).exists())
+        self.assertTrue((logs / names[2]).exists())
+        self.assertTrue((logs / "20250101-000000-recent-4.log").exists())
+        run(["bash", str(SCRIPTS / "run.sh"), "check", "true"], self.tmp, {**env, "AGENT_LOG_KEEP_DAYS": "0"})
+        self.assertTrue((logs / names[2]).exists())  # 0 keeps everything, AGENT_LOG_REFS no longer set
 
     def test_default_log_is_durable_ignored_and_cited(self):
         run(["git", "init", "-q"], self.tmp)

@@ -4,6 +4,8 @@
 # Logs go to <repo>/.agent-logs/ (git-ignored by its own .gitignore, survives a reboot),
 # outside a git repository to $TMPDIR/agent-logs; AGENT_LOG_DIR overrides both.
 # The 'evidence:' line is a durable pointer to cite in task notes.
+# After each run, logs in <repo>/.agent-logs/ older than AGENT_LOG_KEEP_DAYS (default 30, 0 = keep all) are
+# deleted unless their file name appears under backlog/ or docs/ (cited evidence) or in AGENT_LOG_REFS (extra paths, ':'-separated).
 # Usage: scripts/run.sh <label> <command> [args...]
 # The wrapper exits with the ORIGINAL exit code of the command.
 # Python compilation uses the log directory by default, including for external sources.
@@ -35,5 +37,14 @@ grep -E -i -m3 '(passed|failed|tests?:|[0-9]+ (error|warning))' "$log" | sed 's/
 if [ "$code" -ne 0 ]; then
   echo "--- last 15 lines ---"
   tail -n 15 "$log"
+fi
+keep=${AGENT_LOG_KEEP_DAYS:-30}
+if [ -n "$root" ] && [ "$logdir" = "$root/.agent-logs" ] && [ "$keep" -gt 0 ] 2>/dev/null; then
+  refs=(); for r in "$root/backlog" "$root/docs"; do [ -e "$r" ] && refs+=("$r"); done
+  IFS=: read -r -a extra <<<"${AGENT_LOG_REFS:-}"; for r in ${extra[@]+"${extra[@]}"}; do [ -e "$r" ] && refs+=("$r"); done
+  find "$logdir" -maxdepth 1 -name '*.log' -mtime +"$keep" 2>/dev/null | while IFS= read -r old; do
+    [ ${#refs[@]} -gt 0 ] && grep -rqF "$(basename "$old")" "${refs[@]}" 2>/dev/null && continue
+    rm -f "$old"
+  done
 fi
 exit "$code"

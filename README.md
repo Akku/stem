@@ -135,7 +135,7 @@ Based on each project's own documentation as of November 2026; these projects ch
 | `docs/agent/stacks/` | Stack-specific notes, loaded only when the stack applies |
 | `scripts/context-report.py` | Optional retro tool (Claude Code): where the context went, longest sessions; numbers only |
 | `scripts/context-check.py` | Claude Code hook: warns when the context is large and a new session is due |
-| `scripts/run.sh` | Compact output for tests/CI/CLI (exit code preserved, full log in git-ignored `.agent-logs/`, `evidence:` pointer for task notes) |
+| `scripts/run.sh` | Compact output for tests/CI/CLI (exit code preserved, full log in git-ignored `.agent-logs/`, `evidence:` pointer for task notes; uncited logs older than 30 days are pruned) |
 | `scripts/session-start.sh` | Session start summary (branch, changes, tasks, handoff); changes no project files, `STEM_OFFLINE=1` for no network |
 | `docs/agent/OPERATING_MODEL.md` | Rules with stable IDs (`R-*`), loaded selectively |
 | `docs/agent/ADVANCED.md` | Rarely needed rules (parallelism, measurement, routing, local models) |
