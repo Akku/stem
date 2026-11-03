@@ -61,6 +61,10 @@ def front(path):
         k, _, v = line.partition(":")
         if v.strip() and not line.startswith(" "):
             out[k.strip()] = v.strip().strip("'\"")
+        elif v.strip() == "" and k.strip() == "labels":
+            out["_labels"] = []
+        elif line.startswith("  - ") and "_labels" in out:
+            out["_labels"].append(line[4:].strip().strip("'\""))
     return out
 
 
@@ -98,7 +102,7 @@ class Ctx:
         return sum(1 for t in self.tasks if t.get("status") == "Done" and (since is None or (day(t.get("updated_date") or t.get("created_date")) or dt.date.min) > since))
 
     def count(self, status):
-        return sum(1 for t in self.tasks if t.get("status") == status)
+        return sum(1 for t in self.tasks if t.get("status") == status and "waiting" not in t.get("_labels", []))  # label `waiting`: parked on an outside event or the next retro
 
 
 def sig_done_since_topic(c, t, p):
@@ -114,7 +118,7 @@ def sig_days_since_topic(c, t, p):
 
 def sig_status_count(c, t, p):
     n = c.count(p["status"])
-    return n, p["min"], f"{n} tasks '{p['status']}' (threshold more than {p['min']})", n > p["min"]
+    return n, p["min"], f"{n} tasks '{p['status']}' without label waiting (threshold more than {p['min']})", n > p["min"]
 
 
 def sig_file_pct(c, t, p):

@@ -396,8 +396,9 @@ class RetroTopics(Sandbox):
         if local is not None:
             (self.tmp / "docs/agent/retro-topics.local.json").write_text(json.dumps({"topics": local}))
 
-    def task(self, n, status, updated="2026-10-20 10:00"):
-        (self.tmp / f"backlog/tasks/task-{n} - x.md").write_text(f"---\nid: TASK-{n}\ntitle: x\nstatus: {status}\nupdated_date: '{updated}'\n---\n")
+    def task(self, n, status, updated="2026-10-20 10:00", labels=()):
+        lab = "labels:\n" + "".join(f"  - {x}\n" for x in labels) if labels else ""
+        (self.tmp / f"backlog/tasks/task-{n} - x.md").write_text(f"---\nid: TASK-{n}\ntitle: x\nstatus: {status}\nupdated_date: '{updated}'\n{lab}---\n")
 
     def topics_of(self, *args, **kw):
         r = run([sys.executable, str(SCRIPTS / "retro-topics.py"), "--root", str(self.tmp), "--now", kw.get("now", "2026-10-30"), *args], self.tmp)
@@ -405,6 +406,16 @@ class RetroTopics(Sandbox):
 
     def state(self):
         return json.loads((self.tmp / "docs/agent/retro-topics-state.json").read_text())
+
+    def test_waiting_label_is_not_counted_as_in_progress(self):
+        self.catalog([t for t in self.topics if t["id"] == "wip"], cooldown=None)
+        for n in (1, 2, 3): self.task(n, "In Progress", labels=["size-S", "waiting"])
+        self.task(4, "In Progress", labels=["size-S"])
+        self.assertNotIn(("wip", "signal"), self.topics_of("--dry-run")[1])  # 1 unlabelled task, threshold is more than 2
+        for n in (5, 6): self.task(n, "In Progress")
+        r, got = self.topics_of("--retro", "r2")
+        self.assertIn(("wip", "signal"), got)
+        self.assertIn("3 tasks 'In Progress' without label waiting", r.stdout)
 
     def test_signal_and_due_come_first_then_fill_once(self):
         self.catalog()

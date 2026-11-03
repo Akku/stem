@@ -22,7 +22,7 @@
    "signal": {"type": "status_count", "status": "To Do", "min": 20},
    "why": "Session start lists only about 10 ready tasks; beyond 20 the backlog stops being read and its upkeep costs more than it helps."},
   {"id": "in-progress", "kind": "repeatable", "title": "Too many tasks in progress: how to finish faster",
-   "ask": "Why does each In Progress task stay open (missing evidence, waiting, scope)? Finish, split, park or drop each; what keeps new ones from piling up?",
+   "ask": "Why does each In Progress task stay open (missing evidence, waiting, scope)? Finish, split, park (label `waiting`: outside event or next retro; not counted here) or drop each; what keeps new ones from piling up?",
    "signal": {"type": "status_count", "status": "In Progress", "min": 5},
    "why": "A single person or agent rarely works on more than 3-5 things at once; above 5 the tasks are waiting, not progressing."},
   {"id": "vision", "kind": "repeatable", "title": "Vision and milestones: derive, refresh or rethink",
