@@ -21,7 +21,7 @@ backlog instructions overview
 
 `.agents/skills` links to the same sources in `.claude/skills`. A readable `SKILL.md` proves file access only. To claim native skill discovery, observe the project's skill in Codex's native skill listing and, where supported, invoke it by name. An automated probe run (development harness TASK-110, codex-cli 0.166.0) observed fresh-project setup and the project skills in Codex's native skill listing; it read `SKILL.md` files rather than invoking skills through the UI. A later shell `cd` does not prove the task's startup skill catalog was refreshed.
 
-No Claude `UserPromptSubmit` context-warning hook is assumed to run in Codex. Follow `R-BATCHING` and its proxy fallback when no native context-size signal is available. Do not invent a token count or treat the session-start handoff-size warning as a context-window warning. Long-context behavior remains a separate test.
+`.codex/hooks.json` runs `scripts/context-check.py` as `UserPromptSubmit` hook; it reads the Codex session log (`transcript_path`, last `token_count`). Whether Codex shows the hook output to the model is unverified; inside a batch the task-end check `python3 scripts/context-check.py --auto` (finds the log via `CODEX_THREAD_ID`) is the dependable signal (`R-BATCHING`). Do not invent a token count or treat the session-start handoff-size warning as a context-window warning.
 
 ## Sandbox access and external checks
 

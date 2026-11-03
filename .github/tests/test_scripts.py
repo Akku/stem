@@ -66,6 +66,31 @@ class ContextCheck(Sandbox):
         self.assertEqual(hook(), "")  # same size: no second notice
 
 
+    def test_codex_log_uses_window_from_log(self):
+        tc = lambda n, w: {"type": "event_msg", "payload": {"type": "token_count", "info": {"last_token_usage": {"input_tokens": n, "total_tokens": n + 5}, "model_context_window": w}}}
+        low = self.check([tc(20000, 475000), tc(55000, 475000)])
+        high = self.check([tc(20000, 475000), tc(70000, 475000)])
+        self.assertEqual(low.stdout, "")
+        self.assertIn("threshold 60k", high.stdout)
+
+    def test_codex_desktop_log_falls_back_to_total_tokens(self):
+        r = self.check([{"type": "event_msg", "payload": {"type": "token_count", "info": {"last_token_usage": {"input_tokens": 0, "total_tokens": 127000}, "model_context_window": None}}}])
+        self.assertIn("threshold 100k", r.stdout)
+
+    def test_auto_finds_codex_log_and_reports_below_threshold(self):
+        log = self.tmp / "codex" / "sessions" / "2026" / "rollout-x-abc123.jsonl"; log.parent.mkdir(parents=True)
+        write_jsonl(log, [{"type": "event_msg", "payload": {"type": "token_count", "info": {"last_token_usage": {"input_tokens": 30000}, "model_context_window": 475000}}}])
+        r = run([sys.executable, str(SCRIPTS / "context-check.py"), "--auto"], self.tmp, {"TMPDIR": str(self.tmp), "CODEX_HOME": str(self.tmp / "codex"), "CODEX_THREAD_ID": "abc123"})
+        self.assertIn("context check: about 30k tokens, threshold 70k", r.stdout)
+
+    def test_auto_finds_claude_transcript_of_cwd(self):
+        work = self.tmp / "my.proj"; work.mkdir()
+        d = self.tmp / "claude" / "projects" / re.sub(r"[^A-Za-z0-9]", "-", str(work.resolve())); d.mkdir(parents=True)
+        write_jsonl(d / "s.jsonl", [assistant("claude-sonnet-5-5", 10000), assistant("claude-sonnet-5-5", 60000)])
+        r = run([sys.executable, str(SCRIPTS / "context-check.py"), "--auto"], work, {"TMPDIR": str(self.tmp), "CLAUDE_CONFIG_DIR": str(self.tmp / "claude"), "CODEX_THREAD_ID": ""})
+        self.assertIn("CONTEXT NOTICE", r.stdout)
+        self.assertIn("fresh session", r.stdout)
+
 class ContextReport(Sandbox):
     def report(self, records, *args, cwd=None):
         d = self.tmp / "transcripts"; d.mkdir(exist_ok=True)

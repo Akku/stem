@@ -10,6 +10,16 @@
           }
         ]
       }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "root=\"$(git rev-parse --show-toplevel)\" && cd \"$root\" && python3 scripts/context-check.py 2>/dev/null; true"
+          }
+        ]
+      }
     ]
   }
 }

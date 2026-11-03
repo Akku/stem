@@ -32,6 +32,6 @@ Sections agree with each other, approvals are still valid, evidence names the SH
 4. Notable detours or high context cost: add `Learning:` to the task (only if it happened).
 
 ## 4. Suggest the next prompt
-End your final message with one ready-to-paste prompt for the next session (the concrete next task or action). Do not mention the handoff or ask to read it: session start loads it automatically.
+End your final message with one ready-to-paste prompt for the next session (the concrete next task or action). Do not mention the handoff or ask to read it: session start loads it automatically. Inside an approved batch above the context threshold, start the fresh session yourself instead (`R-BATCHING` "Hand-off inside an approved batch").
 
 If a step did not fit or you deviated from it: `Learning: skill handoff: <what> -> <change>` in the task notes (`R-LEARNING`).
