@@ -636,7 +636,7 @@ class RetiredNames(Sandbox):
 
 
 class LargeReadWarn(Sandbox):
-    """scripts/large-read-warn.py: warns on whole-file Read or plain cat above the limit, silent otherwise, never fails."""
+    """scripts/large-read-warn.py: warns on whole-file Read or cat (also in compound commands) above the limit, silent otherwise, never fails."""
     def hook(self, data, env=None):
         return run([sys.executable, str(SCRIPTS / "large-read-warn.py")], self.tmp, env, stdin=json.dumps(data))
 
@@ -652,6 +652,24 @@ class LargeReadWarn(Sandbox):
                      {"tool_name": "Bash", "tool_input": {"command": f"cat {big} | head -5"}},
                      {"tool_name": "Bash", "tool_input": {"command": f"grep x {big}"}}):
             self.assertEqual(self.hook(data).stdout, "")
+
+    def test_compound_bash_commands(self):
+        sub = self.tmp / "sub"; sub.mkdir()
+        (sub / "big.md").write_text("x" * 9000); (sub / "big2.py").write_text("x" * 20000); (sub / "small.md").write_text("x")
+        warned = {f"cd {sub} && cat big.md": ["big.md is 8 KB"],
+                  f"cd {sub}; cat small.md; cat big2.py": ["big2.py is 19 KB"],
+                  f"ls | wc -l && cat {sub}/big.md {sub}/big2.py": ["big.md is 8 KB", "big2.py is 19 KB"],
+                  f"cd {sub}\ncat 'big.md' || true": ["big.md is 8 KB"]}
+        for cmd, parts in warned.items():
+            r = self.hook({"tool_name": "Bash", "tool_input": {"command": cmd}, "cwd": str(self.tmp)})
+            self.assertEqual(r.returncode, 0)
+            msg = json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"]
+            for part in parts: self.assertIn(part, msg, cmd)
+        for cmd in (f"cd {sub} && head -50 big.md", f"cd {sub} && sed -n 1,20p big.md; grep x big.md", f"cd {sub} && cat small.md",
+                    f"cd {sub} && cat big.md | head -5", f"cd {sub} && cat big.md > copy.md", f"cat -n {sub}/big.md",
+                    f"cat <<EOF > {sub}/new.md\ncat {sub}/big.md\nEOF", f"cd {sub} && cat $F", "cat 'unclosed"):
+            r = self.hook({"tool_name": "Bash", "tool_input": {"command": cmd}, "cwd": str(self.tmp)})
+            self.assertEqual((r.returncode, r.stdout), (0, ""), cmd)
 
     def test_silent_on_bad_input(self):
         for stdin in ("not json", "{}", json.dumps({"tool_name": "Read", "tool_input": {"file_path": "/missing/file"}})):
