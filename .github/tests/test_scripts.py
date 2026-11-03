@@ -544,6 +544,29 @@ class RetroTopics(Sandbox):
         self.assertTrue(all(t.get("why") for t in data), "every threshold needs a documented reason")
 
 
+class ProofBlock(Sandbox):
+    OK = ["--rule", "R-BATCHING", "--metric", "cache_read_per_task", "--before", "6766", "--after", "4800", "--unit", "k", "--n", "12",
+          "--models", "opus-5-5,sonnet-5-5", "--effort", "medium", "--stem-version", "1.9.0", "--grade", "G2"]
+
+    def go(self, args):
+        return run([sys.executable, str(SCRIPTS / "proof-block.py")] + args, self.tmp)
+
+    def test_valid_fields_give_one_table_row(self):
+        r = self.go(self.OK)
+        self.assertEqual(r.returncode, 0)
+        self.assertIn("| R-BATCHING | cache_read_per_task | 6766k | 4800k | 12 | opus-5-5,sonnet-5-5 | medium | 1.9.0 | G2 |", r.stdout)
+
+    def test_free_text_path_and_email_are_refused(self):
+        for field, bad in (("--metric", "my project log"), ("--models", "/Users/x/a"), ("--rule", "acme-secret"), ("--grade", "t@t.de")):
+            args = list(self.OK); args[args.index(field) + 1] = bad
+            r = self.go(args)
+            self.assertEqual(r.returncode, 2, field)
+            self.assertEqual(r.stdout, "")
+
+    def test_missing_field_is_refused(self):
+        self.assertEqual(self.go(self.OK[:-2]).returncode, 2)
+
+
 class RetiredNames(Sandbox):
     def check(self, root):
         return run([sys.executable, str(ROOT / ".github/retired-names.py"), str(root)], self.tmp)
