@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Where did the context go? Optional retro tool for Claude Code transcripts (R-MEASUREMENT level 2/3).
-Usage: scripts/context-report.py [--since YYYY-MM-DD[ HH:MM]|ISO-UTC] [--until ISO-UTC] [--main-only] [--brief|--cost] [transcript-dir]   (default dir: this project's folder under ~/.claude/projects)
+Usage: scripts/context-report.py [--since TIME] [--until TIME] [--main-only] [--brief|--cost] [transcript-dir]   (default dir: this project's folder under ~/.claude/projects)
 --brief prints one key=value line (for retro-metrics.sh): sessions, turns, tokens, longest session, models and effort levels seen (confounders).
 --cost prints one key=value line for a window: turns, tool_calls, cache_read, output (retro-run.py finish uses it with --since/--until as UTC "YYYY-MM-DDTHH:MM:SSZ" and --main-only).
 --main-only skips subagent transcripts and sidechain records.
+TIME: YYYY-MM-DD[ HH:MM] is local time; ISO with Z or offset (2026-11-03T15:10Z) is taken as given. --since limits sessions, totals
+and biggest carried results to records at or after it (retro metrics that start after a change); the report prints the UTC window.
 Prints numbers only. Labels may contain tool names, file base names and the first two words of a shell command:
 review before copying anything into notes. The transcript format is undocumented; unknown format -> "not evaluable".
 Estimates are rough (characters / 4; assumes a result stays in context until the session ends, so compaction makes it an upper bound)."""
@@ -12,12 +14,11 @@ import collections, datetime as dt, glob, json, os, re, sys
 RULE_ID = re.compile(r"\bR-[A-Z][A-Z-]+[A-Z]\b")
 
 def utc_since(since):
-    """--since is local time, transcript timestamps are UTC: convert (date only = local midnight); a trailing Z marks UTC (kept); unparsable input is kept."""
-    if re.fullmatch(r"\d{4}-\d\d-\d\d[T ]\d\d:\d\d:\d\dZ", since): return since[:-1].replace(" ", "T")
-    for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%d"):
-        try: return dt.datetime.strptime(since, fmt).astimezone(dt.timezone.utc).strftime("%Y-%m-%d %H:%M")
-        except ValueError: pass
-    return since
+    """--since/--until: ISO time; without offset it is local time (date only = local midnight), Z or +HH:MM marks the zone.
+    Returns "YYYY-MM-DDTHH:MM:SS" UTC to compare with transcript timestamps; unparsable input stops the run."""
+    try: t = dt.datetime.fromisoformat(re.sub(r"Z$", "+00:00", since.strip()))  # Z: Python < 3.11
+    except ValueError: sys.exit("context-report: cannot parse time %r (use YYYY-MM-DD[ HH:MM] local or ISO with Z/offset)" % since)
+    return t.astimezone(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
 
 def main():
     args = sys.argv[1:]
@@ -49,8 +50,8 @@ def main():
             except ValueError: continue
             m = r.get("message") if isinstance(r.get("message"), dict) else {}
             ts = str(r.get("timestamp", ""))
-            if since and ts[:len(since)] < since.replace(" ", "T"): continue
-            if until and ts[:len(until)] > until.replace(" ", "T"): continue
+            if since and ts[:19] < since: continue
+            if until and ts[:19] > until: continue
             if main_only and r.get("isSidechain"): continue
             if r.get("type") == "assistant":
                 turns += 1
@@ -88,6 +89,7 @@ def main():
     if brief:
         print("sessions=%d turns=%d cache_read=%d cache_write=%d output=%d max_session_turns=%d models=%s effort=%s" % (len(sess), sum(s[1] for s in sess), tot["cache_read_input_tokens"], tot["cache_creation_input_tokens"], tot["output_tokens"], max([s[1] for s in sess] or [0]), ",".join(k for k, _ in models.most_common(3)) or "?", ",".join(k for k, _ in efforts.most_common(3)) or "?"))
         return 0
+    if since or until: print("window (UTC): %s .. %s" % (since or "start", until or "now"))
     print("transcripts: %d, assistant turns: %d" % (len(files), sum(s[1] for s in sess)))
     print("tokens: fresh_in %d | cache_write %d | cache_read %d | output %d" % (tot["input_tokens"], tot["cache_creation_input_tokens"], tot["cache_read_input_tokens"], tot["output_tokens"]))
     turns_all = max(sum(s[1] for s in sess), 1)

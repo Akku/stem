@@ -110,6 +110,23 @@ class ContextReport(Sandbox):
         r = self.report([assistant("claude-sonnet-5-5", 1000, ts="2026-01-01T00:00:00Z")], "--brief", "--since", "2026-06-01")
         self.assertIn("not evaluable", r.stdout)
 
+    def test_since_iso_utc_without_seconds_limits_totals_and_carried_results(self):
+        late = [{"type": "tool_use", "id": "2", "name": "Bash", "input": {"command": "late cmd"}}]
+        early = [{"type": "tool_use", "id": "1", "name": "Bash", "input": {"command": "early cmd"}}]
+        res = lambda i: {"type": "user", "timestamp": "2026-11-03T15:%02d:30Z" % (9 if i == "1" else 11), "message": {"content": [{"type": "tool_result", "tool_use_id": i, "content": "x" * 4000}]}}
+        recs = [assistant("m", 1, ts="2026-11-03T15:09:00Z", content=early), res("1"),
+                assistant("m", 1, ts="2026-11-03T15:10:20Z", content=late), res("2"), assistant("m", 1, ts="2026-11-03T15:12:00Z")]
+        r = self.report(recs, "--since", "2026-11-03T15:10Z")
+        self.assertIn("window (UTC): 2026-11-03T15:10:00 .. now", r.stdout)
+        self.assertIn("assistant turns: 2", r.stdout)
+        self.assertIn("Bash:late cmd", r.stdout)
+        self.assertNotIn("early", r.stdout)
+
+    def test_since_unparsable_stops(self):
+        r = self.report([assistant("m", 1)], "--since", "yesterday")
+        self.assertNotEqual(0, r.returncode)
+        self.assertIn("cannot parse time", r.stderr)
+
     def test_cost_counts_window_main_thread_tool_calls_and_utc_bounds(self):
         tool = [{"type": "tool_use", "id": "1", "name": "Bash", "input": {"command": "ls"}}, {"type": "tool_use", "id": "2", "name": "Read", "input": {}}]
         d = self.tmp / "transcripts"; (d / "abcdef12-session" / "subagents").mkdir(parents=True)
