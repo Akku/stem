@@ -16,6 +16,7 @@ Rule: `R-VERIFY`. Every check has a proof boundary; keep it visible in the task 
 - **Characterization + mutation:** characterization tests pin existing behavior before refactoring; targeted mutations show that tests detect relevant faults.
 - **Layers complement each other:** unit/DOM, integration, browser, manual. A11y tools and green CI do not prove real screen reader announcements; if required, keep a manual check open.
 - **Performance:** measure only under exclusive conditions (no parallel checks).
+- **Repeated manual checks:** a browser or UI check done by hand a second time is the signal to propose a test framework (e.g. Playwright), see `R-DESIGN` "Propose missing tools".
 - **Browser tests (Playwright):** the default desktop viewport may open a two-pane layout; run the main flows in a phone viewport. `getByText` matches substrings case-insensitively; give indicators their own element or use `exact`. A shared e2e database makes names collide: use unique ones per test.
 - **Unparsable input must fail:** a check that cannot parse its input (a computed value is NaN, a file is empty) fails instead of passing silently; assert the input is valid first.
 - Run suites via `scripts/run.sh`; load only failing sections of a log.
