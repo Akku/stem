@@ -59,8 +59,14 @@ if [ -d backlog/tasks ]; then
   if [ -n "$lr" ] && grep -q '^## First retro' docs/agent/NEXT_RETRO.md 2>/dev/null; then
     echo "RETRO OPEN ITEMS: retro notes exist but the 'First retro' section of docs/agent/NEXT_RETRO.md is still there; process it at the next retro (do not start unasked)"
   fi
-  if [ "$n" -ge "${RETRO_DUE_AFTER:-8}" ]; then
-    echo "RETRO DUE: $n tasks done since ${lrd:-the start} (threshold ${RETRO_DUE_AFTER:-8}); offer the retro skill, do not start unasked"
+  # threshold: 8, doubled to 16 when the newest retro run recorded 0 adopted changes and 0 open signals (R-RETRO)
+  thr="${RETRO_DUE_AFTER:-}"
+  if [ -z "$thr" ]; then
+    thr=8; lj=$(ls docs/agent/retro-runs/*.json 2>/dev/null | sort | tail -1)
+    [ -n "$lj" ] && [ "$(python3 -c 'import json,sys; r=json.load(open(sys.argv[1])).get("result") or {}; print(int(r.get("adopted", 1) == 0 and r.get("open_signals", 1) == 0))' "$lj" 2>/dev/null)" = 1 ] && thr=16
+  fi
+  if [ "$n" -ge "$thr" ]; then
+    echo "RETRO DUE: $n tasks done since ${lrd:-the start} (threshold $thr); offer the retro skill, do not start unasked"
   fi
 fi
 # waiting tasks whose outside event happened (fixed condition kinds only, see the script)

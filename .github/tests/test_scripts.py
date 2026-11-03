@@ -85,6 +85,18 @@ class ContextReport(Sandbox):
         r = self.report([assistant("claude-sonnet-5-5", 1000, ts="2026-01-01T00:00:00Z")], "--brief", "--since", "2026-06-01")
         self.assertIn("not evaluable", r.stdout)
 
+    def test_cost_counts_window_main_thread_tool_calls_and_utc_bounds(self):
+        tool = [{"type": "tool_use", "id": "1", "name": "Bash", "input": {"command": "ls"}}, {"type": "tool_use", "id": "2", "name": "Read", "input": {}}]
+        d = self.tmp / "transcripts"; (d / "abcdef12-session" / "subagents").mkdir(parents=True)
+        write_jsonl(d / "abcdef12-session.jsonl", [assistant("m", 1, ts="2026-10-20T09:59:59.5Z", content=tool),
+                                                   assistant("m", 1, ts="2026-10-20T10:00:00.1Z", content=tool),
+                                                   assistant("m", 1, ts="2026-10-20T10:30:00Z"),
+                                                   assistant("m", 1, ts="2026-10-20T10:31:00Z", sidechain=True, content=tool),
+                                                   assistant("m", 1, ts="2026-10-20T11:00:01Z", content=tool)])
+        write_jsonl(d / "abcdef12-session" / "subagents" / "agent-1.jsonl", [assistant("m", 1, ts="2026-10-20T10:10:00Z", content=tool)])
+        r = run([sys.executable, str(SCRIPTS / "context-report.py"), "--cost", "--main-only", "--since", "2026-10-20T10:00:00Z", "--until", "2026-10-20T11:00:00Z", str(d)], self.tmp)
+        self.assertEqual("turns=2 tool_calls=2 cache_read=0 output=20", r.stdout.strip())  # local-time --since would shift this window
+
     def test_rule_load_via_sed_and_skill_read_are_detected(self):
         cmd = "ID=R-VERIFY; sed -n \"/<!-- RULE:${ID}:START -->/,/<!-- RULE:${ID}:END -->/p\" docs/agent/OPERATING_MODEL.md"
         sed_only = "sed -n '/<!-- RULE:R-REVIEW:START -->/,/<!-- RULE:R-REVIEW:END -->/p' docs/agent/OPERATING_MODEL.md"
@@ -226,6 +238,20 @@ class SessionStart(SandboxRepo):
         self.assertNotIn("RETRO DUE", self.start({"RETRO_DUE_AFTER": "4"}))
         (self.repo / "docs/agent/retros").mkdir(parents=True); (self.repo / "docs/agent/retros/2026-10-25.md").write_text("retro\n")
         self.assertNotIn("RETRO DUE", self.start({"RETRO_DUE_AFTER": "3"}))  # all tasks older than the retro
+
+    def test_retro_threshold_doubles_after_a_retro_without_changes_or_signals(self):
+        for n in range(1, 10): self.task(n, updated="2026-10-26 10:00")
+        (self.repo / "docs/agent/retros").mkdir(parents=True); (self.repo / "docs/agent/retros/2026-10-25.md").write_text("retro\n")
+        runs = self.repo / "docs/agent/retro-runs"; runs.mkdir()
+        self.assertIn("RETRO DUE: 9 tasks done since 2026-10-25 (threshold 8)", self.start())  # no recorded result
+        for result, due in (({"adopted": 0, "open_signals": 0}, False), ({"adopted": 1, "open_signals": 0}, True),
+                            ({"adopted": 0, "open_signals": 2}, True), (None, True)):
+            (runs / "2026-10-25.json").write_text(json.dumps({"label": "2026-10-25", "result": result}))
+            self.assertEqual("RETRO DUE" in self.start(), due, result)
+        (runs / "2026-10-25.json").write_text(json.dumps({"result": {"adopted": 0, "open_signals": 0}}))
+        for n in range(10, 17): self.task(n, updated="2026-10-26 10:00")
+        self.assertIn("(threshold 16)", self.start())
+        self.assertIn("(threshold 3)", self.start({"RETRO_DUE_AFTER": "3"}))  # explicit override wins
 
     def test_first_retro_section_left_after_retro_warns(self):
         (self.repo / "docs/agent/retros").mkdir(parents=True); (self.repo / "docs/agent/NEXT_RETRO.md").write_text("# Next retro\n\n## First retro\n\n- item\n")

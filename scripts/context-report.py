@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Where did the context go? Optional retro tool for Claude Code transcripts (R-MEASUREMENT level 2/3).
-Usage: scripts/context-report.py [--since YYYY-MM-DD[ HH:MM]] [--brief] [transcript-dir]   (default dir: this project's folder under ~/.claude/projects)
+Usage: scripts/context-report.py [--since YYYY-MM-DD[ HH:MM]|ISO-UTC] [--until ISO-UTC] [--main-only] [--brief|--cost] [transcript-dir]   (default dir: this project's folder under ~/.claude/projects)
 --brief prints one key=value line (for retro-metrics.sh): sessions, turns, tokens, longest session, models and effort levels seen (confounders).
+--cost prints one key=value line for a window: turns, tool_calls, cache_read, output (retro-run.py finish uses it with --since/--until as UTC "YYYY-MM-DDTHH:MM:SSZ" and --main-only).
+--main-only skips subagent transcripts and sidechain records.
 Prints numbers only. Labels may contain tool names, file base names and the first two words of a shell command:
 review before copying anything into notes. The transcript format is undocumented; unknown format -> "not evaluable".
 Estimates are rough (characters / 4; assumes a result stays in context until the session ends, so compaction makes it an upper bound)."""
@@ -10,7 +12,8 @@ import collections, datetime as dt, glob, json, os, re, sys
 RULE_ID = re.compile(r"\bR-[A-Z][A-Z-]+[A-Z]\b")
 
 def utc_since(since):
-    """--since is local time, transcript timestamps are UTC: convert (date only = local midnight); unparsable input is kept."""
+    """--since is local time, transcript timestamps are UTC: convert (date only = local midnight); a trailing Z marks UTC (kept); unparsable input is kept."""
+    if re.fullmatch(r"\d{4}-\d\d-\d\d[T ]\d\d:\d\d:\d\dZ", since): return since[:-1].replace(" ", "T")
     for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%d"):
         try: return dt.datetime.strptime(since, fmt).astimezone(dt.timezone.utc).strftime("%Y-%m-%d %H:%M")
         except ValueError: pass
@@ -19,12 +22,15 @@ def utc_since(since):
 def main():
     args = sys.argv[1:]
     since = utc_since(args[args.index("--since") + 1]) if "--since" in args else ""
-    brief = "--brief" in args
-    pos = [a for i, a in enumerate(args) if not a.startswith("--") and (i == 0 or args[i - 1] != "--since")]
+    until = utc_since(args[args.index("--until") + 1]) if "--until" in args else ""
+    brief, cost, main_only = "--brief" in args, "--cost" in args, "--main-only" in args
+    pos = [a for i, a in enumerate(args) if not a.startswith("--") and (i == 0 or args[i - 1] not in ("--since", "--until"))]
     d = pos[0] if pos else os.path.expanduser("~/.claude/projects/" + re.sub(r"[^A-Za-z0-9]", "-", os.getcwd()))
     files = sorted(glob.glob(d + "/**/*.jsonl", recursive=True))
+    if main_only: files = [f for f in files if "/subagents/" not in f]
     if not files:
         print("not evaluable: no transcripts in", d); return 0
+    tool_calls = 0
     tot, sess, by_tool, cnt, offenders = collections.Counter(), [], collections.Counter(), collections.Counter(), []
     rules, skills, docs = collections.Counter(), collections.Counter(), collections.Counter()
     models, efforts = collections.Counter(), collections.Counter()
@@ -42,7 +48,10 @@ def main():
             try: r = json.loads(line)
             except ValueError: continue
             m = r.get("message") if isinstance(r.get("message"), dict) else {}
-            if since and str(r.get("timestamp", ""))[:len(since)] < since.replace(" ", "T"): continue
+            ts = str(r.get("timestamp", ""))
+            if since and ts[:len(since)] < since.replace(" ", "T"): continue
+            if until and ts[:len(until)] > until.replace(" ", "T"): continue
+            if main_only and r.get("isSidechain"): continue
             if r.get("type") == "assistant":
                 turns += 1
                 models[str(m.get("model", "?"))] += 1
@@ -52,6 +61,7 @@ def main():
                 for b in m.get("content") or []:
                     if isinstance(b, dict) and b.get("type") == "tool_use":
                         n, i = b.get("name", "?"), b.get("input") or {}
+                        tool_calls += 1
                         pend[b.get("id")] = (n, i)
                         cmd = i.get("command") or "" if n == "Bash" else ""
                         if "RULE:" in cmd or "ID=R-" in cmd or ":START" in cmd:
@@ -72,6 +82,9 @@ def main():
         tot.update(u)
     if not sum(tot.values()):
         print("not evaluable: no usage data (format changed?)"); return 0
+    if cost:
+        print("turns=%d tool_calls=%d cache_read=%d output=%d" % (sum(s[1] for s in sess), tool_calls, tot["cache_read_input_tokens"], tot["output_tokens"]))
+        return 0
     if brief:
         print("sessions=%d turns=%d cache_read=%d cache_write=%d output=%d max_session_turns=%d models=%s effort=%s" % (len(sess), sum(s[1] for s in sess), tot["cache_read_input_tokens"], tot["cache_creation_input_tokens"], tot["output_tokens"], max([s[1] for s in sess] or [0]), ",".join(k for k, _ in models.most_common(3)) or "?", ",".join(k for k, _ in efforts.most_common(3)) or "?"))
         return 0

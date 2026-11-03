@@ -561,6 +561,8 @@ Inputs should remain bounded:
 
 A retrospective should convert evidence into a small number of testable process changes.
 
+Session start reports a retro as due after 8 done tasks since the last retro, or after 16 when the newest retro run recorded 0 adopted changes and 0 open signals.
+
 For each adopted process change, record:
 
 - the change;
