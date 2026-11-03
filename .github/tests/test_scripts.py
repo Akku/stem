@@ -347,6 +347,17 @@ class PreCommit(SandboxRepo):
         (self.repo / "prod.env.example").write_text("K=\n")
         self.assertEqual(self.commit("example").returncode, 0)
 
+    def test_api_key_pattern_needs_a_boundary(self):
+        run(["git", "config", "core.hooksPath", "scripts/githooks"], self.repo)
+        self.assertEqual(self.commit("init").returncode, 0)
+        (self.repo / "notes.md").write_text("see docs/audits/task-15-profile-walkthrough-results/\n")
+        self.assertEqual(self.commit("path").returncode, 0)  # 'sk-' inside a word is not a key
+        for key in ("s" + "k-" + "a1B2" * 6, "s" + "k-ant-" + "a1B2" * 6):  # split so this file does not trip the guard
+            (self.repo / "cfg.txt").write_text("KEY=" + key + "\n")
+            r = self.commit("key")
+            self.assertNotEqual(r.returncode, 0, key); self.assertIn("cfg.txt", r.stderr)
+            run(["git", "reset", "-q"], self.repo); (self.repo / "cfg.txt").unlink()
+
 class RunWrapper(Sandbox):
     def test_python_compile_from_readonly_source_uses_log_cache(self):
         source = self.tmp / "external product"
