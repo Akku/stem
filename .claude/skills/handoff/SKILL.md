@@ -8,7 +8,7 @@ description: Rewrite docs/agent/HANDOFF.md from scratch so the next session can 
 Rules: `R-STATE`, `R-BOOTSTRAP`, `R-STATE-COHERENCE`. The handoff holds only what git and the backlog cannot tell the next session; the session-start script already prints branch, commits, active and ready tasks.
 
 ## 0. Skip check (`R-BATCHING` "Skip the handoff")
-Determine yourself what is not yet in git or the backlog: `git status --porcelain`, unpushed commits (`git log @{u}..` if an upstream exists), open approvals or proposals from this session, evidence only in chat, notes written nowhere else. Turn every pending decision into a draft task and every uncommitted change into a commit first. If nothing is left: do not write the handoff; delete a stale `docs/agent/HANDOFF.md` and commit that, skip to step 4 and give only the ready prompt. Otherwise tell the user in one line what forces the handoff.
+Determine yourself what is not yet in git or the backlog: `git status --porcelain`, unpushed commits (`git log @{u}..` if an upstream exists), open approvals or proposals from this session, evidence only in chat, notes written nowhere else. Turn every pending decision into a draft task and every uncommitted change into a commit first. If nothing is left: do not write the handoff; delete the consumed `docs/agent/HANDOFF.md` and commit that (session start hides a handoff once any commit follows it, but the file stays until you delete it), skip to step 4 and give only the ready prompt. Otherwise tell the user in one line what forces the handoff.
 
 ## 1. Write `docs/agent/HANDOFF.md`
 Always rewrite the whole file, never append or "refresh" (`Earlier:` sections are how it bloats). Max 2 KB / 40 lines; the session-start script warns above that. Use these headings, drop empty ones:
@@ -23,7 +23,7 @@ Always rewrite the whole file, never append or "refresh" (`Earlier:` sections ar
 **Notes:** <max 3 lines: facts the next run needs that are written nowhere else; re-justify each one at every rewrite, else drop>
 ```
 
-Per line test: does git or the backlog already show it (finished tasks, active task, commit messages)? Then delete it. Durable knowledge goes to `docs/` or `PITFALLS.md`, not into Notes, history stays in tasks and commits.
+Per line test: does git, the backlog or the session-start script already show it (finished tasks, active task, commit messages, `RETRO DUE`, versions, ready tasks)? Then delete it. Commit the handoff last: a later commit marks it consumed. Durable knowledge goes to `docs/` or `PITFALLS.md`, not into Notes, history stays in tasks and commits.
 
 ## 2. Check before saving
 Sections agree with each other, approvals are still valid, evidence names the SHA it verified (`R-STATE-COHERENCE`).

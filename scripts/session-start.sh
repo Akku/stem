@@ -74,16 +74,17 @@ fi
 echo; echo "## backlog check"; scripts/check-backlog.sh 2>/dev/null | head -10; [ "${PIPESTATUS[0]:-0}" -eq 0 ] && echo "ok"
 echo; echo "## handoff"
 if [ -f docs/agent/HANDOFF.md ]; then
-  sed -n '1,40p' docs/agent/HANDOFF.md
-  [ "$(wc -c < docs/agent/HANDOFF.md)" -gt 2048 ] && echo "WARNING: HANDOFF.md is over 2 KB: rewrite it from scratch (handoff skill); it is loaded every session"
-  # staleness: the first "stem [version] X.Y.Z" named in the handoff must match STEM_VERSION
-  hv=$(grep -oiE '(^|[^a-z])stem( version)?:? v?[0-9]+\.[0-9]+\.[0-9]+' docs/agent/HANDOFF.md | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+$')
-  [ -n "$hv" ] && [ -n "${lv:-}" ] && [ "$hv" != "$lv" ] && echo "WARNING: HANDOFF.md names stem $hv but STEM_VERSION is $lv: the handoff may be stale; check it against the current state"
-  # staleness: many commits since the handoff was last committed (a later session skipped or forgot it)
-  hc=$(git log -1 --format=%H -- docs/agent/HANDOFF.md 2>/dev/null)
-  if [ -n "$hc" ]; then
-    n=$(git rev-list --count "$hc..HEAD" 2>/dev/null || echo 0)
-    [ "$n" -ge "${HANDOFF_STALE_COMMITS:-5}" ] && echo "WARNING: HANDOFF.md is $n commits old: treat it as history, not current state (git and the backlog win)"
+  # consumed: a handoff is written for exactly the next session; any commit after the one that last touched it means that session ran
+  hc=$(git log -1 --format=%H -- docs/agent/HANDOFF.md 2>/dev/null); n=0
+  [ -n "$hc" ] && n=$(git rev-list --count "$hc..HEAD" 2>/dev/null || echo 0)
+  if [ "$n" -ge "${HANDOFF_STALE_COMMITS:-1}" ]; then
+    echo "HANDOFF.md is consumed ($n commits since it was written): content not shown, ignore it. State is in git and the backlog. If the last session skipped the handoff, delete the file (committed)."
+  else
+    sed -n '1,40p' docs/agent/HANDOFF.md
+    [ "$(wc -c < docs/agent/HANDOFF.md)" -gt 2048 ] && echo "WARNING: HANDOFF.md is over 2 KB: rewrite it from scratch (handoff skill); it is loaded every session"
+    # staleness: the first "stem [version] X.Y.Z" named in the handoff must match STEM_VERSION
+    hv=$(grep -oiE '(^|[^a-z])stem( version)?:? v?[0-9]+\.[0-9]+\.[0-9]+' docs/agent/HANDOFF.md | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+$')
+    [ -n "$hv" ] && [ -n "${lv:-}" ] && [ "$hv" != "$lv" ] && echo "WARNING: HANDOFF.md names stem $hv but STEM_VERSION is $lv: the handoff may be stale; check it against the current state"
   fi
 else echo "no HANDOFF.md (clean boundary: state is in git and the backlog)"; fi
 echo; echo "Rules: see AGENTS.md; further rules by ID via docs/agent/OPERATING_MODEL.md"

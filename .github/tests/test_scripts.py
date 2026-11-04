@@ -308,14 +308,19 @@ class SessionStart(SandboxRepo):
         (self.repo / "docs/agent/HANDOFF.md").write_text("stem 1.2.0\n")
         self.assertIn("names stem 1.2.0 but STEM_VERSION is 1.2.1", self.start({"STEM_OFFLINE": "1"}))
 
-    def test_handoff_commit_age_warns_and_missing_file_is_clean(self):
-        self.assertIn("clean boundary", self.start({"STEM_OFFLINE": "1"}))
-        (self.repo / "docs/agent").mkdir(parents=True); (self.repo / "docs/agent/HANDOFF.md").write_text("State: main\n"); self.commit("handoff")
-        for i in range(4):
-            (self.repo / f"f{i}").write_text("x"); self.commit(f"work {i}")
-        self.assertNotIn("commits old", self.start({"STEM_OFFLINE": "1"}))
-        (self.repo / "f4").write_text("x"); self.commit("work 4")
-        self.assertIn("HANDOFF.md is 5 commits old", self.start({"STEM_OFFLINE": "1"}))
+    def test_handoff_is_consumed_by_any_later_commit_and_missing_file_is_clean(self):
+        env = {"STEM_OFFLINE": "1"}
+        self.assertIn("clean boundary", self.start(env))
+        (self.repo / "docs/agent").mkdir(parents=True); (self.repo / "docs/agent/HANDOFF.md").write_text("State: main\nRetro DUE\n"); self.commit("handoff")
+        out = self.start(env)
+        self.assertIn("Retro DUE", out); self.assertNotIn("consumed", out)  # fresh: shown in full
+        (self.repo / "f0").write_text("x"); self.commit("work 0")
+        out = self.start(env)
+        self.assertIn("HANDOFF.md is consumed (1 commits since", out); self.assertNotIn("Retro DUE", out)  # consumed: text hidden
+        self.assertNotIn("consumed", self.start({**env, "HANDOFF_STALE_COMMITS": "2"}))  # threshold override
+        (self.repo / "docs/agent/HANDOFF.md").write_text("State: main\nNew\n"); self.commit("handoff again")
+        out = self.start(env)
+        self.assertIn("New", out); self.assertNotIn("consumed", out)  # a rewrite is fresh again
 
     def test_handoff_brief_starts_with_detach_self(self):
         text = (ROOT / "docs/agent/OPERATING_MODEL.md").read_text(encoding="utf-8")
