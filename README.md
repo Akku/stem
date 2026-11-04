@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/assets/stem-logo.svg" alt="STEM" width="320">
+<img src="docs/assets/stem-header.jpg" alt="STEM" width="960">
 
 **An Agile Agentic Coding Harness**
 
