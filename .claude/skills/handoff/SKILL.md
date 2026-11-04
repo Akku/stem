@@ -1,40 +1,38 @@
 ---
 name: handoff
-description: Rewrite docs/agent/HANDOFF.md from scratch so the next session can continue without replaying history, then run the end-of-session checklist. Use when ending a session, at a task or milestone boundary, when a context notice reports a large context (threshold in `R-BATCHING`), or before switching agents.
+description: End-of-session command ("Handoff" instead of "commit"): put notes into the tasks, commit what is not work in progress, record open user questions as drafts and leave only a pointer in docs/agent/HANDOFF.md, or write no handoff when nothing is open. Use when ending a session, at a task or milestone boundary, when a context notice reports a large context (threshold in `R-BATCHING`), or before switching agents.
 ---
 
 # Handoff / session end
 
-Rules: `R-STATE`, `R-BOOTSTRAP`, `R-STATE-COHERENCE`. The handoff holds only what git and the backlog cannot tell the next session; the session-start script already prints branch, commits, active and ready tasks.
+Rules: `R-STATE`, `R-BOOTSTRAP`, `R-STATE-COHERENCE`. The handoff holds only what git and the backlog cannot tell the next session: what waits for the user. Branch, commits, active and ready tasks, `RETRO DUE` and versions come from the session-start script and never go into it.
 
-## 0. Skip check (`R-BATCHING` "Skip the handoff")
-Determine yourself what is not yet in git or the backlog: `git status --porcelain`, unpushed commits (`git log @{u}..` if an upstream exists), open approvals or proposals from this session, evidence only in chat, notes written nowhere else. Turn every pending decision into a draft task and every uncommitted change into a commit first. If nothing is left: do not write the handoff; delete the consumed `docs/agent/HANDOFF.md` and commit that (session start hides a handoff once any commit follows it, but the file stays until you delete it), skip to step 4 and give only the ready prompt. Otherwise tell the user in one line what forces the handoff.
+## 1. Notes into the tasks
+Each unfinished task gets a concrete continuation point in its notes (open criterion, next action as `Next:`), hard-won context (ruled-out hypotheses), evidence with the SHA it verified (`R-STATE-COHERENCE`), and `Learning:` only if a detour happened (`R-LEARNING`).
 
-## 1. Write `docs/agent/HANDOFF.md`
-Always rewrite the whole file, never append or "refresh" (`Earlier:` sections are how it bloats). Max 2 KB / 40 lines; the session-start script warns above that. Use these headings, drop empty ones:
+## 2. Commit what is not work in progress
+Explicit paths, code together with its task changes (`R-STATE-COHERENCE`). Half-finished work stays out of `main`: a task note, or a WIP branch.
 
+## 3. Check
+`git status --porcelain` clean (WIP named), unpushed commits (with an upstream: push if the user allowed pushing, else it is an open approval), no open user question or approval from this session.
+- **Something open → step 4.**
+- **Nothing open → write no handoff.** Delete an existing `docs/agent/HANDOFF.md`, commit that, go to step 5. (Session start hides a handoff once a later commit exists, but the file stays until deleted.)
+
+## 4. Open question: draft plus pointer
+Record each open question or decision in a draft task with the options verbatim; it carries no overhead (no DoD, label, milestone or acceptance criteria):
+```
+backlog task create "Decide: <topic>" --draft --no-dod-defaults -d "Question to the user (<date>): <question>. Options: a) ... (recommended) b) ... c) ..."
+```
+The description must start with `Question to the user`: session start lists such drafts under "open questions". A question asked in chat is recorded the same way at once, not only at session end.
+Then rewrite `docs/agent/HANDOFF.md` from scratch (max 1 KB, drop empty lines):
 ```
 # Handoff
-**State:** <date>, stem <version from STEM_VERSION>, <branch> @ <commit SHA>; <what is true in one or two sentences>
-**Approvals:** <what the user allowed, date>; <scope, batch, release>
-**Next step:** <one concrete action, with the file/command to start>
-**Evidence open:** <what was verified at which SHA; what is still missing, e.g. manual check>
-**Blockers / decisions:** <what waits for the user; point to the task notes holding the options>
-**Notes:** <max 3 lines: facts the next run needs that are written nowhere else; re-justify each one at every rewrite, else drop>
+**Open for the user:** <DRAFT-n: one-line question>; <pending approval, e.g. push or release>
+**After the answer:** <one concrete action, with file or command>
 ```
+Commit the handoff last (a later commit marks it consumed), push when an upstream exists and pushing is allowed. The session that settles the question deletes the handoff, and the draft (or promotes it to a task), in the same commit.
 
-Per line test: does git, the backlog or the session-start script already show it (finished tasks, active task, commit messages, `RETRO DUE`, versions, ready tasks)? Then delete it. Commit the handoff last: a later commit marks it consumed. Durable knowledge goes to `docs/` or `PITFALLS.md`, not into Notes, history stays in tasks and commits.
-
-## 2. Check before saving
-Sections agree with each other, approvals are still valid, evidence names the SHA it verified (`R-STATE-COHERENCE`).
-
-## 3. Session-end checklist
-1. `git status`: nothing unrelated, nothing forgotten. Commit code together with its task changes and the handoff, or state why not.
-2. Unfinished tasks: each has a concrete continuation point in its notes (open criterion, next action), not "still to check".
-3. Pending user decision: write the question and every option (a/b/c) verbatim into the task notes, and point to the task from `Blockers / decisions`. "User decides X" alone is not enough; the next session must not search the transcript for the wording.
-4. Notable detours or high context cost: add `Learning:` to the task (only if it happened).
-
-## 4. Suggest the next prompt
+## 5. Suggest the next prompt
 End your final message with one ready-to-paste prompt for the next session (the concrete next task or action). A session you start yourself gets the brief of `R-BATCHING` "Hand-off inside an approved batch" including its leading detach-self sentence. Do not mention the handoff or ask to read it: session start loads it automatically. Inside an approved batch above the context threshold, start the fresh session yourself instead (`R-BATCHING` "Hand-off inside an approved batch").
 
 If a step did not fit or you deviated from it: `Learning: skill handoff: <what> -> <change>` in the task notes (`R-LEARNING`).

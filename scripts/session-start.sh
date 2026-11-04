@@ -72,6 +72,14 @@ fi
 # waiting tasks whose outside event happened (fixed condition kinds only, see the script)
 [ -d backlog/tasks ] && [ -f scripts/wait-check.py ] && python3 scripts/wait-check.py 2>/dev/null
 echo; echo "## backlog check"; scripts/check-backlog.sh 2>/dev/null | head -10; [ "${PIPESTATUS[0]:-0}" -eq 0 ] && echo "ok"
+# open user questions: drafts whose description starts with "Question to the user" (recorded when a question stays open, see the handoff skill)
+oq=""
+for f in backlog/drafts/*.md; do
+  [ -f "$f" ] || continue
+  awk '/DESCRIPTION:BEGIN/{getline; ok=($0 ~ /^Question to the user/); exit} END{exit !ok}' "$f" 2>/dev/null \
+    && oq="$oq$(sed -n 's/^id: //p' "$f" | head -1): $(sed -n 's/^title: //p' "$f" | head -1 | tr -d "'")"$'\n'
+done
+[ -n "$oq" ] && { echo; echo "## open questions for the user (answer or ask first; the draft holds the options)"; printf '%s' "$oq"; }
 echo; echo "## handoff"
 if [ -f docs/agent/HANDOFF.md ]; then
   # consumed: a handoff is written for exactly the next session; any commit after the one that last touched it means that session ran

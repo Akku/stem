@@ -322,6 +322,18 @@ class SessionStart(SandboxRepo):
         out = self.start(env)
         self.assertIn("New", out); self.assertNotIn("consumed", out)  # a rewrite is fresh again
 
+    def test_open_question_drafts_are_listed_until_resolved(self):
+        env = {"STEM_OFFLINE": "1"}
+        d = self.repo / "backlog/drafts"; d.mkdir(parents=True)
+        self.assertNotIn("open questions", self.start(env))
+        q = d / "draft-1 - q.md"
+        q.write_text("---\nid: DRAFT-1\ntitle: 'Decide: X'\n---\n\n## Description\n\n<!-- SECTION:DESCRIPTION:BEGIN -->\nQuestion to the user (today): a) b)\n<!-- SECTION:DESCRIPTION:END -->\n")
+        (d / "draft-2 - idea.md").write_text("---\nid: DRAFT-2\ntitle: Idea\n---\n\n<!-- SECTION:DESCRIPTION:BEGIN -->\nJust an idea\n<!-- SECTION:DESCRIPTION:END -->\n")
+        out = self.start(env)
+        self.assertIn("## open questions", out); self.assertIn("DRAFT-1: Decide: X", out); self.assertNotIn("DRAFT-2", out)
+        q.unlink()
+        self.assertNotIn("open questions", self.start(env))
+
     def test_handoff_brief_starts_with_detach_self(self):
         text = (ROOT / "docs/agent/OPERATING_MODEL.md").read_text(encoding="utf-8")
         brief = text[text.index("Brief (the detach sentence"):]
