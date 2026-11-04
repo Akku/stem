@@ -491,6 +491,7 @@ Useful principles:
 - distinguish local uncommitted changes from verified committed code;
 - keep code and closely related task-state changes coherent in commits according to project convention;
 - check the working tree before committing and before ending a session so unrelated or forgotten changes are visible;
+- parallel sessions on one repository work in separate worktrees (the app's worktree feature or `git worktree add`) and stage explicit paths, never `git add -A` or `git add .`;
 - commit message: first line `TASK-<n>: <summary>` (several tasks: `TASK-1, TASK-2: <summary>`); merge, revert, fixup, `Release`, `Handoff`, `Initial commit` and `Set up` commits are exempt. The `commit-msg` hook in `scripts/githooks` enforces it; `--no-verify` is denied for the agent;
 - do not treat "CI green" as sufficient when required manual or environment-specific evidence is still missing;
 - summarize verbose CI/GitHub output using the same compact-output discipline as local tests.
@@ -612,7 +613,7 @@ For every proposed piece of agent infrastructure, ask:
 
 If the answer is unclear, defer it and preserve only enough evidence to revisit the hypothesis later.
 
-**Decision records.** When a decision changes a rule, an interface or module boundary, a cost trade-off, or the direction the user chose, record it once with `backlog decision create "<title>"` (check `--help`): Context, Decision, Consequences, status. One decision per file; to change it, create a new record that supersedes the old one and set the old status to `superseded by <id>`. Routine task choices stay in task notes.
+**Decision records.** When a decision changes a rule, an interface or module boundary, a cost trade-off, or the direction the user chose, record it once as an ADR (architecture decision record, Nygard style) with `backlog decision create "<title>"` (check `--help`): front matter `id`, `title`, `date`, `status` (`proposed`, `accepted`, `rejected` or `superseded by <id>`) and the sections `## Context`, `## Decision`, `## Consequences`; `scripts/check-backlog.sh` fails on a record without them. One decision per file; to change it, create a new record that supersedes the old one and set the old status to `superseded by <id>`. Routine task choices stay in task notes.
 <!-- RULE:R-DECISION:END -->
 
 <!-- RULE:R-ROADMAP:START -->

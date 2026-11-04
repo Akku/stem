@@ -270,6 +270,18 @@ class RetroMetrics(SandboxRepo):
         self.assertEqual(r.returncode, 1)
         self.assertIn("duplicate task id: task-1", r.stdout)
 
+    def test_decision_record_needs_sections_and_valid_status(self):
+        d = self.repo / "backlog/decisions"; d.mkdir(parents=True)
+        ok = "---\nid: decision-1\ntitle: T\ndate: 2026-01-01\nstatus: accepted\n---\n## Context\nc\n\n## Decision\nd\n\n## Consequences\ne\n"
+        (d / "decision-1 - ok.md").write_text(ok)
+        self.assertEqual(run(["bash", "scripts/check-backlog.sh"], self.repo, self.env).returncode, 0)
+        (d / "decision-2 - bad.md").write_text(ok.replace("decision-1", "decision-2").replace("## Consequences\ne\n", "").replace("accepted", "maybe"))
+        r = run(["bash", "scripts/check-backlog.sh"], self.repo, self.env)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("decision-2: decision record lacks section '## Consequences'", r.stdout)
+        self.assertIn("decision-2: invalid decision status 'maybe'", r.stdout)
+        self.assertNotIn("decision-1", r.stdout)
+
 
 class SessionStart(SandboxRepo):
     def start(self, extra_env=None):
