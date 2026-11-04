@@ -172,6 +172,28 @@ class SandboxRepo(Sandbox):
         run(["git", "add", "-A"], self.repo); return run(["git", "commit", "-qm", msg], self.repo)
 
 
+class CommitMsgHook(SandboxRepo):
+    def msg(self, text):
+        f = self.tmp / "MSG"; f.write_text(text)
+        return run(["bash", str(self.repo / "scripts/githooks/commit-msg"), str(f)], self.repo)
+
+    def test_accepts_task_and_exempt_subjects(self):
+        for text in ("TASK-7: fix x\n", "TASK-7, TASK-12: fix x\n\nbody", "# comment\nTASK-3: y\n", "Merge branch 'a'", "Revert \"x\"",
+                     "fixup! TASK-1: a", "Release 1.2.0", "Handoff 2026-11-04", "Initial commit", "Set up STEM"):
+            self.assertEqual(self.msg(text).returncode, 0, text)
+
+    def test_rejects_others(self):
+        for text in ("fix x", "docs: y", "TASK-7 fix", "TASK-: x", "task-7: x", "TASK-7:", "\n"):
+            r = self.msg(text)
+            self.assertEqual(r.returncode, 1, text); self.assertIn("TASK-<n>", r.stderr)
+
+    def test_real_commit_blocked_and_allowed_with_hook(self):
+        run(["git", "config", "core.hooksPath", "scripts/githooks"], self.repo)
+        (self.repo / "a.txt").write_text("a\n"); run(["git", "add", "a.txt"], self.repo)
+        self.assertNotEqual(run(["git", "commit", "-qm", "bad subject"], self.repo).returncode, 0)
+        self.assertEqual(run(["git", "commit", "-qm", "TASK-1: ok"], self.repo).returncode, 0)
+
+
 class RetroMetrics(SandboxRepo):
     def test_snapshot_never_overwrites_same_day_baseline(self):
         self.task(1); self.commit("TASK-1 done")
@@ -368,11 +390,14 @@ class PromoteCheck(SandboxRepo):
 
 
 class PreCommit(SandboxRepo):
+    def commit(self, msg):  # commit-msg hook is active together with pre-commit
+        return super().commit("TASK-1: " + msg)
+
     def test_rename_into_blocked_file_is_rejected(self):
         run(["git", "config", "core.hooksPath", "scripts/githooks"], self.repo)
         (self.repo / "notes.txt").write_text("confidential\n" * 20); self.assertEqual(self.commit("init").returncode, 0)
         run(["git", "mv", "notes.txt", "notes.pdf"], self.repo)
-        r = run(["git", "commit", "-qm", "rename"], self.repo, self.env)
+        r = run(["git", "commit", "-qm", "TASK-1: rename"], self.repo, self.env)
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("notes.pdf", r.stderr)
 

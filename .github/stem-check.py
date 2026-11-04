@@ -55,7 +55,7 @@ else:  # step 8: the setup commit comes after every final change, so the startin
         if pos(p) < 0 or commit < 0 or pos(p) > commit: err(f"SETUP.md step 8: '{p}' must come before the setup commit")
 for f in ("docs/agent/EXPERIMENTS.md", "docs/agent/NEXT_RETRO.md"):
     if not (root / f).exists(): err(f"{f} missing")
-for pth in (".claude/skills", ".claude/settings.json", ".github", ".gitignore", "scripts/githooks/pre-commit"):
+for pth in (".claude/skills", ".claude/settings.json", ".github", ".gitignore", "scripts/githooks/pre-commit", "scripts/githooks/commit-msg"):
     if not (root / pth).exists(): err(f"{pth} missing (SETUP.md step 0 expects it)")
 
 # Codex skill path: link to the Claude skills (one source for skill text); symlink or git's text-file fallback
@@ -70,6 +70,8 @@ handoff = root / "docs/agent/HANDOFF.md"
 if handoff.exists() and len(handoff.read_bytes()) > 2048: err("docs/agent/HANDOFF.md exceeds 2 KB (rewrite it, handoff skill)")
 st = json.loads((root / ".claude/settings.json").read_text())
 if "Read(./.env)" not in st.get("permissions", {}).get("deny", []): err("settings.json: deny rule for .env missing")
+for rule in ("Bash(git reset --hard:*)", "Bash(git clean *-f*)", "Bash(git commit *--no-verify*)", "Bash(git push *--no-verify*)"):
+    if rule not in st.get("permissions", {}).get("deny", []): err(f"settings.json: deny rule {rule} missing")
 
 # skills listed in AGENTS.md exist
 agents = (root / "AGENTS.md").read_text()

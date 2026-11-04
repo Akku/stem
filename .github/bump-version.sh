@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Maintainer helper: set STEM version everywhere. Usage: .github/bump-version.sh 0.2.0
-# Then: git commit, git tag v<version>, git push --follow-tags
+# Then: git commit, git tag -a v<version> -m "Release <version>", git push --follow-tags
 set -eu
 v=${1:?usage: $0 X.Y.Z}
 sed -i.bak -E "s/^version: .*/version: $v/" STEM_VERSION

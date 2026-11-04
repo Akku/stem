@@ -491,6 +491,7 @@ Useful principles:
 - distinguish local uncommitted changes from verified committed code;
 - keep code and closely related task-state changes coherent in commits according to project convention;
 - check the working tree before committing and before ending a session so unrelated or forgotten changes are visible;
+- commit message: first line `TASK-<n>: <summary>` (several tasks: `TASK-1, TASK-2: <summary>`); merge, revert, fixup, `Release`, `Handoff`, `Initial commit` and `Set up` commits are exempt. The `commit-msg` hook in `scripts/githooks` enforces it; `--no-verify` is denied for the agent;
 - do not treat "CI green" as sufficient when required manual or environment-specific evidence is still missing;
 - summarize verbose CI/GitHub output using the same compact-output discipline as local tests.
 

@@ -3,6 +3,7 @@
 Newest first. Projects read the entries newer than their `STEM_VERSION` (see `stem-update` skill). Each entry: what changed and who benefits; renames and removals get a `Migration:` line (what to rename or delete) that `stem-update` carries out.
 
 ## Unreleased
+- **Git guard rails:** new `commit-msg` hook enforces the commit message convention (first line `TASK-<n>: <summary>`; merge, revert, fixup, Release, Handoff, Initial commit and Set up exempt; rule in `R-STATE-COHERENCE`). `.claude/settings.json` additionally denies `git reset --hard`, `git clean -f`, `git checkout .`, `git restore .`, `git branch -D`, `git push --delete` and `--no-verify` on commit/push (the agent can no longer bypass the secret guard; you still can). `.gitignore` now lists `.agent-logs/`, `.claude/settings.local.json` and `.env*`. `bump-version.sh` hints `git tag -a` (annotated release tags). Benefits: traceable history, fewer destructive mistakes. Migration: copy `scripts/githooks/commit-msg` (executable), add the new deny rules to your `.claude/settings.json`, adjust unusual first lines of your own commit conventions.
 - **`run.sh` prunes old logs:** after each run, logs in `.agent-logs/` older than `AGENT_LOG_KEEP_DAYS` (default 30, `0` keeps all) are deleted unless their file name appears under `backlog/` or `docs/` or in the paths of `AGENT_LOG_REFS`, so evidence cited in task notes survives. Benefits: the log folder no longer grows without bound. Migration: copy `scripts/run.sh`.
 
 ## 1.10.0
