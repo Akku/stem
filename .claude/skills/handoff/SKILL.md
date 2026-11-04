@@ -14,7 +14,7 @@ Each unfinished task gets a concrete continuation point in its notes (open crite
 Explicit paths, code together with its task changes (`R-STATE-COHERENCE`). Half-finished work stays out of `main`: a task note, or a WIP branch.
 
 ## 3. Check
-`git status --porcelain` clean (WIP named), unpushed commits (with an upstream: push if the user allowed pushing, else it is an open approval), no open user question or approval from this session.
+`git status --porcelain` clean (WIP named), no open user question or approval from this session. Unpushed commits are not open: they are in git; pushing is the user's separate decision (step 5).
 - **Something open → step 4.**
 - **Nothing open → write no handoff.** Delete an existing `docs/agent/HANDOFF.md`, commit that, go to step 5. (Session start hides a handoff once a later commit exists, but the file stays until deleted.)
 
@@ -27,12 +27,12 @@ The description must start with `Question to the user`: session start lists such
 Then rewrite `docs/agent/HANDOFF.md` from scratch (max 1 KB, drop empty lines):
 ```
 # Handoff
-**Open for the user:** <DRAFT-n: one-line question>; <pending approval, e.g. push or release>
+**Open for the user:** <DRAFT-n: one-line question>; <pending approval, e.g. a release>
 **After the answer:** <one concrete action, with file or command>
 ```
-Commit the handoff last (a later commit marks it consumed), push when an upstream exists and pushing is allowed. The session that settles the question deletes the handoff, and the draft (or promotes it to a task), in the same commit.
+Commit the handoff last (a later commit marks it consumed). The session that settles the question deletes the handoff, and the draft (or promotes it to a task), in the same commit.
 
 ## 5. Suggest the next prompt
-End your final message with one ready-to-paste prompt for the next session (the concrete next task or action). A session you start yourself gets the brief of `R-BATCHING` "Hand-off inside an approved batch" including its leading detach-self sentence. Do not mention the handoff or ask to read it: session start loads it automatically. Inside an approved batch above the context threshold, start the fresh session yourself instead (`R-BATCHING` "Hand-off inside an approved batch").
+If commits are unpushed, ask once in the final message whether to push (a standing "always push" from the user covers it; tags and releases stay a separate decision); never put it into the handoff. End your final message with one ready-to-paste prompt for the next session (the concrete next task or action). A session you start yourself gets the brief of `R-BATCHING` "Hand-off inside an approved batch" including its leading detach-self sentence. Do not mention the handoff or ask to read it: session start loads it automatically. Inside an approved batch above the context threshold, start the fresh session yourself instead (`R-BATCHING` "Hand-off inside an approved batch").
 
 If a step did not fit or you deviated from it: `Learning: skill handoff: <what> -> <change>` in the task notes (`R-LEARNING`).
