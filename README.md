@@ -41,7 +41,7 @@ macOS is tested; Windows is prepared but not yet tested.
 ## Why STEM
 
 1. **Guided start.** You describe your idea; the agent installs and explains the tools (Git, Node.js, Backlog.md) and works out with you a vision, milestones and the first tasks.
-2. **Continuity.** Each session ends with a short handoff note and the next one starts with a state summary, so work picks up where it stopped instead of starting from zero.
+2. **Continuity.** Each session ends with a short handoff note (only when state exists outside git and the backlog) and the next one starts with a state summary, so work picks up where it stopped instead of starting from zero.
 3. **Learning.** Short retrospectives turn measured friction into rule changes in your project; learnings that prove themselves flow back into STEM as versioned releases.
 4. **Traceability.** Every change runs through a task with acceptance criteria and recorded evidence, so you can see what the agent did and why it counts as done.
 
@@ -95,7 +95,7 @@ STEM releases use `MAJOR.MINOR.PATCH` version numbers; renames and removals come
 This section is the author's experience, not measured data; treat the numbers as a starting point and adjust them to your own work.
 
 - **Switch models between sessions, not in the middle of one.** Pick the model for the next task when you start a session (a stronger model for design and review, a cheaper one for well-defined changes). A switch inside a session makes the next turns re-read the whole context at the new model's price.
-- **Hand off before the context gets heavy.** In the Claude app a session typically starts at about 70k tokens of context (rules, session start, handoff). Start the handoff by about 100k at the latest: beyond that, quality tends to drop and every turn gets more expensive. The agent's context notice (threshold: the smaller of half the model window and 100k tokens, `R-BATCHING`) tells you when. Finish the current task first, then run the `handoff` skill; the next session starts from the short `docs/agent/HANDOFF.md` and the backlog.
+- **Hand off before the context gets heavy.** In the Claude app a session typically starts at about 70k tokens of context (rules, session start, handoff). Start the handoff by about 100k at the latest: beyond that, quality tends to drop and every turn gets more expensive. The agent's context notice (threshold: the smaller of half the model window and 100k tokens, `R-BATCHING`) tells you when. Finish the current task first, then run the `handoff` skill. If everything is committed and recorded in the backlog, it skips the note and gives you only a ready prompt; otherwise the next session starts from the short `docs/agent/HANDOFF.md` and the backlog.
 - **Run the whole development in a Docker container if you want unattended work.** The container confines what the agent can run to the container; your project folder is bind-mounted, so edits appear in your repository.
   - Setup (Claude Code, from Anthropic's [dev container guide](https://code.claude.com/docs/en/devcontainer)): add `.devcontainer/devcontainer.json` with the Claude Code feature `ghcr.io/anthropics/devcontainer-features/claude-code:1.0`, rebuild the container, run `claude` inside and sign in.
   - Keep the login across rebuilds: mount a named volume at `~/.claude` and set `CLAUDE_CONFIG_DIR` to the same path (`mounts` and `containerEnv` in `devcontainer.json`).

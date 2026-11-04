@@ -79,5 +79,11 @@ if [ -f docs/agent/HANDOFF.md ]; then
   # staleness: the first "stem [version] X.Y.Z" named in the handoff must match STEM_VERSION
   hv=$(grep -oiE '(^|[^a-z])stem( version)?:? v?[0-9]+\.[0-9]+\.[0-9]+' docs/agent/HANDOFF.md | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+$')
   [ -n "$hv" ] && [ -n "${lv:-}" ] && [ "$hv" != "$lv" ] && echo "WARNING: HANDOFF.md names stem $hv but STEM_VERSION is $lv: the handoff may be stale; check it against the current state"
-else echo "no HANDOFF.md"; fi
+  # staleness: many commits since the handoff was last committed (a later session skipped or forgot it)
+  hc=$(git log -1 --format=%H -- docs/agent/HANDOFF.md 2>/dev/null)
+  if [ -n "$hc" ]; then
+    n=$(git rev-list --count "$hc..HEAD" 2>/dev/null || echo 0)
+    [ "$n" -ge "${HANDOFF_STALE_COMMITS:-5}" ] && echo "WARNING: HANDOFF.md is $n commits old: treat it as history, not current state (git and the backlog win)"
+  fi
+else echo "no HANDOFF.md (clean boundary: state is in git and the backlog)"; fi
 echo; echo "Rules: see AGENTS.md; further rules by ID via docs/agent/OPERATING_MODEL.md"

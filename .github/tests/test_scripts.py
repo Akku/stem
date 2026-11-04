@@ -308,6 +308,15 @@ class SessionStart(SandboxRepo):
         (self.repo / "docs/agent/HANDOFF.md").write_text("stem 1.2.0\n")
         self.assertIn("names stem 1.2.0 but STEM_VERSION is 1.2.1", self.start({"STEM_OFFLINE": "1"}))
 
+    def test_handoff_commit_age_warns_and_missing_file_is_clean(self):
+        self.assertIn("clean boundary", self.start({"STEM_OFFLINE": "1"}))
+        (self.repo / "docs/agent").mkdir(parents=True); (self.repo / "docs/agent/HANDOFF.md").write_text("State: main\n"); self.commit("handoff")
+        for i in range(4):
+            (self.repo / f"f{i}").write_text("x"); self.commit(f"work {i}")
+        self.assertNotIn("commits old", self.start({"STEM_OFFLINE": "1"}))
+        (self.repo / "f4").write_text("x"); self.commit("work 4")
+        self.assertIn("HANDOFF.md is 5 commits old", self.start({"STEM_OFFLINE": "1"}))
+
     def test_retro_due_after_threshold_and_cleared_by_retro_notes(self):
         for n in (1, 2, 3): self.task(n)
         self.assertIn("RETRO DUE: 3 tasks done", self.start({"RETRO_DUE_AFTER": "3"}))

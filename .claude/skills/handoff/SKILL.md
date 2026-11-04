@@ -7,6 +7,9 @@ description: Rewrite docs/agent/HANDOFF.md from scratch so the next session can 
 
 Rules: `R-STATE`, `R-BOOTSTRAP`, `R-STATE-COHERENCE`. The handoff holds only what git and the backlog cannot tell the next session; the session-start script already prints branch, commits, active and ready tasks.
 
+## 0. Skip check (`R-BATCHING` "Skip the handoff")
+Determine yourself what is not yet in git or the backlog: `git status --porcelain`, unpushed commits (`git log @{u}..` if an upstream exists), open approvals or proposals from this session, evidence only in chat, notes written nowhere else. Turn every pending decision into a draft task and every uncommitted change into a commit first. If nothing is left: do not write the handoff; delete a stale `docs/agent/HANDOFF.md` and commit that, skip to step 4 and give only the ready prompt. Otherwise tell the user in one line what forces the handoff.
+
 ## 1. Write `docs/agent/HANDOFF.md`
 Always rewrite the whole file, never append or "refresh" (`Earlier:` sections are how it bloats). Max 2 KB / 40 lines; the session-start script warns above that. Use these headings, drop empty ones:
 
