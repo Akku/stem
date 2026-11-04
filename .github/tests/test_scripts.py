@@ -317,6 +317,11 @@ class SessionStart(SandboxRepo):
         (self.repo / "f4").write_text("x"); self.commit("work 4")
         self.assertIn("HANDOFF.md is 5 commits old", self.start({"STEM_OFFLINE": "1"}))
 
+    def test_handoff_brief_starts_with_detach_self(self):
+        text = (ROOT / "docs/agent/OPERATING_MODEL.md").read_text(encoding="utf-8")
+        brief = text[text.index("Brief (the detach sentence"):]
+        self.assertLess(brief.index("`detach_session` with session_id `self`"), brief.index("continue the approved batch"))
+
     def test_retro_due_after_threshold_and_cleared_by_retro_notes(self):
         for n in (1, 2, 3): self.task(n)
         self.assertIn("RETRO DUE: 3 tasks done", self.start({"RETRO_DUE_AFTER": "3"}))
