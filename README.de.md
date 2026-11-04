@@ -89,6 +89,20 @@ Zu Beginn jeder Sitzung prüft der Agent (einmal pro Tag), ob es eine neuere STE
 
 STEM-Releases tragen Versionsnummern nach dem Muster `MAJOR.MINOR.PATCH`; Umbenennungen und Entfernungen stehen mit Migrationshinweis im Changelog. Dein Projekt hat eine eigene Version, beginnend bei 0.1.0, unabhängig von der STEM-Version in `STEM_VERSION`: Nach einem abgeschlossenen Arbeitspaket schlägt der Agent einen Patch-, Minor- oder Major-Sprung vor und setzt ihn nur mit deiner Zustimmung um.
 
+## Täglich mit STEM arbeiten
+
+Dieser Abschnitt beschreibt die Erfahrung des Autors, keine gemessenen Daten; die Zahlen sind ein Startpunkt und sollten an die eigene Arbeit angepasst werden.
+
+- **Modelle zwischen Sitzungen wechseln, nicht mittendrin.** Wähle das Modell für die nächste Aufgabe beim Start einer Sitzung (ein stärkeres für Entwurf und Review, ein günstigeres für klar umrissene Änderungen). Ein Wechsel mitten in der Sitzung lässt die nächsten Züge den gesamten Kontext zum Preis des neuen Modells neu lesen.
+- **Übergabe, bevor der Kontext schwer wird.** In der Claude-App startet eine Sitzung typischerweise bei etwa 70k Token Kontext (Regeln, Sitzungsstart, Handoff). Starte die Übergabe spätestens bei etwa 100k: darüber sinkt die Qualität tendenziell und jeder Zug wird teurer. Der Kontext-Hinweis des Agenten (Schwelle: der kleinere Wert aus halbem Modellfenster und 100k Token, `R-BATCHING`) meldet sich rechtzeitig. Schließe zuerst die laufende Aufgabe ab und starte dann den Skill `handoff`; die nächste Sitzung beginnt mit der kurzen `docs/agent/HANDOFF.md` und dem Backlog.
+- **Die ganze Entwicklung in einem Docker-Container laufen lassen, wenn der Agent unbeaufsichtigt arbeiten soll.** Der Container begrenzt, was der Agent ausführen kann; dein Projektordner ist per Bind-Mount eingebunden, Änderungen erscheinen also in deinem Repository.
+  - Einrichtung (Claude Code, nach Anthropics [Dev-Container-Anleitung](https://code.claude.com/docs/en/devcontainer)): `.devcontainer/devcontainer.json` mit dem Claude-Code-Feature `ghcr.io/anthropics/devcontainer-features/claude-code:1.0` anlegen, Container neu bauen, darin `claude` starten und anmelden.
+  - Anmeldung über Neubauten behalten: ein benanntes Volume nach `~/.claude` mounten und `CLAUDE_CONFIG_DIR` auf denselben Pfad setzen (`mounts` und `containerEnv` in `devcontainer.json`).
+  - Zugangsdaten: kein `~/.ssh` und keine Cloud-Zugangsdateien mounten; besser Tokens, die auf das Repository begrenzt oder kurzlebig sind. Nur vertrauenswürdige Repositories verwenden.
+  - Unbeaufsichtigter Betrieb: `--dangerously-skip-permissions` geht nur als Nicht-root-Benutzer (`remoteUser`); die Anleitung empfiehlt dazu eine eingeschränkte Netzwerk-Ausleitung (Referenz-Firewall `init-firewall.sh` mit den Capabilities `NET_ADMIN` und `NET_RAW`).
+  - Git und Backlog.md brauchen keine Extra-Einrichtung: beide laufen im Container auf dem gemounteten Ordner. Die `backlog`-CLI muss im Image installiert sein.
+  - **Von uns nicht getestet:** Diese Anleitung folgt dem aktuellen Guide und wurde nicht mit STEM ausgeführt. Codex im Container ist hier nicht abgedeckt; prüfe die Codex-Dokumentation, bevor du dich darauf verlässt.
+
 ## STEM oder der Agent pur?
 
 Coding-Agenten wie Claude Code oder Codex funktionieren auch allein gut. STEM legt einen Arbeitsablauf darum, und der kostet zusätzliche Schritte. Eine grobe Orientierung:

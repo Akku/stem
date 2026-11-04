@@ -90,6 +90,20 @@ At the start of each session the agent checks (once per day) whether a newer STE
 
 STEM releases use `MAJOR.MINOR.PATCH` version numbers; renames and removals come with migration notes in the changelog. Your project gets its own version, starting at 0.1.0, independent of the STEM version in `STEM_VERSION`: after a finished work package the agent proposes a patch, minor or major bump and applies it only with your approval.
 
+## Working with STEM day to day
+
+This section is the author's experience, not measured data; treat the numbers as a starting point and adjust them to your own work.
+
+- **Switch models between sessions, not in the middle of one.** Pick the model for the next task when you start a session (a stronger model for design and review, a cheaper one for well-defined changes). A switch inside a session makes the next turns re-read the whole context at the new model's price.
+- **Hand off before the context gets heavy.** In the Claude app a session typically starts at about 70k tokens of context (rules, session start, handoff). Start the handoff by about 100k at the latest: beyond that, quality tends to drop and every turn gets more expensive. The agent's context notice (threshold: the smaller of half the model window and 100k tokens, `R-BATCHING`) tells you when. Finish the current task first, then run the `handoff` skill; the next session starts from the short `docs/agent/HANDOFF.md` and the backlog.
+- **Run the whole development in a Docker container if you want unattended work.** The container confines what the agent can run to the container; your project folder is bind-mounted, so edits appear in your repository.
+  - Setup (Claude Code, from Anthropic's [dev container guide](https://code.claude.com/docs/en/devcontainer)): add `.devcontainer/devcontainer.json` with the Claude Code feature `ghcr.io/anthropics/devcontainer-features/claude-code:1.0`, rebuild the container, run `claude` inside and sign in.
+  - Keep the login across rebuilds: mount a named volume at `~/.claude` and set `CLAUDE_CONFIG_DIR` to the same path (`mounts` and `containerEnv` in `devcontainer.json`).
+  - Credentials: do not mount `~/.ssh` or cloud credential files; prefer repository-scoped or short-lived tokens. Use trusted repositories only.
+  - Unattended operation: `--dangerously-skip-permissions` is allowed only as a non-root user (`remoteUser`); the guide recommends pairing it with restricted network egress (reference firewall `init-firewall.sh` with the `NET_ADMIN` and `NET_RAW` capabilities).
+  - Git and Backlog.md need no extra setup: both run inside the container on the mounted folder. Install the `backlog` CLI in your image.
+  - **Not tested by us:** this recipe follows the current guide and has not been run with STEM. Codex in a container is not covered here; check the Codex documentation before relying on it.
+
 ## STEM or the plain agent?
 
 Coding agents such as Claude Code or Codex work well on their own. STEM adds a workflow around them, and that workflow costs extra steps. A rough guide:
