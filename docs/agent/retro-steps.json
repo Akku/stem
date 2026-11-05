@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "note": "Single source of the retro steps and their required evidence. The retro skill says HOW to do a step (section named in `ref`); this file says WHICH steps apply and what proves them. Driven by scripts/retro-run.py. Kinds: version (retro-run.py version-check + decide), tech (retro-run.py run: command, exit status and log are stored), analysis and decision (retro-run.py done: concrete result text plus at least one reference). `stage`: base (every retro), full (full stage), first (first retro). `when` (optional): flag given at start (--flag NAME); without it the step is not applicable. `skill`: skill files whose content change invalidates the step's evidence.",
+  "steps": [
+    {"id": "stem-version", "title": "Query current STEM version; author chooses update or current state", "stage": "base", "kind": "version", "ref": "retro#stem-version", "skill": ["retro/SKILL.md", "stem-update/SKILL.md"]},
+    {"id": "topics", "title": "Extra topics", "stage": "base", "kind": "tech", "ref": "retro#extra-topics", "command": ["python3", "scripts/retro-topics.py", "--retro", "{label}"], "skill": ["retro/SKILL.md"]},
+    {"id": "user-input", "title": "Ask user for problems, ideas, goals", "stage": "base", "kind": "decision", "ref": "retro#user-input", "skill": ["retro/SKILL.md"]},
+    {"id": "context-report", "title": "Context report", "stage": "base", "kind": "tech", "ref": "retro#measure", "command": ["python3", "scripts/context-report.py"], "skill": ["retro/SKILL.md"]},
+    {"id": "start-context", "title": "Start context per session and trend (dialog in retro 2 or 3)", "stage": "base", "kind": "tech", "ref": "retro#start-context", "command": ["python3", "scripts/start-context.py", "report"], "skill": ["retro/SKILL.md", "retro/start-context.md"]},
+    {"id": "metrics", "title": "Retro metrics", "stage": "base", "kind": "tech", "ref": "retro#measure", "command": ["bash", "scripts/retro-metrics.sh"], "since": "last-retro", "value_flags": ["--repo"], "skill": ["retro/SKILL.md"]},
+    {"id": "measure-read", "title": "Read NEXT_RETRO, Learning lines, recent log; silent inefficiency, unverified evidence, unrecorded decisions, cost series", "stage": "base", "kind": "analysis", "ref": "retro#measure", "skill": ["retro/SKILL.md"]},
+    {"id": "check-last-changes", "title": "Check last changes against their metrics", "stage": "base", "kind": "analysis", "ref": "retro#check-last-changes", "skill": ["retro/SKILL.md"]},
+    {"id": "skill-review", "title": "Skill review", "stage": "base", "kind": "analysis", "ref": "retro#skill-review", "skill": ["retro/SKILL.md"]},
+    {"id": "pick", "title": "Pick and classify topics", "stage": "base", "kind": "decision", "ref": "retro#pick", "skill": ["retro/SKILL.md"]},
+    {"id": "record", "title": "Record changes, create tasks, write retro notes", "stage": "base", "kind": "analysis", "ref": "retro#record-and-implement", "skill": ["retro/SKILL.md"]},
+    {"id": "promote-check", "title": "Promote check", "stage": "base", "kind": "tech", "ref": "retro#close", "command": ["bash", "scripts/promote-check.sh"], "skill": ["retro/SKILL.md"]},
+    {"id": "field-report", "title": "Offer field report (never send unasked)", "stage": "base", "kind": "decision", "ref": "retro#close", "skill": ["retro/SKILL.md", "retro/field-report.md"]},
+    {"id": "stem-findings", "title": "Findings from other projects (learning branches, PRs, field reports)", "stage": "full", "kind": "analysis", "ref": "full-stage#stem", "skill": ["retro/full-stage.md"]},
+    {"id": "independent-read", "title": "Independent read by one agent", "stage": "full", "kind": "analysis", "ref": "full-stage#independent-read", "skill": ["retro/full-stage.md"]},
+    {"id": "optional-practices", "title": "Optional and advanced practices", "stage": "full", "kind": "decision", "ref": "full-stage#optional-and-advanced-practices", "skill": ["retro/full-stage.md"]},
+    {"id": "agents-budget", "title": "AGENTS.md budget", "stage": "full", "kind": "analysis", "ref": "full-stage#agentsmd-budget", "skill": ["retro/full-stage.md"]},
+    {"id": "user-communication", "title": "Ask whether explanations and questions were right", "stage": "full", "kind": "decision", "ref": "retro#user-input", "skill": ["retro/SKILL.md"]},
+    {"id": "milestone-check", "title": "Milestone check", "stage": "full", "when": "milestone-completed", "kind": "analysis", "ref": "full-stage#milestone-check", "skill": ["retro/full-stage.md"]},
+    {"id": "promote", "title": "Promote validated items", "stage": "full", "kind": "decision", "ref": "full-stage#promote", "skill": ["retro/full-stage.md"]},
+    {"id": "first-retro-section", "title": "Work through the First retro section of NEXT_RETRO.md, then delete it", "stage": "first", "kind": "analysis", "ref": "retro#close", "skill": ["retro/SKILL.md"]}
+  ]
+}

@@ -95,6 +95,8 @@ if rn.returncode: err(rn.stdout.strip())
 # fixture tests for the scripts (.github/tests/test_scripts.py)
 tr = subprocess.run([sys.executable, str(root / ".github/tests/test_scripts.py")], capture_output=True, text=True)
 if tr.returncode: err("script fixture tests failed:\n" + "\n".join(tr.stderr.strip().splitlines()[-15:]))
+rr = subprocess.run([sys.executable, str(root / ".github/tests/test_retro_run.py")], capture_output=True, text=True)
+if rr.returncode: err("retro-run fixture tests failed:\n" + "\n".join(rr.stderr.strip().splitlines()[-15:]))
 
 print("\n".join(errors) if errors else f"stem-check OK (version {v})")
 sys.exit(1 if errors else 0)
