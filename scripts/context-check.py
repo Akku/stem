@@ -93,7 +93,7 @@ def main():
     print("CONTEXT NOTICE (hook): the context holds about %dk tokens (threshold %dk, session started at %dk). %s" % (tokens // 1000, THRESHOLD // 1000, (first or 0) // 1000,
           "Hand off at the next task end, even inside a related batch (R-BATCHING)." if urgent else
           "Do not interrupt the current task. When it is finished, check: hand off only if at least ~5 turns of unrelated work are ahead; continue in this session if the rest is short, closely related (batch) or needs hard-won context."),
-          "Hand-off (R-BATCHING): write docs/agent/HANDOFF.md (handoff skill); inside an approved batch start a fresh session yourself (no fork of this conversation) and stop; otherwise tell the user (in their language) the context is large and give a ready sentence for a new session.")
+          "Hand-off (R-BATCHING): run the handoff skill; it always ends by starting a fresh session yourself, detached (no fork of this conversation) and stopping. Inside an approved batch do it without asking; otherwise tell the user (in their language) the context is large and that they may say Handoff.")
     return 0
 
 if __name__ == "__main__":
