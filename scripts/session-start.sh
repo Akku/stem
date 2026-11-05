@@ -36,6 +36,19 @@ if [ -z "${STEM_OFFLINE:-}" ] && [ -f .github/stem-check.py ] && command -v gh >
   lb=$(git ls-remote --heads origin 'learning/*' 2>/dev/null | sed 's#.*refs/heads/##' | head -5)
   [ -n "$lb" ] && { echo "learning branches on origin:"; echo "$lb"; }
 fi
+# switched off for start context (TASK-166/168, start-context.py): the agent must know what exists so it can suggest switching it on again
+so=$(python3 - 2>/dev/null <<'PY'
+import json
+mcp, sk = [], []
+for p in (".claude/settings.json", ".claude/settings.local.json"):
+    try: d = json.load(open(p))
+    except Exception: continue
+    mcp += [e.get("serverName") if isinstance(e, dict) else e for e in d.get("deniedMcpServers", [])]
+    sk += [n for n, v in d.get("skillOverrides", {}).items() if v == "off"]
+if mcp or sk: print("switched off to save start context: MCP " + (", ".join(m for m in mcp if m) or "-") + " | skills " + (", ".join(sk) or "-"))
+PY
+)
+[ -n "$so" ] && { echo; echo "$so"; echo "(if a task could use one of them, suggest switching it on: scripts/start-context.py undo-mcp|skills-on NAME; takes effect next session)"; }
 echo; echo "## backlog"
 if command -v backlog >/dev/null 2>&1 && { [ -d backlog ] || [ -d .backlog ]; }; then
   echo "milestones:"; backlog milestone list --plain 2>/dev/null | sed -n '/^Active/,/^Completed/p' | grep -v '^Completed' | head -8

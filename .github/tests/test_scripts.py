@@ -188,6 +188,11 @@ class StartContext(Sandbox):
         self.sc("skills-on", "docx", "anthropic-skills:xlsx")
         self.assertNotIn("skillOverrides", json.loads(f.read_text()))
 
+    def test_session_start_names_switched_off_items(self):
+        self.sc("deny-mcp", "foo"); self.sc("skills-off", "bar")
+        r = run(["bash", str(SCRIPTS / "session-start.sh")], self.tmp, {"STEM_OFFLINE": "1"})
+        self.assertIn("switched off to save start context: MCP foo | skills bar", r.stdout)
+
     def test_mcp_lists_servers_and_deny(self):
         (self.tmp / ".mcp.json").write_text('{"mcpServers": {"foo": {}}}')
         self.sc("deny-mcp", "foo")
