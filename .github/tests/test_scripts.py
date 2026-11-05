@@ -152,6 +152,49 @@ class ContextReport(Sandbox):
         self.assertIn("'retro': 1", r.stdout)
 
 
+class StartContext(Sandbox):
+    def sc(self, *args, home=None):
+        return run([sys.executable, str(SCRIPTS / "start-context.py"), *args], self.tmp, {"HOME": str(home or self.tmp)})
+
+    def test_report_first_call_per_session_and_compare(self):
+        d = self.tmp / "t"; d.mkdir()
+        for i, (ts, tok) in enumerate([("2026-10-01T10:00:00Z", 70000), ("2026-10-02T10:00:00Z", 72000), ("2026-10-10T10:00:00Z", 60000)]):
+            write_jsonl(d / ("s%d.jsonl" % i), [assistant("m", tok, ts=ts), assistant("m", 999999, ts=ts)])  # only the first call counts
+        r = self.sc("report", "--compare", "2026-10-05T00:00Z", str(d))
+        self.assertIn("sessions: 3", r.stdout)
+        self.assertIn("before 2026-10-05T00:00:00 (n=2) median 71.0k | after (n=1) median 60.0k | delta -11.0k", r.stdout)
+
+    def test_report_empty_not_evaluable(self):
+        d = self.tmp / "e"; d.mkdir()
+        self.assertIn("not evaluable", self.sc("report", str(d)).stdout)
+
+    def test_deny_and_undo_mcp_local_and_shared(self):
+        self.assertEqual(self.sc("deny-mcp", "a", "b").returncode, 0)
+        f = self.tmp / ".claude" / "settings.local.json"
+        self.assertEqual(json.loads(f.read_text())["deniedMcpServers"], [{"serverName": "a"}, {"serverName": "b"}])
+        self.sc("undo-mcp", "a")
+        self.assertEqual(json.loads(f.read_text())["deniedMcpServers"], [{"serverName": "b"}])
+        r = self.sc("deny-mcp", "c", "--shared")
+        self.assertIn("everyone", r.stdout)
+        self.assertTrue((self.tmp / ".claude" / "settings.json").exists())
+
+    def test_skills_off_keeps_other_settings_and_undoes(self):
+        (self.tmp / ".claude").mkdir()
+        f = self.tmp / ".claude" / "settings.local.json"; f.write_text('{"permissions": {"allow": ["x"]}}')
+        self.sc("skills-off", "docx", "anthropic-skills:xlsx")
+        d = json.loads(f.read_text())
+        self.assertEqual(d["skillOverrides"], {"docx": "off", "anthropic-skills:xlsx": "off"})
+        self.assertEqual(d["permissions"], {"allow": ["x"]})
+        self.sc("skills-on", "docx", "anthropic-skills:xlsx")
+        self.assertNotIn("skillOverrides", json.loads(f.read_text()))
+
+    def test_mcp_lists_servers_and_deny(self):
+        (self.tmp / ".mcp.json").write_text('{"mcpServers": {"foo": {}}}')
+        self.sc("deny-mcp", "foo")
+        r = self.sc("mcp")
+        self.assertIn("foo [project (.mcp.json)] DENIED", r.stdout)
+
+
 class SandboxRepo(Sandbox):
     """A project folder with STEM scripts, a git repository and a few backlog tasks."""
     def setUp(self):
