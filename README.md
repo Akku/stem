@@ -38,6 +38,8 @@ macOS is tested; Windows is prepared but not yet tested.
 
 </details>
 
+See the [results page](docs/RESULTS.md) for three curves from using STEM on itself (dogfooding data, not a benchmark).
+
 ## Why STEM
 
 1. **Guided start.** You describe your idea; the agent installs and explains the tools (Git, Node.js, Backlog.md) and works out with you a vision, milestones and the first tasks.

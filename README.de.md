@@ -38,6 +38,8 @@ macOS ist getestet; Windows ist vorbereitet, aber noch nicht getestet.
 
 </details>
 
+Drei Kurven aus der Nutzung von STEM an sich selbst (Dogfooding-Daten, kein Benchmark): [Ergebnisseite](docs/RESULTS.md), auf Englisch.
+
 ## Warum STEM
 
 1. **Geführter Start.** Du beschreibst deine Idee; der Agent installiert und erklärt die Werkzeuge (Git, Node.js, Backlog.md) und erarbeitet mit dir Vision, Meilensteine und die ersten Tasks.
