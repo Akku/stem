@@ -13,7 +13,7 @@ Usage: scripts/start-context.py <command> [args]
   skills-off NAME...     write skillOverrides {NAME: "off"} to .claude/settings.local.json. Only after the user's authorization.
   undo-mcp NAME... [--shared] | skills-on NAME...    remove the entries again
 Each server in the context costs its instructions/tool names in every session; each listed skill ~0.1-0.3k tokens."""
-import datetime as dt, glob, json, os, pathlib, re, statistics, subprocess, sys
+import datetime as dt, glob, json, os, pathlib, re, shlex, statistics, subprocess, sys
 
 def utc(t):
     try: d = dt.datetime.fromisoformat(re.sub(r"Z$", "+00:00", t.strip()))
@@ -91,6 +91,7 @@ def skills():
                 if '"Skill"' not in line: continue
                 try: r = json.loads(line)
                 except ValueError: continue
+                if r.get("type") != "assistant": continue  # request-blob copies would double count
                 c = (r.get("message") or {}).get("content")
                 for b in c if isinstance(c, list) else []:
                     if isinstance(b, dict) and b.get("type") == "tool_use" and b.get("name") == "Skill":
@@ -136,7 +137,7 @@ def main():
             if not d["deniedMcpServers"]: del d["deniedMcpServers"]
         edit(settings_paths(shared), f)
         if shared and cmd == "deny-mcp": print("note: this file is committed; the deny applies to everyone who uses it")
-        print("undo: scripts/start-context.py undo-mcp %s%s; takes effect in the next session" % (" ".join(names), " --shared" if shared else ""))
+        print("undo: scripts/start-context.py undo-mcp %s%s; takes effect in the next session" % (" ".join(shlex.quote(n) for n in names), " --shared" if shared else ""))
     elif cmd in ("skills-off", "skills-on") and names:
         def f(d):
             o = d.setdefault("skillOverrides", {})
@@ -145,7 +146,7 @@ def main():
                 else: o.pop(n, None)
             if not o: del d["skillOverrides"]
         edit(".claude/settings.local.json", f)
-        print("undo: scripts/start-context.py %s %s; takes effect in the next session" % ("skills-on" if cmd == "skills-off" else "skills-off", " ".join(names)))
+        print("undo: scripts/start-context.py %s %s; takes effect in the next session" % ("skills-on" if cmd == "skills-off" else "skills-off", " ".join(shlex.quote(n) for n in names)))
     else: sys.exit(__doc__)
 
 if __name__ == "__main__": main()
