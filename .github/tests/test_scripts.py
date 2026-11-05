@@ -122,6 +122,13 @@ class ContextReport(Sandbox):
         self.assertIn("Bash:late cmd", r.stdout)
         self.assertNotIn("early", r.stdout)
 
+    def test_brief_counts_typed_user_messages_only(self):
+        typed = {"type": "user", "timestamp": "2026-11-03T15:09:00Z", "message": {"content": "hello"}}
+        text = {"type": "user", "timestamp": "2026-11-03T15:09:01Z", "message": {"content": [{"type": "text", "text": "hi"}]}}
+        res = {"type": "user", "timestamp": "2026-11-03T15:09:02Z", "message": {"content": [{"type": "tool_result", "tool_use_id": "1", "content": "x"}]}}
+        r = self.report([typed, text, res, assistant("m", 1)], "--brief")
+        self.assertIn("user_msgs=2", r.stdout)
+
     def test_since_unparsable_stops(self):
         r = self.report([assistant("m", 1)], "--since", "yesterday")
         self.assertNotEqual(0, r.returncode)
@@ -304,6 +311,15 @@ class RetroMetrics(SandboxRepo):
         self.assertIn("retro skill size: 160 bytes (no earlier version before 2000-01-01)", out)
         out = run(["bash", "scripts/retro-metrics.sh", "2021-01-01"], self.repo, self.env).stdout
         self.assertIn("retro skill size: 160 bytes (growth since 2021-01-01: 60 bytes)", out)
+
+    def test_outcome_lines_are_counted_with_unknowns_and_meta_share(self):
+        self.task(1, updated="2026-10-23 12:00", extra="Outcome: corrections=2 rework=10min defects=1")
+        self.task(2, updated="2026-10-23 12:00", extra="Outcome: corrections=unknown rework=unknown defects=unknown")
+        self.task(3, updated="2026-10-23 12:00")
+        self.commit("TASK-1 done"); (self.repo / "h.txt").write_text("h"); self.commit("Handoff 2026-10-23: notes")
+        out = run(["bash", "scripts/retro-metrics.sh", "2000-01-01"], self.repo, self.env).stdout
+        self.assertIn("post-acceptance record: 2 of 3 accepted tasks have an Outcome line (1 unrecorded, 1 with unknown values); corrections 2, later defects 1", out)
+        self.assertRegex(out, r"meta share of commits: 1 of 2 \(50 %")
 
     def test_repo_option_adds_second_repository(self):
         self.task(1); self.commit("TASK-1 done")

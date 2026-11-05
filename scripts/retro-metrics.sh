@@ -53,6 +53,8 @@ commit_stats() {  # $1 = repo path, $2 = label
   echo "$2: $all commits, $hand handoff, $notask without task ID ($([ "$all" -gt 0 ] && echo $((100*notask/all)) || echo 0) %), fix/review $(git -C "$1" log --since="$sincefull" --format=%s | grep -ciE 'fix|review' || true)"
 }
 commit_stats . "this repo"
+meta=$(git log --since="$sincefull" --format=%s | grep -ciE '^handoff|handoff|sync|retro|release|stem-update|process' || true)
+echo "meta share of commits: $meta of $commits ($([ "$commits" -gt 0 ] && echo $((100*meta/commits)) || echo 0) %; method: subject mentions handoff, sync, retro, release, stem-update or process; the rest counts as product value; keyword-based, an indication)"
 # Retro skill size (loaded when a retro runs) and growth since the start date.
 rs=.claude/skills/retro/SKILL.md
 if [ -f "$rs" ]; then
@@ -80,6 +82,21 @@ for f in "${files[@]}"; do
   [ -n "$c" ] && [ "$c" \> "$sinceutc" -o "$c" = "$sinceutc" ] && created_p=$((created_p+1))
 done
 echo "task intake in period: $created_p created, $done_p done"
+# Post-acceptance record (R-LIFECYCLE 1.6): done tasks in the period with a note line "Outcome: corrections=N rework=Nmin defects=N" (any value may be unknown); tasks without the line count as unrecorded, never dropped.
+oc_rec=0; oc_unk=0; oc_corr=0; oc_def=0
+for f in "${files[@]}"; do
+  [ -f "$f" ] || continue
+  grep -q '^status: Done' "$f" || continue
+  u=$(awk -F"'" '/^updated_date:/{print substr($2,1,16); exit}' "$f")
+  [ -n "$u" ] && { [ "$u" \> "$sinceutc" ] || [ "$u" = "$sinceutc" ]; } || continue
+  line=$(grep -m1 '^Outcome:' "$f" || true)
+  if [ -z "$line" ]; then continue; fi
+  oc_rec=$((oc_rec+1))
+  c=$(echo "$line" | sed -n 's/.*corrections=\([0-9]*\).*/\1/p'); d=$(echo "$line" | sed -n 's/.*defects=\([0-9]*\).*/\1/p')
+  if [ -z "$c" ] || [ -z "$d" ]; then oc_unk=$((oc_unk+1)); fi
+  oc_corr=$((oc_corr+${c:-0})); oc_def=$((oc_def+${d:-0}))
+done
+echo "post-acceptance record: $oc_rec of $done_p accepted tasks have an Outcome line ($((done_p-oc_rec)) unrecorded, $oc_unk with unknown values); corrections $oc_corr, later defects $oc_def (known values only)"
 waiting=""
 for f in "${files[@]}"; do
   grep -q '^status: In Progress' "$f" && grep -q '^- \[ \] #' "$f" && waiting="$waiting $(awk -F': ' '/^id:/{print $2; exit}' "$f")"
@@ -101,7 +118,9 @@ if [ -f scripts/context-report.py ] && [ -n "$py" ]; then
   case "$b" in sessions=*)
     echo "usage: $b"
     t=$(echo "$b" | sed -n 's/.* turns=\([0-9]*\).*/\1/p'); c=$(echo "$b" | sed -n 's/.*cache_read=\([0-9]*\).*/\1/p')
-    if [ "$done_p" -gt 0 ]; then echo "per accepted task: turns $((t/done_p)), cache_read $((c/done_p/1000))k tokens (small numbers of tasks: an indication, not proof)"; fi ;;
+    if [ "$done_p" -gt 0 ]; then echo "per accepted task: turns $((t/done_p)), cache_read $((c/done_p/1000))k tokens (small numbers of tasks: an indication, not proof)"; fi
+    um=$(echo "$b" | sed -n 's/.* user_msgs=\([0-9]*\).*/\1/p')
+    if [ -n "$um" ] && [ "$done_p" -gt 0 ]; then echo "human effort proxy: $um typed user messages, $((um/done_p)) per accepted task (method: transcript user records with text, tool results and subagents excluded; sessions spanning several tasks and several projects blur it)"; fi ;;
   *) echo "usage: not evaluable" ;;
   esac
 fi

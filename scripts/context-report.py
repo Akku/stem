@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Where did the context go? Optional retro tool for Claude Code transcripts (R-MEASUREMENT level 2/3).
 Usage: scripts/context-report.py [--since TIME] [--until TIME] [--main-only] [--brief|--cost] [transcript-dir]   (default dir: this project's folder under ~/.claude/projects)
---brief prints one key=value line (for retro-metrics.sh): sessions, turns, tokens, longest session, models and effort levels seen (confounders).
+--brief prints one key=value line (for retro-metrics.sh): sessions, turns, tokens, longest session, user_msgs (typed user messages, effort proxy), models and effort levels seen (confounders).
 --cost prints one key=value line for a window: turns, tool_calls, cache_read, output (retro-run.py finish uses it with --since/--until as UTC "YYYY-MM-DDTHH:MM:SSZ" and --main-only).
 --main-only skips subagent transcripts and sidechain records.
 TIME: YYYY-MM-DD[ HH:MM] is local time; ISO with Z or offset (2026-11-03T15:10Z) is taken as given. --since limits sessions, totals
@@ -31,7 +31,7 @@ def main():
     if main_only: files = [f for f in files if "/subagents/" not in f]
     if not files:
         print("not evaluable: no transcripts in", d); return 0
-    tool_calls = 0
+    tool_calls = user_msgs = 0
     tot, sess, by_tool, cnt, offenders = collections.Counter(), [], collections.Counter(), collections.Counter(), []
     rules, skills, docs = collections.Counter(), collections.Counter(), collections.Counter()
     models, efforts = collections.Counter(), collections.Counter()
@@ -72,7 +72,9 @@ def main():
                         sm = re.search(r"\.claude/skills/([^/]+)/SKILL\.md", p)
                         if sm: skills[sm.group(1)] += 1
                         if re.search(r"(ADVANCED|GLOSSARY|ARCHITECTURE|PITFALLS|NEXT_RETRO|LEARNINGS|HANDOFF)\.md$|docs/agent/stacks/", p): docs[os.path.basename(p)] += 1
-            elif r.get("type") == "user" and isinstance(m.get("content"), list):
+            elif r.get("type") == "user" and not r.get("isMeta") and not r.get("isSidechain") and "/subagents/" not in f and (isinstance(m.get("content"), str) or any(isinstance(b, dict) and b.get("type") == "text" for b in m.get("content") or [])):
+                user_msgs += 1   # typed by the user (tool results and subagent records excluded); a human-effort proxy
+            if r.get("type") == "user" and isinstance(m.get("content"), list):
                 for b in m["content"]:
                     if isinstance(b, dict) and b.get("type") == "tool_result":
                         n, i = pend.get(b.get("tool_use_id"), ("?", {}))
@@ -87,7 +89,7 @@ def main():
         print("turns=%d tool_calls=%d cache_read=%d output=%d" % (sum(s[1] for s in sess), tool_calls, tot["cache_read_input_tokens"], tot["output_tokens"]))
         return 0
     if brief:
-        print("sessions=%d turns=%d cache_read=%d cache_write=%d output=%d max_session_turns=%d models=%s effort=%s" % (len(sess), sum(s[1] for s in sess), tot["cache_read_input_tokens"], tot["cache_creation_input_tokens"], tot["output_tokens"], max([s[1] for s in sess] or [0]), ",".join(k for k, _ in models.most_common(3)) or "?", ",".join(k for k, _ in efforts.most_common(3)) or "?"))
+        print("sessions=%d turns=%d cache_read=%d cache_write=%d output=%d max_session_turns=%d user_msgs=%d models=%s effort=%s" % (len(sess), sum(s[1] for s in sess), tot["cache_read_input_tokens"], tot["cache_creation_input_tokens"], tot["output_tokens"], max([s[1] for s in sess] or [0]), user_msgs, ",".join(k for k, _ in models.most_common(3)) or "?", ",".join(k for k, _ in efforts.most_common(3)) or "?"))
         return 0
     if since or until: print("window (UTC): %s .. %s" % (since or "start", until or "now"))
     print("transcripts: %d, assistant turns: %d" % (len(files), sum(s[1] for s in sess)))

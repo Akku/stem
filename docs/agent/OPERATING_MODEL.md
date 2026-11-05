@@ -122,6 +122,8 @@ Missing evidence should remain clearly open with a concrete continuation point.
 
 Use the repository's existing completion mechanism to record what changed and the evidence that supports completion. Prefer concise, reproducible evidence over long descriptions of everything the agent did.
 
+At close, add one note line `Outcome: corrections=N rework=Nmin defects=N` (user corrections after acceptance proposals, rework minutes, defects found later; write `unknown` for any value you cannot tell). `scripts/retro-metrics.sh` counts these lines and reports tasks without one as unrecorded.
+
 ### 1.7 Propose follow-up tasks, do not hide or silently create them
 
 While working, the agent notices work that is out of scope for the current task: missing tests or docs, a related bug, a cleanup, an obvious next feature, review findings that were deferred. Do not expand the current task and do not lose the observation.
