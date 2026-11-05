@@ -8,7 +8,7 @@ if git rev-parse --git-dir >/dev/null 2>&1; then
   [ "$(git config core.hooksPath)" = "scripts/githooks" ] || echo "WARNING: pre-commit guard inactive -> git config core.hooksPath scripts/githooks"
   echo "changes: $(git status --porcelain | wc -l | tr -d ' ') file(s)"
   git status --porcelain | head -10
-  echo "recent commits:"; git log --oneline -5
+  echo "recent commits:"; git log --oneline -3
 else
   echo "no git repository"
 fi
@@ -40,7 +40,9 @@ echo; echo "## backlog"
 if command -v backlog >/dev/null 2>&1 && { [ -d backlog ] || [ -d .backlog ]; }; then
   echo "milestones:"; backlog milestone list --plain 2>/dev/null | sed -n '/^Active/,/^Completed/p' | grep -v '^Completed' | head -8
   echo "in progress:"; backlog task list -s "In Progress" --plain 2>/dev/null | head -15
-  echo "ready (unblocked, to do):"; backlog task list -s "To Do" --ready --plain 2>/dev/null | head -10
+  # counts plus top 3 keep the start context small (TASK-164); the full list: backlog task list -s "To Do" --ready --plain
+  rd=$(backlog task list -s "To Do" --ready --plain 2>/dev/null | grep -E '^ *\[?.*TASK-[0-9]+ ')
+  echo "ready (unblocked, to do): $(printf '%s\n' "$rd" | grep -c TASK-) total, top 3 (full list: backlog task list -s \"To Do\" --ready --plain):"; printf '%s\n' "$rd" | head -3
 else
   echo "backlog not initialised (follow SETUP.md)"
 fi
