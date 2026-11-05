@@ -2,7 +2,7 @@
 
 Newest first. Projects read the entries newer than their `STEM_VERSION` (see `stem-update` skill). Each entry: what changed and who benefits; renames and removals get a `Migration:` line (what to rename or delete) that `stem-update` carries out.
 
-## Unreleased
+## 1.11.1
 - **`commit-msg` hook accepts `Handoff:` and `Release:`; handoff skill names the commit title:** a field report showed a handoff commit `Handoff: ...` rejected by the hook (only `Handoff ...` was allowed), because the `handoff` skill never stated the title. The hook now also accepts `Handoff: ` and `Release: `; the skill names `Handoff <YYYY-MM-DD>: <content>` for commits of only notes, drafts or the handoff; `R-STATE-COHERENCE` mentions both forms. Benefits: no rejected commit attempts at session end. Migration: copy `scripts/githooks/commit-msg` (executable) and `.claude/skills/handoff/SKILL.md`; update the commit-message bullet of `R-STATE-COHERENCE` in `docs/agent/OPERATING_MODEL.md`.
 
 ## 1.11.0
