@@ -179,11 +179,11 @@ class CommitMsgHook(SandboxRepo):
 
     def test_accepts_task_and_exempt_subjects(self):
         for text in ("TASK-7: fix x\n", "TASK-7, TASK-12: fix x\n\nbody", "# comment\nTASK-3: y\n", "Merge branch 'a'", "Revert \"x\"",
-                     "fixup! TASK-1: a", "Release 1.2.0", "Handoff 2026-11-04", "Initial commit", "Set up STEM"):
+                     "fixup! TASK-1: a", "Release 1.2.0", "Release: 1.2.1", "Handoff 2026-11-04", "Handoff: notes", "Initial commit", "Set up STEM"):
             self.assertEqual(self.msg(text).returncode, 0, text)
 
     def test_rejects_others(self):
-        for text in ("fix x", "docs: y", "TASK-7 fix", "TASK-: x", "task-7: x", "TASK-7:", "\n"):
+        for text in ("fix x", "docs: y", "TASK-7 fix", "TASK-: x", "task-7: x", "TASK-7:", "Handoffs x", "Handoff:x", "\n"):
             r = self.msg(text)
             self.assertEqual(r.returncode, 1, text); self.assertIn("TASK-<n>", r.stderr)
 

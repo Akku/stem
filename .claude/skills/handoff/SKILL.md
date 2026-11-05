@@ -11,7 +11,7 @@ Rules: `R-STATE`, `R-BOOTSTRAP`, `R-STATE-COHERENCE`. The handoff holds only wha
 Each unfinished task gets a concrete continuation point in its notes (open criterion, next action as `Next:`), hard-won context (ruled-out hypotheses), evidence with the SHA it verified (`R-STATE-COHERENCE`), and `Learning:` only if a detour happened (`R-LEARNING`).
 
 ## 2. Commit what is not work in progress
-Explicit paths, code together with its task changes (`R-STATE-COHERENCE`). Half-finished work stays out of `main`: a task note, or a WIP branch.
+Explicit paths, code together with its task changes (`R-STATE-COHERENCE`). Half-finished work stays out of `main`: a task note, or a WIP branch. Task work keeps `TASK-<n>: <summary>`; a commit of only notes, drafts or the handoff is titled `Handoff <YYYY-MM-DD>: <content>` (the `commit-msg` hook accepts it).
 
 ## 3. Check
 `git status --porcelain` clean (WIP named), no open user question or approval from this session. Unpushed commits are not open: they are in git; pushing is the user's separate decision (step 5).
