@@ -49,6 +49,7 @@ if mcp or sk: print("switched off to save start context: MCP " + (", ".join(m fo
 PY
 )
 [ -n "$so" ] && { echo; echo "$so"; echo "(if a task could use one of them, suggest switching it on: scripts/start-context.py undo-mcp|skills-on NAME; takes effect next session)"; }
+nl=$(python3 "$(dirname "$0")/start-context.py" new --line 2>/dev/null); [ -n "$nl" ] && { echo; echo "$nl"; }  # TASK-175: new skills/MCP above 250 B
 echo; echo "## backlog"
 if command -v backlog >/dev/null 2>&1 && { [ -d backlog ] || [ -d .backlog ]; }; then
   echo "milestones:"; backlog milestone list --plain 2>/dev/null | sed -n '/^Active/,/^Completed/p' | grep -v '^Completed' | head -8

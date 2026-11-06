@@ -7,6 +7,10 @@ Usage: scripts/start-context.py <command> [args]
         desktop app: compare like with like. Transcripts exist only for recent weeks; unknown format -> "not evaluable".
   mcp                    list configured MCP servers (user/project config files) and the current deny list
   skills                 list project skills with use counts from transcripts and the current skillOverrides
+  new [--threshold BYTES] [--line] [--ack]   report skills/MCP servers not in the known-set (.claude/start-context-known.local.json) with sizes
+        (project/user SKILL.md bytes; MCP size is "unknown": never 0). Below the threshold (default 250) = not reported; unknown counts as
+        relevant. If anything new is relevant: re-offer ALL listed items for switch-off in the dialog. --line = one line for session start
+        (silent without a known-set or without relevant news). --ack = write the known-set; only after the user answered the dialog.
   measure                run `claude -p` twice and print the first-call total (before/after method, noise ~0.4k)
   deny-mcp NAME... [--shared]    write deniedMcpServers (default .claude/settings.local.json; --shared: .claude/settings.json,
         which blocks the server for everyone using the committed file). Only after the user's authorization.
@@ -108,6 +112,48 @@ def skills():
     print("other skills used here: %s" % (", ".join("%s(%d)" % (n, uses[n]) for n in other) or "none"))
     print("skills from plugins/connectors (e.g. anthropic-skills:*) are listed in the session's skill list, not in the project; each listed skill costs ~0.1-0.3k tokens per session. Overrides apply only to this environment (settings.local.json); undo: `skills-on NAME` or delete the entry.")
 
+KNOWN = ".claude/start-context-known.local.json"
+
+def inventory():
+    """{'skill:NAME' or 'mcp:NAME': size in bytes or None (unknown)}. Plugin/connector skills are not visible as files."""
+    inv = {}
+    for base in (".claude/skills", os.path.expanduser("~/.claude/skills")):
+        for f in glob.glob(base + "/*/SKILL.md"):
+            try: inv.setdefault("skill:" + pathlib.Path(f).parent.name, os.path.getsize(f))
+            except OSError: pass
+    home = jload(os.path.expanduser("~/.claude.json"))
+    names = set(home.get("mcpServers", {})) | set(((home.get("projects") or {}).get(os.getcwd()) or {}).get("mcpServers", {})) | set(jload(".mcp.json").get("mcpServers", {}))
+    for n in names: inv["mcp:" + n] = None
+    return inv
+
+def new_items(thr):
+    inv = inventory()
+    kn = jload(KNOWN) if pathlib.Path(KNOWN).exists() else None
+    new = {n: z for n, z in inv.items() if kn is None or n not in kn.get("items", {})}
+    rel = {n: z for n, z in new.items() if z is None or z >= thr}
+    return inv, kn is not None, new, rel
+
+def fmt(n, z): return "%s (%s)" % (n, "size unknown" if z is None else "%d B" % z)
+
+def new(args):
+    thr = int(args[args.index("--threshold") + 1]) if "--threshold" in args else 250
+    inv, has_known, new_, rel = new_items(thr)
+    if "--ack" in args:
+        p = pathlib.Path(KNOWN); p.parent.mkdir(exist_ok=True)
+        p.write_text(json.dumps({"items": inv}, indent=2, sort_keys=True) + "\n"); print("known-set written:", p, "(%d items)" % len(inv)); return
+    if "--line" in args:
+        if has_known and rel: print("new skills/MCP servers since last offer: %s -> offer switch-off again (retro start-context dialog; scripts/start-context.py new)" % ", ".join(sorted(rel)))
+        return
+    print("%s; threshold %d B; %d items, %d new, %d relevant" % ("known-set found" if has_known else "no known-set yet (all items count as new)", thr, len(inv), len(new_), len(rel)))
+    for n, z in sorted(rel.items()): print("  NEW %s" % fmt(n, z))
+    small = [n for n in new_ if n not in rel]
+    if small: print("  new but below threshold (not reported): %d" % len(small))
+    if rel:
+        print("re-offer ALL for switch-off in the dialog (old and new):")
+        for n, z in sorted(inv.items()): print("  %s%s" % (fmt(n, z), "  NEW" if n in rel else ""))
+        print("after the user answered: scripts/start-context.py new --ack")
+    print("not visible here: plugin/connector skills and claude.ai connectors (see `skills`, `claude mcp list`).")
+
 def measure():
     tot = []
     for _ in range(2):
@@ -129,6 +175,7 @@ def main():
     if cmd == "report": report(rest)
     elif cmd == "mcp": mcp()
     elif cmd == "skills": skills()
+    elif cmd == "new": new(rest)
     elif cmd == "measure": measure()
     elif cmd in ("deny-mcp", "undo-mcp") and names:
         def f(d):

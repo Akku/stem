@@ -200,6 +200,43 @@ class StartContext(Sandbox):
         r = run(["bash", str(SCRIPTS / "session-start.sh")], self.tmp, {"STEM_OFFLINE": "1"})
         self.assertIn("switched off to save start context: MCP foo | skills bar", r.stdout)
 
+    def _new_env(self, skills):
+        for n, size in skills.items():
+            d = self.tmp / ".claude" / "skills" / n; d.mkdir(parents=True, exist_ok=True); (d / "SKILL.md").write_text("x" * size)
+
+    def test_new_nothing_new_after_ack(self):
+        self._new_env({"a": 400}); self.sc("new", "--ack")
+        r = self.sc("new")
+        self.assertIn("0 new, 0 relevant", r.stdout); self.assertEqual(self.sc("new", "--line").stdout, "")
+
+    def test_new_too_small_not_reported(self):
+        self._new_env({"a": 400}); self.sc("new", "--ack"); self._new_env({"tiny": 100})
+        r = self.sc("new")
+        self.assertIn("1 new, 0 relevant", r.stdout); self.assertNotIn("NEW skill:tiny", r.stdout); self.assertIn("below threshold", r.stdout)
+        self.assertEqual(self.sc("new", "--line").stdout, "")
+
+    def test_new_relevant_reoffers_all_and_ack_updates(self):
+        self._new_env({"a": 400}); self.sc("new", "--ack"); self._new_env({"big": 300})
+        r = self.sc("new")
+        self.assertIn("NEW skill:big (300 B)", r.stdout); self.assertIn("skill:a (400 B)", r.stdout); self.assertIn("re-offer ALL", r.stdout)
+        self.assertIn("skill:big", self.sc("new", "--line").stdout)
+        self.sc("new", "--ack"); self.assertEqual(self.sc("new", "--line").stdout, "")
+
+    def test_new_unmeasurable_mcp_is_unknown_and_relevant(self):
+        self._new_env({"a": 400}); self.sc("new", "--ack")
+        (self.tmp / ".mcp.json").write_text('{"mcpServers": {"foo": {}}}')
+        r = self.sc("new")
+        self.assertIn("NEW mcp:foo (size unknown)", r.stdout); self.assertIn("mcp:foo", self.sc("new", "--line").stdout)
+
+    def test_new_no_known_set_lists_all_but_session_line_silent(self):
+        self._new_env({"a": 400})
+        self.assertIn("NEW skill:a (400 B)", self.sc("new").stdout); self.assertEqual(self.sc("new", "--line").stdout, "")
+
+    def test_new_session_start_line(self):
+        self._new_env({"a": 400}); self.sc("new", "--ack"); self._new_env({"big": 300})
+        r = run(["bash", str(SCRIPTS / "session-start.sh")], self.tmp, {"STEM_OFFLINE": "1"})
+        self.assertIn("new skills/MCP servers since last offer: skill:big", r.stdout)
+
     def test_mcp_lists_servers_and_deny(self):
         (self.tmp / ".mcp.json").write_text('{"mcpServers": {"foo": {}}}')
         self.sc("deny-mcp", "foo")

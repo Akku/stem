@@ -3,6 +3,7 @@ __pycache__/
 *.pyc
 .agent-logs/
 .claude/settings.local.json
+.claude/start-context-known.local.json
 .env
 .env.*
 !.env.example
