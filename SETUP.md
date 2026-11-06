@@ -38,13 +38,12 @@ Ask in one short message: "Is the project **small** (a script, a small tool, a f
 | Design interview (`alignment`) | The agent asks one question at a time before building, which avoids rework from misunderstandings. Costs your time: 2-4 questions small, 5-12 medium, 10-20 in rounds large. | on | on | on |
 | UX designer and concept phase | Mockups and screen reviews before UI code. Only useful with a user interface. | off | if UI | if UI |
 | Context warning hook (needs Python) | Warns when a session gets long and costly and suggests a fresh one. Costs a few lines of context only when it fires. | off | on | on |
-| Testing practices skill | Test-quality hints (realistic data, what green really proves). Useful once tests exist. | off | on | on |
 | Market analysis skill (`market-analysis`) | Web search for existing alternatives and a one-page build-adapt-use recommendation, so you do not rebuild what exists. Costs a few searches. | off | on | on |
 | Glossary (`docs/GLOSSARY.md`) | One list of domain terms and their code and UI names; worth it with many terms or several languages. | off | many terms only | on |
 | Architecture map (`docs/ARCHITECTURE.md`) | Short module overview that the agent reads instead of the code. Must be kept current. | off | off | on |
 | Shell sandbox (macOS/Linux/WSL2) | Limits what commands can touch, which protects your files from agent mistakes; may block installs or network. Recommended for every project; enabled only on your yes. | recommend | recommend | recommend |
 
-What to do with the answers: delete the files of modules that are off (agent file `ux-designer.md`, skill folders `testing-practices`, `market-analysis`, hook entry and `scripts/context-check.py`; glossary and architecture are only created when on) and drop their names from the `Skills` and `Agents` lines in `AGENTS.md` (an empty `Agents` line goes away), so they cost no context and nothing points at missing files. Record the chosen size and modules under `Project setup` in `docs/agent/NEXT_RETRO.md` (retro checks which were used).
+What to do with the answers: delete the files of modules that are off (agent file `ux-designer.md`, skill folder `market-analysis`, hook entry and `scripts/context-check.py`; glossary and architecture are only created when on) and drop their names from the `Skills` and `Agents` lines in `AGENTS.md` (an empty `Agents` line goes away), so they cost no context and nothing points at missing files. Record the chosen size and modules under `Project setup` in `docs/agent/NEXT_RETRO.md` (retro checks which were used).
 
 ## 2. Ask the user (one question per message, in this order)
 Ask the topics below one at a time and wait for each answer; propose a default where one is given. Scale to the size from step 1b: small = goal in 1-2 sentences, stack, confidential inputs, GitHub; skip horizons beyond the vertical slice, agents and model questions (use defaults); medium/large = all questions.

@@ -31,7 +31,7 @@ STEM is a starting point for agent-driven development with Git and Backlog.md. Y
 - Git, Backlog.md, a vision document, milestones (vertical slice → MVP → moonshot) and the first 3–7 tasks derived from your goal. The agent will ask you what you imagine for each of the three.
 - Short agent rules (`AGENTS.md`) that load further rules only when needed – designed to keep the agent's context small.
 - `scripts/run.sh` keeps long test/CI output out of the context; `scripts/session-start.sh` gives a compact status at session start.
-- Skills for recurring work: `retro`, `handoff`, `promote-learning`, `testing-practices`, `stem-update`.
+- Skills for recurring work: `retro`, `handoff`, `promote-learning`, `stem-update`.
 
 ## Working day to day
 

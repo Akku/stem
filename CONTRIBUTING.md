@@ -13,7 +13,7 @@ Cost-carrying changes (content of `AGENTS.md`, default model/effort, session-len
 
 1. Branch `learning/<short-topic>` (learnings) or `fix/<short-topic>`; never push to `main`.
 2. `python3 .github/stem-check.py` passes (on Windows: `py -3 .github/stem-check.py`). It checks rule markers, script syntax, the script fixture tests, skill frontmatter, version consistency and the 7.5 KB budget of `AGENTS.md`.
-3. New or changed scripts in `scripts/` get a fixture test first in `.github/tests/test_scripts.py` (`retro-run.py`: `.github/tests/test_retro_run.py`) (realistic sample input built in a temp dir; skill `testing-practices`); stem-check runs it.
+3. New or changed scripts in `scripts/` get a fixture test first in `.github/tests/test_scripts.py` (`retro-run.py`: `.github/tests/test_retro_run.py`) (realistic sample input built in a temp dir); stem-check runs it.
 4. One rule per place (`R-INSTRUCTIONS`): reference rule IDs, do not copy rule text. Agent instructions stay in English; human docs exist in English and German.
 5. Describe in the PR: problem, change, evidence (anonymised, with model, effort and task size).
 6. Add a short `CHANGELOG.md` entry (what changed, who benefits) when users of STEM are affected.

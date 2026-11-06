@@ -481,6 +481,13 @@ Prefer realistic fixtures and integration boundaries where the failure risk just
 Never disable, skip or weaken a test or check to get a green result; fix the code, or change the test openly with the reason named in the task.
 
 Manual or environment-specific evidence should remain visible as an open criterion until performed.
+
+Practical points:
+
+- Real database or framework behavior needs a real instance; each test gets its own instance with cleanup of timers, listeners and shared state; a fake server is maintained together with the real API contract.
+- A check that cannot parse its input (NaN, empty file) fails instead of passing silently: assert the input is valid first.
+- A browser or UI check done by hand a second time is the signal to propose a test framework (`R-DESIGN` "Propose missing tools"). Playwright pitfalls: run the main flows in a phone viewport too (the desktop viewport may open a two-pane layout); `getByText` matches substrings case-insensitively, so give indicators their own element or use `exact`; a shared e2e database makes names collide, use unique ones per test.
+- Run suites via `scripts/run.sh`; load only failing sections of a log.
 <!-- RULE:R-VERIFY:END -->
 
 <!-- RULE:R-STATE-COHERENCE:START -->
@@ -668,7 +675,7 @@ Generated code is cheap to produce and expensive to change; without deliberate d
 - **Owned interfaces:** a new or changed public interface or module boundary is a decision for the user (propose, then agree); the inside of a module can be delegated. Treat low-risk modules as gray boxes tested from outside; money, security and personal data get closer scrutiny and review (`R-REVIEW`).
 - **Module map (`docs/ARCHITECTURE.md`, create once the project has about three modules):** one page: module, purpose, public interface, gray box or scrutinized, how it is tested. Update it in the task that changes a boundary. Load it instead of reading code to orient.
 - **Glossary (optional, `docs/GLOSSARY.md`):** only if the user asked for it at setup or the domain has many terms or several languages (e.g. German UI, English code): term, definition, code name, UI text. Use these terms in tasks, code and UI text; add a term when it appears.
-- **TDD** (test, make it pass, refactor in small steps) is recommended for logic-heavy code (`testing-practices` skill), not for throwaway UI or prototypes.
+- **TDD** (test, make it pass, refactor in small steps) is recommended for logic-heavy code, not for throwaway UI or prototypes.
 <!-- RULE:R-DESIGN:END -->
 
 <!-- RULE:R-SECURITY:START -->

@@ -140,7 +140,7 @@ Based on each project's own documentation as of November 2026; these projects ch
 | `SETUP.md` | One-time setup procedure for the agent (deleted after setup) |
 | `AGENTS.md` | Shared core rules (Codex and compatible tools) |
 | `CLAUDE.md` | Thin adapter pointing to `AGENTS.md` |
-| `.claude/skills/` | Skills: `retro`, `alignment`, `handoff`, `promote-learning`, `stem-update`; optional modules (chosen in setup): `testing-practices`, `market-analysis` |
+| `.claude/skills/` | Skills: `retro`, `alignment`, `handoff`, `promote-learning`, `stem-update`; optional module (chosen in setup): `market-analysis` |
 | `.agents/skills` | Link to `.claude/skills/` for shared Codex skill sources; Codex lists these skills natively (automated probe) |
 | `.claude/agents/` | Agents: `ux-designer` (optional module, for projects with a UI) |
 | `scripts/githooks/pre-commit` | Guard against committing confidential source documents and common secrets (activated during setup) |
