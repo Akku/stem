@@ -435,10 +435,11 @@ class SessionStart(SandboxRepo):
         q.unlink()
         self.assertNotIn("open questions", self.start(env))
 
-    def test_handoff_brief_starts_with_detach_self(self):
+    def test_handoff_brief_has_no_detach_sentence(self):
         text = (ROOT / "docs/agent/OPERATING_MODEL.md").read_text(encoding="utf-8")
-        brief = text[text.index("Brief (the detach sentence"):]
-        self.assertLess(brief.index("`detach_session` with session_id `self`"), brief.index("continue the approved batch"))
+        brief = text[text.index("Brief: \""):]
+        self.assertLess(brief.index("do not report back"), brief.index("continue the approved batch"))
+        self.assertNotIn("detach_session` with session_id `self`", brief[:brief.index("End the old session")])
 
     def test_retro_due_after_threshold_and_cleared_by_retro_notes(self):
         for n in (1, 2, 3): self.task(n)
