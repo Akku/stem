@@ -33,7 +33,7 @@ Docs for humans are English/German, agent instructions are English, and the agen
 
 STEM is built for one person working with Claude Code on a project that spans many sessions, from medium size upwards. For small tasks and one-off scripts the workflow costs more than it brings: use the plain agent ([STEM or the plain agent?](#stem-or-the-plain-agent)). Teams with their own process, CI and review are not a fit.
 
-`[ You ]──▶[ STEM ]──▶[ More YOU ]`
+<p align="center"><code>[ You ]──▶[ STEM ]──▶[ More YOU ]</code></p>
 
 ## Get started
 
