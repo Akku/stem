@@ -6,11 +6,34 @@
 
 **Version 1.14.0** · ![License](https://img.shields.io/badge/license-MIT-green) ![Claude Code](https://img.shields.io/badge/Claude%20Code-tested-green) ![Codex](https://img.shields.io/badge/Codex-tested-green)
 
-[🇩🇪 Deutsch](README.de.md) · [Get started](#get-started) · [Why STEM](#why-stem) · [How it works](#how-it-works) · [Contents](#contents)
+[🇩🇪 Deutsch](README.de.md) · [Why STEM](#why-stem) · [Is STEM for you?](#is-stem-for-you) · [Get started](#get-started) · [Contents](#contents)
 
 </div>
 
 STEM gives your coding agent a shared workflow for setting up a project, tracking work with [Backlog.md](https://github.com/MrLesk/Backlog.md), and carrying decisions between sessions. It sits on top of the coding agent you already use (Claude Code or Codex) and follows that agent's changes through versioned releases.
+
+## Why STEM
+
+STEM rests on assumptions about working with a coding agent. Each one has a counterpart in the workflow. Humor-warning: The name STEM is derived from the AI in the movie 'Upgrade (2018)'.
+
+| Assumption | What STEM provides |
+| --- | --- |
+| People are bad at specifying requirements, and an agent fills the gaps with guesses, much as a human would. | **Alignment:** [Backlog.md](https://github.com/MrLesk/Backlog.md) holds vision, milestones and tasks (STEM requires it and helps install it). The SETUP and the `alignment` skill interview you, so STEM checks with you before it efficiently creates the wrong result. |
+| Automation is more reliable than an agent interpreting prose rules. | **Determinism first:** scripts and hooks do what can be automated (session start, context notice, large-read warning, commit guard, blocked destructive git commands, test logs kept out of the chat). Each rule lives in one place (`AGENTS.md`), so there is less to interpret. |
+| You know what you want to do now, but when you see the results, requirements always change. Right? | **Thin slices:** milestones (vertical slice, MVP, 1.0, ...); small tasks with acceptance criteria actually checked; batches of work get suggested to you. |
+| Quality drops, mood drops, mistakes eat more tokens when the context grows. | **Small sessions:** short entry points, rules load on demand, long logs/files are only grepped / peeked and stay out of the context. When context hits hard, the `handoff` skill is automatically recommended. Like any good AI would. |
+| Small sessions need to carry state over. Session compacting is lossy, makes full re-reads necessary. | **Continuity:** state lives in files, not in a summary of the chat: backlog tasks, decisions, and a short handoff note. A fresh session starts from these and from a state summary. New sessions auto-generate after handoff. |
+| Agents do suggestions, but direction-decisions are still the human's. So the human needs all support it can get. | **Human work matters:** plain-language reports after each phase, questions with options and a recommendation, a direct link or command for everything you should check or decide. Interface and architecture decisions stay with you. |
+| An agent reports "done". But it's not. Better safe than sorry. | **Traceability:** every change is a task with a plan, acceptance criteria and recorded evidence; unproven criteria stay open. |
+| The project doesn't learn unprompted. The agent hates reflection. Do you? | **Continuous learning:** the `retro` skill is suggested automatically, turns measured friction into rule changes, and the harness grows through retros, not by stockpiling. You can even send your learnings back to STEM to improve the harness (`promote-learning` skill). |
+
+Docs for humans are English/German, agent instructions are English, and the agent talks to you in your language.
+
+## Is STEM for you?
+
+STEM is built for one person working with Claude Code on a project that spans many sessions, from medium size upwards. For small tasks and one-off scripts the workflow costs more than it brings: use the plain agent ([STEM or the plain agent?](#stem-or-the-plain-agent)). Teams with their own process, CI and review are not a fit.
+
+`[ You ]──▶[ STEM ]──▶[ More YOU ]`
 
 ## Get started
 
@@ -40,71 +63,11 @@ macOS is tested; Windows is prepared but not yet tested.
 
 See the [results page](docs/RESULTS.md) for three curves from using STEM on itself (dogfooding data, not a benchmark).
 
-## Why STEM
-
-1. **Guided start.** You describe your idea; the agent installs and explains the tools (Git, Node.js, Backlog.md) and works out with you a vision, milestones and the first tasks.
-2. **Continuity.** Each session ends with a short handoff note (only when state exists outside git and the backlog) and the next one starts with a state summary, so work picks up where it stopped instead of starting from zero.
-3. **Learning.** Short retrospectives turn measured friction into rule changes in your project; learnings that prove themselves flow back into STEM as versioned releases.
-4. **Traceability.** Every change runs through a task with acceptance criteria and recorded evidence, so you can see what the agent did and why it counts as done.
-
-Also: designed to keep the agent's context small (rules load on demand, long logs stay out of the chat), and a pre-commit guard blocks `.env` files and common API-token formats from being committed.
-
-## Who it is for
-
-- **Solo developers with their own ideas:** you bring the idea; the agent keeps vision, milestones and backlog with you, so the idea survives many sessions.
-- **Teams with a company subscription for a coding agent:** STEM needs no extra account, server or subscription. It runs inside the agent your company already pays for, and its rules and records are plain files in your repository.
-- **Your own subscription, working for another company:** STEM is MIT-licensed. Whether your agent subscription may be used for that work depends on your provider's and the company's terms; check them before you start.
-
-**Why not Claude only?** Every supported agent reads the same rules (`AGENTS.md`), backlog and handoff note, so the project state does not depend on one agent. Codex has been tested on a fresh setup and in an existing STEM project.
-
-## When STEM does not fit
-
-For one-off scripts and teams with their own process, see [STEM or the plain agent?](#stem-or-the-plain-agent).
-
-- You want full automation without approvals.
-- Projects where Git or Backlog.md cannot be used.
-- You want an AI to run your project without you. We've seen that story; it doesn't end well for the human.
-
-`[ You ]──▶[ STEM ]──▶[ More YOU ]`
-
-## How it works
-
-The idea is sharpened into a spec first (spec-driven development), then every change runs through the same traceable loop, and the harness learns from each round.
-
-```mermaid
-flowchart LR
-    T[Task] --> P[Plan] --> I[Implement] --> V[Verify] --> D[Done] --> R[Reflect]
-    R -.-> T
-```
-
-Reflect is the `retro` skill: learnings flow back into the harness (and, once proven, into STEM).
-
-## Principles
-
-- Information architecture over "answer shorter": short entry points, deeper detail on demand, full logs outside the context.
-- One authoritative source per rule; adapters only point to it.
-- The harness grows through retros, not by stockpiling (`R-DECISION`).
-- Humans read English/German docs; agent instructions are English; agents talk to users in the user's language.
-
 ## Staying up to date
 
 At the start of each session the agent checks (once per day) whether a newer STEM version exists and tells you. With your approval the `stem-update` skill reads the [changelog](CHANGELOG.md), picks what helps your project and merges it without overwriting your project-specific content. The `retro` skill checks STEM as well.
 
 STEM releases use `MAJOR.MINOR.PATCH` version numbers; renames and removals come with migration notes in the changelog. Your project gets its own version, starting at 0.1.0, independent of the STEM version in `STEM_VERSION`: after a finished work package the agent proposes a patch, minor or major bump and applies it only with your approval.
-
-## Working with STEM day to day
-
-This section is the author's experience, not measured data; treat the numbers as a starting point and adjust them to your own work.
-
-- **Switch models between sessions, not in the middle of one.** Pick the model for the next task when you start a session (a stronger model for design and review, a cheaper one for well-defined changes). A switch inside a session makes the next turns re-read the whole context at the new model's price.
-- **Hand off before the context gets heavy.** In the Claude app a session typically starts at about 70k tokens of context (rules, session start, handoff). Start the handoff by about 100k at the latest: beyond that, quality tends to drop and every turn gets more expensive. The agent's context notice (threshold: the smaller of half the model window and 100k tokens, `R-BATCHING`) tells you when. Finish the current task first, then run the `handoff` skill. If everything is committed and recorded in the backlog, it skips the note and gives you only a ready prompt; otherwise the next session starts from the short `docs/agent/HANDOFF.md` and the backlog.
-- **Run the whole development in a Docker container if you want unattended work.** The container confines what the agent can run to the container; your project folder is bind-mounted, so edits appear in your repository.
-  - Setup (Claude Code, from Anthropic's [dev container guide](https://code.claude.com/docs/en/devcontainer)): add `.devcontainer/devcontainer.json` with the Claude Code feature `ghcr.io/anthropics/devcontainer-features/claude-code:1.0`, rebuild the container, run `claude` inside and sign in.
-  - Keep the login across rebuilds: mount a named volume at `~/.claude` and set `CLAUDE_CONFIG_DIR` to the same path (`mounts` and `containerEnv` in `devcontainer.json`).
-  - Credentials: do not mount `~/.ssh` or cloud credential files; prefer repository-scoped or short-lived tokens. Use trusted repositories only.
-  - Unattended operation: `--dangerously-skip-permissions` is allowed only as a non-root user (`remoteUser`); the guide recommends pairing it with restricted network egress (reference firewall `init-firewall.sh` with the `NET_ADMIN` and `NET_RAW` capabilities).
-  - Git and Backlog.md need no extra setup: both run inside the container on the mounted folder. Install the `backlog` CLI in your image.
-  - **Not tested by us:** this recipe follows the current guide and has not been run with STEM. Codex in a container is not covered here; check the Codex documentation before relying on it.
 
 ## STEM or the plain agent?
 
@@ -165,5 +128,3 @@ Based on each project's own documentation as of November 2026; these projects ch
 ## Contributing
 
 Please contribute proven learnings via pull request (pattern: problem, pattern, applicability, evidence – see `docs/agent/PROCESS_IMPROVEMENTS.md` or the `promote-learning` skill). No project or company internals, no credentials – this repository is public. Details and checklist: [CONTRIBUTING.md](CONTRIBUTING.md).
-
-*The name is a nod to the AI implant in the film [Upgrade](https://www.imdb.com/title/tt6499752/) (2018).*

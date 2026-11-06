@@ -6,11 +6,34 @@
 
 **Version 1.14.0** · ![License](https://img.shields.io/badge/license-MIT-green) ![Claude Code](https://img.shields.io/badge/Claude%20Code-getestet-green) ![Codex](https://img.shields.io/badge/Codex-getestet-green)
 
-[🇬🇧 English](README.md) · [Loslegen](#loslegen) · [Warum STEM](#warum-stem) · [Ablauf](#ablauf) · [Inhalt](#inhalt)
+[🇬🇧 English](README.md) · [Warum STEM](#warum-stem) · [Ist STEM etwas für dich?](#ist-stem-etwas-für-dich) · [Loslegen](#loslegen) · [Inhalt](#inhalt)
 
 </div>
 
 STEM gibt deinem Coding-Agenten einen gemeinsamen Ablauf: ein Projekt einrichten, Arbeit mit [Backlog.md](https://github.com/MrLesk/Backlog.md) verfolgen und Entscheidungen zwischen Sitzungen bewahren. STEM setzt auf dem Coding-Agenten auf, den du schon nutzt (Claude Code oder Codex), und folgt dessen Änderungen mit versionierten Releases.
+
+## Warum STEM
+
+STEM beruht auf Annahmen darüber, wie man mit einem Coding-Agenten arbeitet. Zu jeder gibt es im Ablauf ein Gegenstück. Humor-Warnung: Der Name STEM ist von der KI im Film „Upgrade“ (2018) abgeleitet.
+
+| Annahme | Was STEM bietet |
+| --- | --- |
+| Menschen sind schlecht darin, Anforderungen zu spezifizieren, und ein Agent füllt die Lücken mit Vermutungen – ganz wie ein Mensch es täte. | **Alignment:** [Backlog.md](https://github.com/MrLesk/Backlog.md) hält Vision, Meilensteine und Tasks (STEM setzt es voraus und hilft bei der Installation). Das SETUP und der Skill `alignment` befragen dich, damit STEM sich mit dir abstimmt, bevor es effizient das falsche Ergebnis erzeugt. |
+| Automatisierung ist verlässlicher als ein Agent, der Regeln in Prosa interpretiert. | **Determinismus zuerst:** Skripte und Hooks übernehmen, was sich automatisieren lässt (Sitzungsstart, Kontexthinweis, Warnung vor großen Dateien, Commit-Schutz, gesperrte zerstörerische Git-Befehle, Test-Logs außerhalb des Chats). Jede Regel steht an genau einer Stelle (`AGENTS.md`), es gibt also weniger zu interpretieren. |
+| Du weißt jetzt, was du bauen willst – aber wenn du die Ergebnisse siehst, ändern sich die Anforderungen immer. Stimmt's? | **Dünne Scheiben:** Meilensteine (Vertical Slice, MVP, 1.0, ...); kleine Tasks mit Akzeptanzkriterien, die wirklich geprüft werden; Arbeitspakete werden dir vorgeschlagen. |
+| Qualität sinkt, Stimmung sinkt, Fehler fressen mehr Tokens, wenn der Kontext wächst. | **Kleine Sitzungen:** kurze Einstiegspunkte, Regeln werden bei Bedarf geladen, lange Logs/Dateien werden nur gegrept / angespitzt und bleiben aus dem Kontext. Wird der Kontext schwer, wird der Skill `handoff` automatisch empfohlen. Wie jede gute KI es täte. |
+| Kleine Sitzungen müssen Zustand weitertragen. Kontext-Komprimierung ist verlustbehaftet und macht vollständiges Neulesen nötig. | **Kontinuität:** Der Stand lebt in Dateien, nicht in einer Chat-Zusammenfassung: Backlog-Tasks, Entscheidungen und eine kurze Übergabenotiz. Eine frische Sitzung startet daraus und aus einem Zustandsüberblick. Neue Sitzungen werden nach dem Handoff automatisch erzeugt. |
+| Agenten machen Vorschläge, aber Richtungsentscheidungen bleiben beim Menschen. Also braucht der Mensch jede Unterstützung, die möglich ist. | **Menschliche Arbeit zählt:** Berichte in einfacher Sprache nach jeder Phase, Fragen mit Optionen und Empfehlung, ein direkter Link oder Befehl für alles, was du prüfen oder entscheiden sollst. Entscheidungen über Schnittstellen und Architektur bleiben bei dir. |
+| Ein Agent meldet „fertig“. Ist es aber nicht. Lieber sicher als nachher traurig. | **Nachvollziehbarkeit:** Jede Änderung ist ein Task mit Plan, Akzeptanzkriterien und festgehaltenen Belegen; unbelegte Kriterien bleiben offen. |
+| Das Projekt lernt nicht von allein. Der Agent hasst Reflexion. Du auch? | **Kontinuierliches Lernen:** Der Skill `retro` wird automatisch vorgeschlagen, macht aus gemessener Reibung Regeländerungen, und das Harness wächst durch Retros, nicht durch Anhäufen. Du kannst deine Erkenntnisse sogar an STEM zurückschicken, um das Harness zu verbessern (Skill `promote-learning`). |
+
+Doku für Menschen gibt es auf Englisch und Deutsch, Agenten-Anweisungen sind englisch, und der Agent spricht mit dir in deiner Sprache.
+
+## Ist STEM etwas für dich?
+
+STEM ist gebaut für eine Person, die mit Claude Code an einem Projekt über viele Sitzungen arbeitet, ab mittlerer Größe. Für kleine Aufgaben und Einmal-Skripte kostet der Ablauf mehr, als er bringt: nimm den Agenten pur ([STEM oder der Agent pur?](#stem-oder-der-agent-pur)). Teams mit eigenem Prozess, CI und Review passen nicht.
+
+`[ You ]──▶[ STEM ]──▶[ More YOU ]`
 
 ## Loslegen
 
@@ -40,70 +63,11 @@ macOS ist getestet; Windows ist vorbereitet, aber noch nicht getestet.
 
 Drei Kurven aus der Nutzung von STEM an sich selbst (Dogfooding-Daten, kein Benchmark): [Ergebnisseite](docs/RESULTS.md), auf Englisch.
 
-## Warum STEM
-
-1. **Geführter Start.** Du beschreibst deine Idee; der Agent installiert und erklärt die Werkzeuge (Git, Node.js, Backlog.md) und erarbeitet mit dir Vision, Meilensteine und die ersten Tasks.
-2. **Kontinuität.** Jede Sitzung endet mit einer kurzen Übergabenotiz (nur wenn Stand außerhalb von Git und Backlog existiert), die nächste beginnt mit einem Zustandsüberblick. So geht die Arbeit dort weiter, wo sie aufgehört hat, statt bei null.
-3. **Lernen.** Kurze Retrospektiven machen aus gemessener Reibung Regeländerungen in deinem Projekt; Erkenntnisse, die sich bewähren, fließen als versionierte Releases zurück in STEM.
-4. **Nachvollziehbarkeit.** Jede Änderung läuft über einen Task mit Akzeptanzkriterien und festgehaltenen Belegen. Du siehst, was der Agent getan hat und warum es als fertig gilt.
-
-Außerdem: darauf ausgelegt, den Kontext des Agenten klein zu halten (Regeln werden bei Bedarf geladen, lange Logs bleiben aus dem Chat), und ein Pre-Commit-Schutz verhindert, dass `.env`-Dateien und gängige API-Token-Formate committet werden.
-
-## Für wen
-
-- **Einzelentwickler mit eigenen Ideen:** Du bringst die Idee mit; der Agent führt mit dir Vision, Meilensteine und Backlog, damit die Idee viele Sitzungen übersteht.
-- **Teams mit Firmen-Abo für einen Coding-Agenten:** STEM braucht kein zusätzliches Konto, keinen Server und kein weiteres Abo. Es läuft im Agenten, den deine Firma schon bezahlt, und seine Regeln und Aufzeichnungen sind einfache Dateien in deinem Repository.
-- **Eigenes Abo, Arbeit für eine andere Firma:** STEM steht unter MIT-Lizenz. Ob dein Agenten-Abo für diese Arbeit genutzt werden darf, regeln die Bedingungen deines Anbieters und der Firma; prüfe sie vor dem Start.
-
-**Warum nicht nur Claude?** Jeder unterstützte Agent liest dieselben Regeln (`AGENTS.md`), dasselbe Backlog und dieselbe Übergabenotiz; der Projektstand hängt also nicht an einem Agenten. Codex ist bei einer neuen Einrichtung und in einem bestehenden STEM-Projekt getestet.
-
-## Wann STEM nicht passt
-
-Für Einmal-Skripte und Teams mit eigenem Prozess siehe [STEM oder der Agent pur?](#stem-oder-der-agent-pur).
-
-- Du willst volle Automatisierung ohne Freigaben.
-- Projekte, in denen Git oder Backlog.md nicht nutzbar sind.
-- Du willst, dass eine KI dein Projekt ohne dich führt. Die Geschichte kennen wir; für den Menschen endet sie nicht gut.
-
-`[ You ]──▶[ STEM ]──▶[ More YOU ]`
-
-## Ablauf
-
-Die Idee wird zuerst zu einer Spezifikation geschärft (Spec-Driven Development), danach läuft jede Änderung durch dieselbe nachvollziehbare Schleife, und das Harness lernt aus jeder Runde.
-
-```mermaid
-flowchart LR
-    T[Task] --> P[Plan] --> I[Implement] --> V[Verify] --> D[Done] --> R[Reflect]
-    R -.-> T
-```
-
-Reflect ist der Skill `retro`: Learnings fließen ins Harness zurück (und, wenn bewährt, in STEM).
-
-## Prinzipien
-
-- Informationsarchitektur statt „kürzer antworten": kurze Einstiege, Vertiefung nach Bedarf, Volllogs außerhalb des Kontexts.
-- Eine verbindliche Quelle je Regel; Adapter verweisen nur.
-- Das Harness wächst durch Retros, nicht durch Vorrat (`R-DECISION`).
-
 ## Aktuell bleiben
 
 Zu Beginn jeder Sitzung prüft der Agent (einmal pro Tag), ob es eine neuere STEM-Version gibt, und sagt dir Bescheid. Mit deiner Zustimmung liest der Skill `stem-update` das [Changelog](CHANGELOG.md), wählt aus, was deinem Projekt nützt, und übernimmt es, ohne projektspezifische Inhalte zu überschreiben. Auch der Skill `retro` prüft STEM.
 
 STEM-Releases tragen Versionsnummern nach dem Muster `MAJOR.MINOR.PATCH`; Umbenennungen und Entfernungen stehen mit Migrationshinweis im Changelog. Dein Projekt hat eine eigene Version, beginnend bei 0.1.0, unabhängig von der STEM-Version in `STEM_VERSION`: Nach einem abgeschlossenen Arbeitspaket schlägt der Agent einen Patch-, Minor- oder Major-Sprung vor und setzt ihn nur mit deiner Zustimmung um.
-
-## Täglich mit STEM arbeiten
-
-Dieser Abschnitt beschreibt die Erfahrung des Autors, keine gemessenen Daten; die Zahlen sind ein Startpunkt und sollten an die eigene Arbeit angepasst werden.
-
-- **Modelle zwischen Sitzungen wechseln, nicht mittendrin.** Wähle das Modell für die nächste Aufgabe beim Start einer Sitzung (ein stärkeres für Entwurf und Review, ein günstigeres für klar umrissene Änderungen). Ein Wechsel mitten in der Sitzung lässt die nächsten Züge den gesamten Kontext zum Preis des neuen Modells neu lesen.
-- **Übergabe, bevor der Kontext schwer wird.** In der Claude-App startet eine Sitzung typischerweise bei etwa 70k Token Kontext (Regeln, Sitzungsstart, Handoff). Starte die Übergabe spätestens bei etwa 100k: darüber sinkt die Qualität tendenziell und jeder Zug wird teurer. Der Kontext-Hinweis des Agenten (Schwelle: der kleinere Wert aus halbem Modellfenster und 100k Token, `R-BATCHING`) meldet sich rechtzeitig. Schließe zuerst die laufende Aufgabe ab und starte dann den Skill `handoff`. Ist alles committet und im Backlog erfasst, entfällt die Notiz und du bekommst nur einen fertigen Prompt; sonst beginnt die nächste Sitzung mit der kurzen `docs/agent/HANDOFF.md` und dem Backlog.
-- **Die ganze Entwicklung in einem Docker-Container laufen lassen, wenn der Agent unbeaufsichtigt arbeiten soll.** Der Container begrenzt, was der Agent ausführen kann; dein Projektordner ist per Bind-Mount eingebunden, Änderungen erscheinen also in deinem Repository.
-  - Einrichtung (Claude Code, nach Anthropics [Dev-Container-Anleitung](https://code.claude.com/docs/en/devcontainer)): `.devcontainer/devcontainer.json` mit dem Claude-Code-Feature `ghcr.io/anthropics/devcontainer-features/claude-code:1.0` anlegen, Container neu bauen, darin `claude` starten und anmelden.
-  - Anmeldung über Neubauten behalten: ein benanntes Volume nach `~/.claude` mounten und `CLAUDE_CONFIG_DIR` auf denselben Pfad setzen (`mounts` und `containerEnv` in `devcontainer.json`).
-  - Zugangsdaten: kein `~/.ssh` und keine Cloud-Zugangsdateien mounten; besser Tokens, die auf das Repository begrenzt oder kurzlebig sind. Nur vertrauenswürdige Repositories verwenden.
-  - Unbeaufsichtigter Betrieb: `--dangerously-skip-permissions` geht nur als Nicht-root-Benutzer (`remoteUser`); die Anleitung empfiehlt dazu eine eingeschränkte Netzwerk-Ausleitung (Referenz-Firewall `init-firewall.sh` mit den Capabilities `NET_ADMIN` und `NET_RAW`).
-  - Git und Backlog.md brauchen keine Extra-Einrichtung: beide laufen im Container auf dem gemounteten Ordner. Die `backlog`-CLI muss im Image installiert sein.
-  - **Von uns nicht getestet:** Diese Anleitung folgt dem aktuellen Guide und wurde nicht mit STEM ausgeführt. Codex im Container ist hier nicht abgedeckt; prüfe die Codex-Dokumentation, bevor du dich darauf verlässt.
 
 ## STEM oder der Agent pur?
 
@@ -164,5 +128,3 @@ Stand laut eigener Dokumentation der Projekte, November 2026; diese Projekte än
 ## Beitragen
 
 Bewährte Learnings aus Projekten bitte per Pull Request einbringen (Muster: Problem, Muster, Geltungsbereich, Evidenz – siehe `docs/agent/PROCESS_IMPROVEMENTS.md`). Keine Projekt- oder Firmeninterna, keine Zugangsdaten – das Repository ist öffentlich. Ablauf und Checkliste (englisch): [CONTRIBUTING.md](CONTRIBUTING.md).
-
-*Der Name ist eine Anspielung auf das KI-Implantat im Film [Upgrade](https://www.imdb.com/title/tt6499752/) (2018).*
