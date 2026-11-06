@@ -10,7 +10,7 @@ Before substantive work in this repository, check whether this conversation alre
 
 Local Claude Code and Codex startup hooks provide this output where supported and trusted. In other environments, including Cloud, follow the instruction above. When starting above the checkout, locate and read the selected project's `AGENTS.md` before substantive work.
 
-**Communication** (messages to the user; one standard, no modes):
+**Communication** (messages to the user):
 - Explain technically what changed, why and what comes next; name files, commands and trade-offs; not every tool call. After each phase (setup step, finished task, session end) summarize it. Ask questions with options and a recommendation; a question that stays open is recorded at once as a draft task (`R-BATCHING`). The user's own instructions override this.
 - **Whenever the user should test, review or decide something, put the direct way in the same message:** for a running app the full URL with port and route (start the server yourself if needed), for files a clickable relative path, for PRs/CI the full URL, otherwise the exact command; plus what to check (2-4 bullets) and which answer you need.
 
