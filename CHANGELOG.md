@@ -2,6 +2,9 @@
 
 Newest first. Projects read the entries newer than their `STEM_VERSION` (see `stem-update` skill). Each entry: what changed and who benefits; renames and removals get a `Migration:` line (what to rename or delete) that `stem-update` carries out.
 
+## Unreleased
+- **Hook reminds the starter to detach a new session:** `scripts/detach-reminder.py` (PostToolUse hook on the desktop app tool `start_session`) adds one line naming the exact `detach_session` call with the new session id, because a field report showed a hand-over where the agent forgot to detach. A hook cannot call app tools, so the agent still performs the call; the id can no longer be forgotten or mistyped. Migration: copy `scripts/detach-reminder.py` and add the `PostToolUse` entry from `.claude/settings.json`.
+
 ## 1.14.0
 - **`AGENTS.md` Communication line no longer says "no modes":** the heading read "one standard, no modes" although setup profiles and `stem-update` still use communication variants (found by the prompt audit). Now `**Communication** (messages to the user):`. Migration: none (mixed file; adjust the line by hand if you like).
 - **Handoff brief no longer tells the new session to detach itself:** the starting session already calls `detach_session` on the new one, and the extra "you are an independent top-level session" sentence made new sessions note that they were not yet top-level. The brief now only says not to report back. Migration: copy `docs/agent/OPERATING_MODEL.md` (R-BATCHING) and `.claude/skills/handoff/SKILL.md`.

@@ -514,6 +514,22 @@ class SessionStart(SandboxRepo):
         self.assertTrue(marker.exists())  # the stub is reached without the opt-out
 
 
+class DetachReminder(unittest.TestCase):
+    def run_hook(self, name, resp):
+        r = subprocess.run([sys.executable, str(ROOT / "scripts/detach-reminder.py")], input=json.dumps({"tool_name": name, "tool_response": resp}), capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0)
+        return r.stdout
+
+    def test_names_the_new_session_id(self):
+        out = self.run_hook("mcp__ccd_session__start_session", {"text": "Session started: local_9fba1ca7-f86e-4b22-8699-7acdf0890fa8"})
+        msg = json.loads(out)["hookSpecificOutput"]["additionalContext"]
+        self.assertIn('detach_session with session_id "local_9fba1ca7-f86e-4b22-8699-7acdf0890fa8"', msg)
+
+    def test_silent_for_other_tools_and_proposals(self):
+        self.assertEqual(self.run_hook("Bash", {"text": "started local_9fba1ca7-f86e-4b22-8699-7acdf0890fa8"}), "")
+        self.assertEqual(self.run_hook("mcp__ccd_session__start_session", {"text": "proposal card shown"}), "")
+
+
 class PromoteCheck(SandboxRepo):
     HEAD = "| Rule / change | Hypothesis | Metric | Baseline | Check by | Confounders | Result | Grade |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n"
 
