@@ -782,6 +782,11 @@ class RetroTopics(Sandbox):
         self.assertEqual(got, [("wip", "rotation")])  # only as rotation filler
         self.assertIn("rotation", r.stdout)
 
+    def test_shipped_catalog_has_ac_profile_once_topic(self):
+        t = {x["id"]: x for x in json.loads((ROOT / "docs/agent/retro-topics.json").read_text())["topics"]}["ac-profile"]
+        self.assertEqual((t["kind"], t["trigger"]["type"]), ("once", "done_total"))
+        self.assertTrue((ROOT / "docs/agent/AC_PROFILES.md").exists())
+
     def test_local_catalog_adds_replaces_and_disables(self):
         self.catalog(local=[{"id": "rep-b", "disabled": True},
                             {"id": "wip", "kind": "repeatable", "title": "WIP local", "ask": "q", "signal": {"type": "status_count", "status": "In Progress", "min": 0}},
