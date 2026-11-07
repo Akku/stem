@@ -47,7 +47,7 @@ After the notes are written.
 - **Promote check:** run `scripts/promote-check.sh`. If it lists items, recommend the `promote-learning` skill for them in one line each: it sends the pattern to STEM as a public, anonymized pull request, so other projects get the improvement. The user decides; mark a promoted item `promoted <PR link>`.
 - **Field report (offer, never send unasked):** read `field-report.md` (next to this file) and follow it.
 
-**First retro** (no `docs/agent/retros/` notes yet): also work through the `First retro` section of `NEXT_RETRO.md`, then delete that section. The communication question (*User input*, b) is mandatory here; keep changes to the `Communication` block small.
+**First retro** (no `docs/agent/retros/` notes yet): also work through the `First retro` section of `NEXT_RETRO.md`, then delete that section.
 
 Output to the user: decisions needed, changes made, and every open criterion, in as few lines as the content allows.
 
