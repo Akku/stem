@@ -5,7 +5,7 @@ If TODO: follow `SETUP.md` first (when the user asks to set up; otherwise ask on
 
 **Language:** talk to the user in the user's language; keep instruction files and task/rule text in English.
 
-**AC profile:** TODO  <!-- retro topic `ac-profile` sets light|standard|strict (docs/agent/AC_PROFILES.md); new tasks follow it, until then 2-5 checkable ACs -->
+**AC profile:** TODO  <!-- retro topic `ac-profile` sets light|standard|strict (docs/agent/AC_PROFILES.md); new tasks follow it, until then every AC must be checkable -->
 
 ## Session start
 Before substantive work in this repository, check whether this conversation already contains this project's session-start output, including `## handoff`. If present (from a hook or tool call), do not run it again. Otherwise run `bash scripts/session-start.sh` from this repository's root and read the output before continuing. Apply once per project per conversation; preserve that fact and handoff context in compaction summaries. A workspace marker is not proof that this conversation received the output. Do not replay history.
