@@ -14,18 +14,18 @@ STEM gives your coding agent a shared workflow for setting up a project, trackin
 
 ## Why STEM
 
-STEM rests on assumptions about working with a coding agent. Each one has a counterpart in the workflow. Humor-warning: The name STEM is derived from the AI in the movie 'Upgrade (2018)'.
+STEM rests on assumptions about working with a coding agent. Each one has a counterpart in the workflow. **Humor-warning:** The name STEM is derived from the AI in the movie 'Upgrade (2018)'.
 
 | Assumption | What STEM provides |
 | --- | --- |
-| People are bad at specifying requirements, and an agent fills the gaps with guesses, much as a human would. | **Alignment:** [Backlog.md](https://github.com/MrLesk/Backlog.md) holds vision, milestones and tasks (STEM requires it and helps install it). The SETUP and the `alignment` skill interview you, so STEM checks with you before it efficiently creates the wrong result. |
-| Automation is more reliable than an agent interpreting prose rules. | **Determinism first:** scripts and hooks do what can be automated (session start, context notice, large-read warning, commit guard, blocked destructive git commands, test logs kept out of the chat). Each rule lives in one place (`AGENTS.md`), so there is less to interpret. |
+| People are bad at specifying requirements, and an agent fills the gaps with guesses. All too human. | **Alignment:** [Backlog.md](https://github.com/MrLesk/Backlog.md) holds vision, milestones and tasks. The SETUP helps install it, and the `alignment` skill interviews you to not efficiently creates the wrong result. |
+| Automation is more reliable than an agent interpreting prose rules. | **Determinism first:** scripts and hooks do what can be automated (session start, large-read minimization, logs only read punctually, etc.). Each rule lives in one place, so less interpretation by the LLM. |
 | You know what you want to do now, but when you see the results, requirements always change. Right? | **Thin slices:** milestones (vertical slice, MVP, 1.0, ...); small tasks with acceptance criteria actually checked; batches of work get suggested to you. |
-| Quality drops, mood drops, mistakes eat more tokens when the context grows. | **Small sessions:** short entry points, rules load on demand, long logs/files are only grepped / peeked and stay out of the context. When context hits hard, the `handoff` skill is automatically recommended. Like any good AI would. |
-| Small sessions need to carry state over. Session compacting is lossy, makes full re-reads necessary. | **Continuity:** state lives in files, not in a summary of the chat: backlog tasks, decisions, and a short handoff note. A fresh session starts from these and from a state summary. New sessions auto-generate after handoff. |
-| Agents do suggestions, but direction-decisions are still the human's. So the human needs all support it can get. | **Human work matters:** plain-language reports after each phase, questions with options and a recommendation, a direct link or command for everything you should check or decide. Interface and architecture decisions stay with you. |
+| Quality drops, mood drops, mistakes eat more tokens when the context grows. | **Small sessions:** rules load only on demand, long logs/files are only grepped / peeked and stay out of the context. When context hits hard, the `handoff` skill is automatically recommended. Like any good AI would. |
+| Small sessions need to carry state over. Session compacting is lossy, makes full re-reads necessary. | **Continuity:** state only lives in files: backlog tasks, decisions, and short handoff notes. New sessions auto-generate after `handoff` and read state from well-organized files. |
+| Agents do suggestions, but direction-decisions are still the human's. So the human needs all support it can get. | **Human work matters:** plain-language reports after each phase, questions with options and a recommendation, a direct link or command for everything you should check or decide. You stay in control. |
 | An agent reports "done". But it's not. Better safe than sorry. | **Traceability:** every change is a task with a plan, acceptance criteria and recorded evidence; unproven criteria stay open. |
-| The project doesn't learn unprompted. The agent hates reflection. Do you? | **Continuous learning:** the `retro` skill is suggested automatically, turns measured friction into rule changes, and the harness grows through retros, not by stockpiling. You can even send your learnings back to STEM to improve the harness (`promote-learning` skill). |
+| The agent hates reflection if not prompted to. Do you? | **Continuous learning:** the harness evolves by suggesting the `retro` skill regularly, to reflect on stored questions using an indepentent reviewer and logged measures, problems and your input. You can even use `promote-learning` to improve this harness for everyone else. |
 
 Docs for humans are English/German, agent instructions are English, and the agent talks to you in your language.
 
