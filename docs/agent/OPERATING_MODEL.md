@@ -259,7 +259,7 @@ This operating model should NOT redefine a parallel task schema, status model, p
 
 Where the existing Backlog.md setup provides concepts such as Acceptance Criteria, Implementation Plan, Implementation Notes, Definition of Done, Final Summary, Docs, or Decisions, use those native structures instead of inventing duplicates.
 
-Defaults when the project has no stricter convention (set up by `SETUP.md`): `autoCommit` is off; code and its task changes are committed together; unfinished tasks end with a concrete continuation point; approved batches avoid repeated approval questions. Use `backlog instructions overview` at session start, the matching guide (`task-creation`, `task-execution`, `task-finalization`) before that lifecycle action, and `--help` for unknown commands.
+Defaults when the project has no stricter convention (set up by `SETUP.md`): `autoCommit` is off; code and its task changes are committed together; unfinished tasks end with a concrete continuation point; approved batches avoid repeated approval questions. Use `backlog <cmd> --help` for unknown commands. The long `backlog instructions` guides (`overview`, `task-creation`, `task-execution`, `task-finalization`) are optional: read one only when `--help` and this file do not answer.
 
 Use the Backlog.md CLI when the repository expects it. Consult detailed lifecycle documentation at the relevant lifecycle action rather than preloading every procedure at session start. For unfamiliar commands, prefer built-in help over guessing.
 

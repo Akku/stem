@@ -12,7 +12,6 @@ Claude's `.claude/settings.json` hooks and permissions are not imported into Cod
 
 ```bash
 STEM_OFFLINE=1 scripts/session-start.sh
-backlog instructions overview
 ```
 
 `STEM_OFFLINE=1` suppresses the optional session-start network queries; omit it when those queries are wanted. It does not restrict other commands. Session start reports state; it does not install missing tools or repair the environment.
