@@ -48,7 +48,7 @@ What I want to build is the following:
 <your idea: what, for whom, what "done" looks like – a few sentences>
 ```
 
-Answer the agent's questions and approve installation steps as needed. It sets up the tools, vision, milestones and first tasks with you. Type installer passwords only into the installer, never into the chat.
+Answer the agent's questions and approve installation steps as needed. It sets up the tools, vision, milestones and first tasks with you. Never type passwords / secrets into a chat.
 
 **Technical users:** click **Use this template** on GitHub, or clone the repository, then use the same prompt. [Detailed setup guide](START_HERE.md) for more help.
 
