@@ -18,14 +18,14 @@ STEM is a template harness to kickstart your project. It sits on top of the codi
 
 | Assumption | What STEM provides |
 | --- | --- |
-| People are bad at specifying requirements, and an agent fills the gaps with guesses. All too human. | **Alignment:** [Backlog.md](https://github.com/MrLesk/Backlog.md) holds vision, milestones and tasks. The SETUP helps install it, and the `alignment` skill interviews you to not efficiently creates the wrong result. |
+| People are bad at specifying requirements, and an agent fills the gaps with guesses. All too human. | **Alignment:** [Backlog.md](https://github.com/MrLesk/Backlog.md) holds vision, milestones and tasks. The SETUP helps install it, and the `alignment` skill interviews you so you avoid efficiently getting the wrong result. |
 | Automation is more reliable than an agent interpreting prose rules. | **Determinism first:** scripts and hooks do what can be automated (session start, large-read minimization, logs only read punctually, etc.). Each rule lives in one place, so less interpretation by the LLM. |
 | You know what you want to do now, but when you see the results, requirements always change. Right? | **Thin slices:** milestones (vertical slice, MVP, 1.0, ...); small tasks with acceptance criteria actually checked; batches of work get suggested to you. |
 | Quality drops, mood drops, mistakes eat more tokens when the context grows. | **Small sessions:** rules load only on demand, long logs/files are only grepped / peeked and stay out of the context. When context hits hard, the `handoff` skill is automatically recommended. Like any good AI would. |
 | Small sessions need to carry state over. Session compacting is lossy, makes full re-reads necessary. | **Continuity:** state only lives in files: backlog tasks, decisions, and short handoff notes. New sessions auto-generate after `handoff` and read state from well-organized files. |
 | Agents do suggestions, but direction-decisions are still the human's. So the human needs all support it can get. | **Human work matters:** plain-language reports after each phase, questions with options and a recommendation, a direct link or command for everything you should check or decide. You stay in control. |
 | An agent reports "done". But it's not. Better safe than sorry. | **Traceability:** every change is a task with a plan, acceptance criteria and recorded evidence; unproven criteria stay open. |
-| The agent hates reflection if not prompted to. Do you? | **Continuous learning:** the harness evolves by suggesting the `retro` skill regularly, to reflect on stored questions using an indepentent reviewer and logged measures, problems and your input. You can even use `promote-learning` to improve this harness for everyone else. |
+| The agent hates reflection if not prompted to. Do you? | **Continuous learning:** the harness evolves by suggesting the `retro` skill regularly, to reflect on stored questions using an independent reviewer and logged measures, problems and your input. You can even use `promote-learning` to improve this harness for everyone else. |
 
 Docs for humans are English/German, agent instructions are English, and the agent talks to you in your language.
 
