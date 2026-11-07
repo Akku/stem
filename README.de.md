@@ -63,6 +63,22 @@ macOS ist getestet. Auf anderen Systemen, Agenten oder Modellen passt der Skill 
 
 Drei Kurven aus der Nutzung von STEM an sich selbst (Dogfooding-Daten, kein Benchmark): [Ergebnisseite](docs/RESULTS.md), auf Englisch.
 
+## Optional: Claude Code in einer Docker-Sandbox
+
+Wer Claude Code vollständig vom eigenen Rechner trennen will, startet es mit `scripts/sandbox.sh` in einem Docker-Container. Das Projekt liegt nur in einem Docker-Volume (kein Ordner des Rechners wird eingebunden); nötig ist nur Docker.
+
+```bash
+scripts/sandbox.sh new meinprojekt      # klont die STEM-Vorlage in eine neue Sandbox und startet Claude
+scripts/sandbox.sh new meinprojekt --repo https://github.com/du/dein-repo.git   # stattdessen dein eigenes Repo
+scripts/sandbox.sh start meinprojekt    # später fortsetzen; außerdem: stop, export, reset, list
+```
+
+- **Anmeldung:** `ANTHROPIC_API_KEY` aus der Umgebung oder Kontoanmeldung in der Sandbox (`/login`, bleibt im Volume).
+- **Rückweg:** Push nach GitHub (`GH_TOKEN` mit einem nur für dieses Repo gültigen Token; wird nur per Namen durchgereicht, nie gespeichert) oder `scripts/sandbox.sh export meinprojekt <ordner>` (tar.gz und Git-Bundle).
+- **Netz:** ausgehend offen, eingehend nichts. `--strict` erlaubt nur Claude-API, GitHub, npm und PyPI (`--allow HOST` für weitere). `--port 8080` leitet einen Container-Port auf localhost.
+- **Image:** neueste Ubuntu-LTS beim ersten Start (`--ubuntu TAG` überschreibt; wird mit der Sandbox gespeichert).
+- **Grenzen:** Projekte, die selbst Docker brauchen, laufen darin nicht (bewusst kein Docker-Socket); Windows nur mit WSL2; der erste Start baut das Image (einige Minuten).
+
 ## Aktuell bleiben
 
 Zu Beginn jeder Sitzung prüft der Agent (einmal pro Tag), ob es eine neuere STEM-Version gibt, und sagt dir Bescheid. Mit deiner Zustimmung liest der Skill `stem-update` das [Changelog](CHANGELOG.md), wählt aus, was deinem Projekt nützt, und übernimmt es, ohne projektspezifische Inhalte zu überschreiben. Auch der Skill `retro` prüft STEM.

@@ -63,6 +63,22 @@ macOS is tested. On other systems, agents or models the `port-check` skill adapt
 
 See the [results page](docs/RESULTS.md) for three curves from using STEM on itself (dogfooding data, not a benchmark).
 
+## Optional: run Claude Code in a Docker sandbox
+
+If you want Claude Code fully isolated from your computer, `scripts/sandbox.sh` runs it inside a Docker container. The project lives only in a Docker volume (no host mount); you need only Docker.
+
+```bash
+scripts/sandbox.sh new myproject      # clones the STEM template into a new sandbox and starts Claude
+scripts/sandbox.sh new myproject --repo https://github.com/you/your-repo.git   # your own repo instead
+scripts/sandbox.sh start myproject    # resume later; also: stop, export, reset, list
+```
+
+- **Login:** `ANTHROPIC_API_KEY` from your environment, or log in with your account inside (`/login`; kept in the sandbox volume).
+- **Return path:** push to GitHub (set `GH_TOKEN` to a token scoped to this one repository; it is passed by name and never stored) or `scripts/sandbox.sh export myproject <dir>` (tar.gz and git bundle).
+- **Network:** outbound open, nothing inbound. `--strict` allows only the Claude API, GitHub, npm and PyPI (`--allow HOST` adds more). `--port 8080` forwards a container port to localhost.
+- **Image:** newest Ubuntu LTS at the time of the first start (`--ubuntu TAG` overrides; stored with the sandbox).
+- **Limits:** projects that need Docker themselves do not work inside (no Docker socket pass-through, by design); Windows needs WSL2; the first start builds the image (a few minutes).
+
 ## Staying up to date
 
 At the start of each session the agent checks (once per day) whether a newer STEM version exists and tells you. With your approval the `stem-update` skill reads the [changelog](CHANGELOG.md), picks what helps your project and merges it without overwriting your project-specific content. The `retro` skill checks STEM as well.
@@ -115,6 +131,7 @@ Based on each project's own documentation as of November 2026; these projects ch
 | `scripts/context-report.py` | Optional retro tool (Claude Code): where the context went, longest sessions; numbers only |
 | `scripts/context-check.py` | Claude Code hook: warns when the context is large and a new session is due |
 | `scripts/run.sh` | Compact output for tests/CI/CLI (exit code preserved, full log in git-ignored `.agent-logs/`, `evidence:` pointer for task notes; uncited logs older than 30 days are pruned) |
+| `scripts/sandbox.sh`, `docker/` | Optional: run Claude Code inside a Docker container (project only in a volume; `--strict` network mode) |
 | `scripts/session-start.sh` | Session start summary (branch, changes, tasks, handoff); changes no project files, `STEM_OFFLINE=1` for no network |
 | `docs/agent/OPERATING_MODEL.md` | Rules with stable IDs (`R-*`), loaded selectively |
 | `docs/agent/ADVANCED.md` | Rarely needed rules (parallelism, measurement, routing, local models) |
