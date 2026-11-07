@@ -10,7 +10,7 @@
 
 </div>
 
-STEM gives your coding agent a shared workflow for setting up a project, tracking work with [Backlog.md](https://github.com/MrLesk/Backlog.md), and carrying decisions between sessions. It sits on top of the coding agent you already use (Claude Code or Codex) and follows that agent's changes through versioned releases.
+STEM is a template harness to kickstart your project. It sits on top of the coding agent you already use (preferably Claude Code).
 
 ## Why STEM
 
