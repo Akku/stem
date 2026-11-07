@@ -14,7 +14,7 @@ STEM is a template harness to kickstart your project. It sits on top of the codi
 
 ## Why STEM
 
-STEM rests on assumptions about working with a coding agent. Each one has a counterpart in the workflow. **Humor-warning:** The name STEM is derived from the AI in the movie 'Upgrade (2018)'.
+**Humor-warning:** The name STEM is derived from the AI in the movie 'Upgrade (2018)'.
 
 | Assumption | What STEM provides |
 | --- | --- |
