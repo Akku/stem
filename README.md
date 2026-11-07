@@ -10,7 +10,7 @@
 
 </div>
 
-STEM is a template harness to kickstart your project. It sits on top of the coding agent you already use (preferably Claude Code).
+STEM is a template harness to kickstart your project. It sits on top of the coding agent you already use (preferably Claude Code) and only needs a model like Sonnet on medium thinking, so you don't have to spend $ on the high end models.
 
 ## Why STEM
 
