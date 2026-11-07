@@ -928,6 +928,12 @@ class LargeReadWarn(Sandbox):
         r = self.hook({"tool_name": "Bash", "tool_input": {"command": f"cat > /dev/null <<'E'\ncat {big}\nE\n"}, "cwd": str(self.tmp)})
         self.assertEqual((r.returncode, r.stdout), (0, ""))
 
+    def test_heredoc_edge_cases(self):
+        big = self.tmp / "big.py"; big.write_text("x" * 9000)
+        for cmd in (f"cat <<A <<B\na\nA\nb\nB\ncat {big}", f"cat <<< foo\nfoo\ncat {big}", f"cat <<< foo; cat {big}"):
+            r = self.hook({"tool_name": "Bash", "tool_input": {"command": cmd}, "cwd": str(self.tmp)})
+            self.assertIn("Large read: big.py is 8 KB", json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"], cmd)
+
     def test_silent_on_bad_input(self):
         for stdin in ("not json", "{}", json.dumps({"tool_name": "Read", "tool_input": {"file_path": "/missing/file"}})):
             r = run([sys.executable, str(SCRIPTS / "large-read-warn.py")], self.tmp, stdin=stdin)

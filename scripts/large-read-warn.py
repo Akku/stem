@@ -10,16 +10,21 @@ SKIP = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".pdf", ".ipynb")
 
 
 def strip_heredocs(command):
-    """Drop heredoc bodies and the << operator so commands after the terminator are still seen. A heredoc without terminator is left alone."""
+    """Drop heredoc bodies and the << operators so commands after the terminators are still seen. Several heredocs on one line are
+    read in order; here-strings (<<<) are not heredocs. A heredoc without terminator is left alone."""
     lines, out, i = command.split("\n"), [], 0
     while i < len(lines):
         line = lines[i]
-        m = re.search(r"<<-?\s*(['\"]?)(\w+)\1", line)
-        end = next((j for j in range(i + 1, len(lines)) if lines[j].strip() == m.group(2)), None) if m else None
-        if end is None:
+        ms = list(re.finditer(r"(?<!<)<<(?!<)-?\s*(['\"]?)(\w+)\1", line))
+        end, j = None, i + 1
+        for m in ms:
+            end = next((k for k in range(j, len(lines)) if lines[k].strip() == m.group(2)), None)
+            if end is None: break
+            j = end + 1
+        if not ms or end is None:
             out.append(line); i += 1
         else:
-            out.append(line[:m.start()] + line[m.end():]); i = end + 1
+            out.append(re.sub(r"(?<!<)<<(?!<)-?\s*(['\"]?)(\w+)\1", "", line)); i = end + 1
     return "\n".join(out)
 
 
