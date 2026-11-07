@@ -57,7 +57,7 @@ Answer the agent's questions and approve installation steps as needed. It sets u
 
 Claude Code is tested in real use. Codex is tested by an automated probe run (fresh setup, native skill listing, alignment interview, one task to Done) and in an existing project with documented workarounds; project hooks, the Codex UI, Codex Cloud and long-context behaviour are not covered. See [Codex mechanics](docs/agent/CODEX.md) for prerequisites, session start, sandbox access and the context-warning fallback.
 
-macOS is tested; Windows is prepared but not yet tested.
+macOS is tested. On other systems, agents or models the `port-check` skill adapts STEM as an overlay, measures it and reports the result (offered at session start).
 
 </details>
 
@@ -103,7 +103,7 @@ Based on each project's own documentation as of November 2026; these projects ch
 | `SETUP.md` | One-time setup procedure for the agent (deleted after setup) |
 | `AGENTS.md` | Shared core rules (Codex and compatible tools) |
 | `CLAUDE.md` | Thin adapter pointing to `AGENTS.md` |
-| `.claude/skills/` | Skills: `retro`, `alignment`, `handoff`, `promote-learning`, `stem-update`; optional module (chosen in setup): `market-analysis` |
+| `.claude/skills/` | Skills: `retro`, `alignment`, `handoff`, `promote-learning`, `stem-update`, `port-check`; optional module (chosen in setup): `market-analysis` |
 | `.agents/skills` | Link to `.claude/skills/` for shared Codex skill sources; Codex lists these skills natively (automated probe) |
 | `.claude/agents/` | Agents: `ux-designer` (optional module, for projects with a UI) |
 | `scripts/githooks/pre-commit` | Guard against committing confidential source documents and common secrets (activated during setup) |

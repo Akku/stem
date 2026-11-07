@@ -29,6 +29,20 @@ if [ -f STEM_VERSION ]; then
 else
   echo "no STEM_VERSION file"
 fi
+# port check (docs/agent/PORT_CHECK.md): reference environment from STEM_VERSION; offer only after SETUP is done, never again once PORT.md exists
+if [ -f docs/agent/PORT.md ]; then
+  echo "port overlay: read docs/agent/PORT.md and docs/agent/port/ before working (adapted scripts take precedence over scripts/)"
+elif grep -q '^\*\*Setup status:\*\* DONE' AGENTS.md 2>/dev/null && [ -f STEM_VERSION ]; then
+  ros=$(sed -n 's/^reference-os: *//p' STEM_VERSION | head -1); rag=$(sed -n 's/^reference-agent: *//p' STEM_VERSION | head -1)
+  cos="${STEM_PORT_OS:-$(uname -s 2>/dev/null)}"
+  if [ -n "${STEM_PORT_AGENT:-}" ]; then cag="$STEM_PORT_AGENT"
+  elif [ -n "${CLAUDECODE:-}" ]; then cag=claude-code
+  elif env | grep -q '^CODEX_'; then cag=codex
+  else cag=unknown; fi
+  if { [ -n "$ros" ] && [ "$cos" != "$ros" ]; } || { [ -n "$rag" ] && [ "$cag" != "$rag" ]; }; then
+    echo "PORT CHECK AVAILABLE: this environment (os $cos, agent $cag) differs from the reference ($ros, $rag, $(sed -n 's/^reference-model: *//p' STEM_VERSION | head -1)); offer the port-check skill once, do not start unasked"
+  fi
+fi
 if [ -z "${STEM_OFFLINE:-}" ] && [ -f .github/stem-check.py ] && command -v gh >/dev/null 2>&1; then
   # STEM maintainer only (this file is removed from projects): incoming learnings
   prs=$(gh pr list --state open --limit 5 --json number,title,headRefName -q '.[]|"#\(.number) \(.headRefName): \(.title)"' 2>/dev/null)

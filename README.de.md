@@ -57,7 +57,7 @@ Beantworte die Rückfragen des Agenten und genehmige nötige Installationsschrit
 
 Claude Code ist im praktischen Einsatz getestet. Codex ist durch einen automatisierten Testlauf getestet (Einrichtung eines neuen Projekts, native Skill-Liste, Abstimmungsgespräch, eine Aufgabe bis Done) sowie in einem bestehenden Projekt mit dokumentierten Umgehungslösungen; Projekt-Hooks, die Codex-Oberfläche, Codex Cloud und das Verhalten bei langem Kontext sind nicht abgedeckt. Die [Codex-Hinweise](docs/agent/CODEX.md) erklären Voraussetzungen, Sitzungsstart, Sandbox-Zugriff und das Vorgehen ohne Kontextwarnung (Agentenhinweise auf Englisch).
 
-macOS ist getestet; Windows ist vorbereitet, aber noch nicht getestet.
+macOS ist getestet. Auf anderen Systemen, Agenten oder Modellen passt der Skill `port-check` STEM als Overlay an, misst das Ergebnis und berichtet es (Angebot beim Session-Start).
 
 </details>
 
@@ -100,7 +100,7 @@ Stand laut eigener Dokumentation der Projekte, November 2026; diese Projekte än
 | Datei | Zweck |
 | --- | --- |
 | `STARTE_HIER.md` / `START_HERE.md` | Anleitung für Menschen (DE/EN) |
-| `.claude/skills/` | Skills: `retro`, `alignment`, `handoff`, `promote-learning`, `stem-update`; optionales Modul (Auswahl beim Setup): `market-analysis` |
+| `.claude/skills/` | Skills: `retro`, `alignment`, `handoff`, `promote-learning`, `stem-update`, `port-check`; optionales Modul (Auswahl beim Setup): `market-analysis` |
 | `.agents/skills` | Verweis auf `.claude/skills/` für gemeinsame Codex-Skill-Quellen; Codex listet diese Skills nativ (automatisierter Testlauf) |
 | `.claude/agents/` | Agenten: `ux-designer` (optionales Modul, für Projekte mit Oberfläche) |
 | `SETUP.md` | Einmalige Setup-Anleitung für den Agenten (wird nach dem Setup gelöscht) |

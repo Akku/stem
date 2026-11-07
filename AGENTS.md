@@ -14,7 +14,7 @@ Local Claude Code and Codex startup hooks provide this output where supported an
 - Explain technically what changed, why and what comes next; name files, commands and trade-offs; not every tool call. After each phase (setup step, finished task, session end) summarize it. Ask questions with options and a recommendation; a question that stays open is recorded at once as a draft task (`R-BATCHING`). The user's own instructions override this.
 - **Whenever the user should test, review or decide something, put the direct way in the same message:** for a running app the full URL with port and route (start the server yourself if needed), for files a clickable relative path, for PRs/CI the full URL, otherwise the exact command; plus what to check (2-4 bullets) and which answer you need.
 
-**Skills** (`.claude/skills/<name>/SKILL.md`; other tools read the file): `retro`, `alignment`, `handoff`, `promote-learning`, `market-analysis`, `stem-update`.
+**Skills** (`.claude/skills/<name>/SKILL.md`; other tools read the file): `retro`, `alignment`, `handoff`, `promote-learning`, `market-analysis`, `stem-update`, `port-check`.
 
 ## Core rules (full text by ID: `docs/agent/OPERATING_MODEL.md`)
 1. **Task first** (`R-LIFECYCLE`): every change is a Backlog.md task (label `size-S|M|L` at creation, `R-LIFECYCLE` 1.2): task → plan → implement → verify → evidence → done. Use the `backlog` CLI only; for an unknown command run `backlog <cmd> --help` (the `backlog instructions <guide>` texts are long: read one only when `--help` does not answer, never by default).

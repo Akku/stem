@@ -394,6 +394,20 @@ class SessionStart(SandboxRepo):
         for s in ("## git", "branch: main", "stem version: 1.0.0", "WARNING: pre-commit guard inactive", "## handoff", "no HANDOFF.md"):
             self.assertIn(s, out)
 
+    def test_port_check_offer(self):
+        ref = "version: 1.0.0\nreference-os: Darwin\nreference-agent: claude-code\nreference-model: M\n"
+        (self.repo / "STEM_VERSION").write_text(ref); (self.repo / "docs/agent").mkdir(parents=True)
+        env = {"STEM_OFFLINE": "1", "STEM_PORT_OS": "Linux", "STEM_PORT_AGENT": "claude-code"}
+        (self.repo / "AGENTS.md").write_text("**Setup status:** TODO\n")
+        self.assertNotIn("PORT CHECK AVAILABLE", self.start(env))            # setup not done: silent
+        (self.repo / "AGENTS.md").write_text("**Setup status:** DONE\n")
+        self.assertIn("PORT CHECK AVAILABLE", self.start(env))               # other OS
+        self.assertIn("PORT CHECK AVAILABLE", self.start({**env, "STEM_PORT_OS": "Darwin", "STEM_PORT_AGENT": "codex"}))  # other agent
+        self.assertNotIn("PORT CHECK AVAILABLE", self.start({**env, "STEM_PORT_OS": "Darwin"}))  # reference: silent
+        (self.repo / "docs/agent/PORT.md").write_text("status: declined\n")
+        out = self.start(env)
+        self.assertNotIn("PORT CHECK AVAILABLE", out); self.assertIn("port overlay: read docs/agent/PORT.md", out)
+
     def test_oversized_handoff_warns(self):
         (self.repo / "docs/agent").mkdir(parents=True); (self.repo / "docs/agent/HANDOFF.md").write_text("x" * 3000)
         self.assertIn("HANDOFF.md is over 2 KB", self.start())
