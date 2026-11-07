@@ -1,4 +1,4 @@
-version: 1.14.0
+version: 1.15.0
 repo: https://github.com/Akku/stem
 # Reference environment (docs/agent/PORT_CHECK.md): the port-check offer appears when a session differs from it
 reference-os: Darwin

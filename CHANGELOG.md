@@ -2,7 +2,7 @@
 
 Newest first. Projects read the entries newer than their `STEM_VERSION` (see `stem-update` skill). Each entry: what changed and who benefits; renames and removals get a `Migration:` line (what to rename or delete) that `stem-update` carries out.
 
-## Unreleased
+## 1.15.0
 - **Port check for other environments:** session start prints "PORT CHECK AVAILABLE" when OS, agent or model differ from the reference environment (`STEM_VERSION` header); the new skill `port-check` with `docs/agent/PORT_CHECK.md` adapts STEM as an overlay, measures it and reports back (variant of the field-report issue template). Tested only partly (Linux container). Benefits: STEM beyond macOS/Claude Code with a measured result. Migration: copy `.claude/skills/port-check/`, `docs/agent/PORT_CHECK.md`, `scripts/session-start.sh`, `.github/ISSUE_TEMPLATE/field-report.md`; add the `reference-*` lines to `STEM_VERSION`.
 - **Acceptance-criteria profiles:** retro topic `ac-profile` and `docs/agent/AC_PROFILES.md` (light, standard, strict profiles without fixed counts, chosen with the user). Migration: copy `docs/agent/AC_PROFILES.md`, `docs/agent/retro-topics.json`, `AGENTS.md` (mixed file: take the two added lines).
 - **Faster small tasks:** a size-S fast path in `AGENTS.md` avoids reading rule sections, and the `backlog instructions` guides are optional for small tasks. Benefits: less context on small tasks. Migration: update the matching lines of `AGENTS.md` and `R-LIFECYCLE` in `docs/agent/OPERATING_MODEL.md`.
