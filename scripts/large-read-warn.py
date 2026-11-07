@@ -9,15 +9,30 @@ LIMIT = int(os.environ.get("LARGE_READ_BYTES", "8192"))
 SKIP = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".pdf", ".ipynb")
 
 
+def strip_heredocs(command):
+    """Drop heredoc bodies and the << operator so commands after the terminator are still seen. A heredoc without terminator is left alone."""
+    lines, out, i = command.split("\n"), [], 0
+    while i < len(lines):
+        line = lines[i]
+        m = re.search(r"<<-?\s*(['\"]?)(\w+)\1", line)
+        end = next((j for j in range(i + 1, len(lines)) if lines[j].strip() == m.group(2)), None) if m else None
+        if end is None:
+            out.append(line); i += 1
+        else:
+            out.append(line[:m.start()] + line[m.end():]); i = end + 1
+    return "\n".join(out)
+
+
 def cat_targets(command, cwd):
-    """Files a Bash command prints whole with cat. Stops at a heredoc; ignores cat whose output goes into a pipe or redirect."""
+    """Files a Bash command prints whole with cat. Heredoc bodies are skipped; ignores cat whose output goes into a pipe or redirect."""
+    command = strip_heredocs(command)
     lex = shlex.shlex(command, posix=True, punctuation_chars="();<>|&\n")
     lex.whitespace, lex.whitespace_split = " \t\r", True
     try: tokens = list(lex)
     except ValueError: return []
     steps, step = [], []
     for tok in tokens:
-        if tok.startswith("<<"): break
+        if tok == "<<": break  # unterminated heredoc (terminated ones are stripped above)
         if tok in ("&&", "||", ";", "\n", "|", "&", "(", ")"):
             steps.append((step, tok)); step = []
         else: step.append(tok)
