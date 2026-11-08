@@ -4,7 +4,7 @@
 
 **An Agile Agentic Coding Harness**
 
-**Version 1.15.0** · ![License](https://img.shields.io/badge/license-MIT-green) ![Claude Code](https://img.shields.io/badge/Claude%20Code-tested-green) ![Codex](https://img.shields.io/badge/Codex-tested-green)
+**Version 1.16.0** · ![License](https://img.shields.io/badge/license-MIT-green) ![Claude Code](https://img.shields.io/badge/Claude%20Code-tested-green) ![Codex](https://img.shields.io/badge/Codex-tested-green)
 
 [🇩🇪 Deutsch](README.de.md) · [Why STEM](#why-stem) · [Is STEM for you?](#is-stem-for-you) · [Get started](#get-started) · [Contents](#contents)
 

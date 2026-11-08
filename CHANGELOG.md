@@ -2,7 +2,7 @@
 
 Newest first. Projects read the entries newer than their `STEM_VERSION` (see `stem-update` skill). Each entry: what changed and who benefits; renames and removals get a `Migration:` line (what to rename or delete) that `stem-update` carries out.
 
-## Unreleased
+## 1.16.0
 - **Sandbox follow-ups from the first real test:** the image now contains `gh` (GitHub CLI, uses `GH_TOKEN`); image tags carry a revision (`stem-sandbox:<ubuntu>-<rev>`) so existing images are rebuilt once; `sandbox.sh export` without a folder writes to `~/stem-sandbox-exports` (or `$STEM_SANDBOX_EXPORT_DIR`) instead of the current folder; help and README state that the login belongs to one sandbox. Benefits: PRs from inside the sandbox, no stray export files in a project. Migration: copy `scripts/sandbox.sh`, `docker/Dockerfile`; the old image `stem-sandbox:<ubuntu>` may be deleted (`docker rmi`).
 - **Backlog check reports missing Outcome lines:** `scripts/check-backlog.sh` (and so session start and handoff) prints a notice (exit code unchanged, so the pre-commit guard never blocks) naming Done tasks updated in the last 7 days (`STEM_OUTCOME_DAYS`) that lack the `Outcome:` note line of `R-LIFECYCLE` 1.6. The optional file `docs/agent/outcome-since` (one line `YYYY-MM-DD`) hides tasks closed earlier, so old tasks need no backfill. Benefits: the post-acceptance record is actually written (0 of 12 before). Migration: copy `scripts/check-backlog.sh`.
 
