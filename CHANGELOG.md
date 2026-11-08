@@ -2,6 +2,9 @@
 
 Newest first. Projects read the entries newer than their `STEM_VERSION` (see `stem-update` skill). Each entry: what changed and who benefits; renames and removals get a `Migration:` line (what to rename or delete) that `stem-update` carries out.
 
+## Unreleased
+- **Backlog check reports missing Outcome lines:** `scripts/check-backlog.sh` (and so session start and handoff) prints a notice (exit code unchanged, so the pre-commit guard never blocks) naming Done tasks updated in the last 7 days (`STEM_OUTCOME_DAYS`) that lack the `Outcome:` note line of `R-LIFECYCLE` 1.6. Benefits: the post-acceptance record is actually written (0 of 12 before). Migration: copy `scripts/check-backlog.sh`.
+
 ## 1.15.0
 - **Port check for other environments:** session start prints "PORT CHECK AVAILABLE" when OS, agent or model differ from the reference environment (`STEM_VERSION` header); the new skill `port-check` with `docs/agent/PORT_CHECK.md` adapts STEM as an overlay, measures it and reports back (variant of the field-report issue template). Tested only partly (Linux container). Benefits: STEM beyond macOS/Claude Code with a measured result. Migration: copy `.claude/skills/port-check/`, `docs/agent/PORT_CHECK.md`, `scripts/session-start.sh`, `.github/ISSUE_TEMPLATE/field-report.md`; add the `reference-*` lines to `STEM_VERSION`.
 - **Acceptance-criteria profiles:** retro topic `ac-profile` and `docs/agent/AC_PROFILES.md` (light, standard, strict profiles without fixed counts, chosen with the user). Migration: copy `docs/agent/AC_PROFILES.md`, `docs/agent/retro-topics.json`, `AGENTS.md` (mixed file: take the two added lines).

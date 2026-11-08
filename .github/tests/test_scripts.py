@@ -371,6 +371,16 @@ class RetroMetrics(SandboxRepo):
         self.assertEqual(r.returncode, 1)
         self.assertIn("duplicate task id: task-1", r.stdout)
 
+    def test_recent_done_task_without_outcome_line_is_reported(self):
+        import datetime as dt
+        now = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d %H:%M")
+        self.task(1, updated=now); self.task(2, updated=now, extra="Outcome: corrections=unknown rework=unknown defects=unknown")
+        self.task(3, updated="2020-01-01 10:00")
+        r = run(["bash", "scripts/check-backlog.sh"], self.repo, self.env)
+        self.assertEqual(r.returncode, 0)   # notice only
+        self.assertIn("notice: 1 Done task(s)", r.stdout); self.assertIn("TASK-1", r.stdout)
+        self.assertNotIn("TASK-2", r.stdout); self.assertNotIn("TASK-3", r.stdout)
+
     def test_decision_record_needs_sections_and_valid_status(self):
         d = self.repo / "backlog/decisions"; d.mkdir(parents=True)
         ok = "---\nid: decision-1\ntitle: T\ndate: 2026-01-01\nstatus: accepted\n---\n## Context\nc\n\n## Decision\nd\n\n## Consequences\ne\n"
