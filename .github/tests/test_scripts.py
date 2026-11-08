@@ -381,6 +381,14 @@ class RetroMetrics(SandboxRepo):
         self.assertIn("notice: 1 Done task(s)", r.stdout); self.assertIn("TASK-1", r.stdout)
         self.assertNotIn("TASK-2", r.stdout); self.assertNotIn("TASK-3", r.stdout)
 
+    def test_outcome_since_file_hides_older_tasks(self):
+        import datetime as dt
+        now = dt.datetime.now(dt.timezone.utc); old = (now - dt.timedelta(days=2)).strftime("%Y-%m-%d %H:%M")
+        self.task(1, updated=old); self.task(2, updated=now.strftime("%Y-%m-%d %H:%M"))
+        (self.repo / "docs/agent").mkdir(parents=True, exist_ok=True); (self.repo / "docs/agent/outcome-since").write_text(now.strftime("%Y-%m-%d") + "\n")
+        out = run(["bash", "scripts/check-backlog.sh"], self.repo, self.env).stdout
+        self.assertIn("notice: 1 Done task(s)", out); self.assertIn("TASK-2", out); self.assertNotIn("TASK-1 ", out + " ")
+
     def test_decision_record_needs_sections_and_valid_status(self):
         d = self.repo / "backlog/decisions"; d.mkdir(parents=True)
         ok = "---\nid: decision-1\ntitle: T\ndate: 2026-01-01\nstatus: accepted\n---\n## Context\nc\n\n## Decision\nd\n\n## Consequences\ne\n"

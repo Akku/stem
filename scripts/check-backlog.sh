@@ -9,6 +9,8 @@ bad=0
 # Recently closed tasks need the Outcome line (R-LIFECYCLE 1.6); older ones are not reported.
 days=${STEM_OUTCOME_DAYS:-7}; noout=()   # notice only (exit code unaffected, so the pre-commit guard never blocks on old tasks)
 cutoff=$(date -u -d "$days days ago" '+%Y-%m-%d %H:%M' 2>/dev/null || date -u -v-"${days}"d '+%Y-%m-%d %H:%M' 2>/dev/null || true)
+# Optional start date (file docs/agent/outcome-since, "YYYY-MM-DD"): tasks closed before it are never reported, so old tasks need no backfill.
+if [ -f docs/agent/outcome-since ]; then since=$(head -1 docs/agent/outcome-since | tr -d ' \r'); [ -n "$cutoff" ] && [ "$since 00:00" \> "$cutoff" ] && cutoff="$since 00:00"; fi
 # Duplicate task IDs (e.g. two sessions or two projects creating the same number): always checked across all tasks.
 dups=$(awk -F': ' '/^id:/{print tolower($2)}' backlog/tasks/*.md 2>/dev/null | sort | uniq -d)
 for d in $dups; do echo "duplicate task id: $d"; bad=1; done
