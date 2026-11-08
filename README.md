@@ -73,8 +73,8 @@ scripts/sandbox.sh new myproject --repo https://github.com/you/your-repo.git   #
 scripts/sandbox.sh start myproject    # resume later; also: stop, export, reset, list
 ```
 
-- **Login:** `ANTHROPIC_API_KEY` from your environment, or log in with your account inside (`/login`; kept in the sandbox volume).
-- **Return path:** push to GitHub (set `GH_TOKEN` to a token scoped to this one repository; it is passed by name and never stored) or `scripts/sandbox.sh export myproject <dir>` (tar.gz and git bundle).
+- **Login:** `ANTHROPIC_API_KEY` from your environment, or log in with your account inside (`/login`; kept in the sandbox volume; it belongs to this one sandbox, so each new sandbox asks again: use one sandbox for several projects (clone inside it) or set the API key).
+- **Return path:** push to GitHub (set `GH_TOKEN` to a token scoped to this one repository; it is passed by name and never stored) or `scripts/sandbox.sh export myproject [dir]` (tar.gz and git bundle; default folder `~/stem-sandbox-exports`, never the current folder). The image contains `git` and `gh` (GitHub CLI, uses `GH_TOKEN`).
 - **Network:** outbound open, nothing inbound. `--strict` allows only the Claude API, GitHub, npm and PyPI (`--allow HOST` adds more). `--port 8080` forwards a container port to localhost.
 - **Image:** newest Ubuntu LTS at the time of the first start (`--ubuntu TAG` overrides; stored with the sandbox).
 - **Limits:** projects that need Docker themselves do not work inside (no Docker socket pass-through, by design); Windows needs WSL2; the first start builds the image (a few minutes).

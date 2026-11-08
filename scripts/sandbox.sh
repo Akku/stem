@@ -5,7 +5,8 @@
 #   sandbox.sh new <name> [--repo URL]   clone the STEM template (or your repo) into a new sandbox and start Claude
 #   sandbox.sh start [name]              start/resume the sandbox (default name: stem)
 #   sandbox.sh stop [name]               stop the container (volumes stay)
-#   sandbox.sh export [name] [dir]       copy the project to the host: <dir>/<name>.tar.gz and <name>.bundle (git)
+#   sandbox.sh export [name] [dir]       copy the project to the host: <dir>/<name>.tar.gz and <name>.bundle (git);
+#                                        default dir: $STEM_SANDBOX_EXPORT_DIR or ~/stem-sandbox-exports (never the current folder)
 #   sandbox.sh reset [name]              DELETE the sandbox volumes (asks first); login and project are gone
 #   sandbox.sh list                      list sandboxes
 # Options for new/start: --strict (only Claude API, GitHub, npm/PyPI reachable), --port N (repeatable, host:container same N),
@@ -13,9 +14,12 @@
 #   --allow HOST (repeatable, extra host in --strict mode), --shell (bash instead of claude), -- CMD... (run CMD instead).
 # Credentials: ANTHROPIC_API_KEY and GH_TOKEN (scoped to ONE repo) are passed from your environment by name only;
 #   never stored in the image or a volume. Without ANTHROPIC_API_KEY, log in with your account inside (/login); it persists in the volume.
+#   The login belongs to ONE sandbox (own volume): a new sandbox asks for /login again. Use one sandbox for several projects
+#   (git clone inside it) or set ANTHROPIC_API_KEY to avoid repeated logins. The image contains git and gh (GitHub CLI; uses GH_TOKEN).
 set -euo pipefail
 TEMPLATE_URL=https://github.com/Akku/stem.git
 RAW=https://raw.githubusercontent.com/Akku/stem/main/docker
+IMG_REV=2   # raise when docker/Dockerfile changes, so existing Ubuntu images are rebuilt
 here=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)
 die() { echo "sandbox: $*" >&2; exit 1; }
 command -v docker >/dev/null || die "Docker not found. Install Docker Desktop (Mac/Windows+WSL2) or Docker Engine (Linux)."
@@ -50,7 +54,7 @@ build_image() {  # $1 = ubuntu version label (e.g. 24.04); image tag is stem-san
   local tag=$1 ver
   if [ "$tag" = latest ]; then docker pull -q ubuntu:latest >/dev/null; else docker pull -q "ubuntu:$tag" >/dev/null || die "ubuntu:$tag not found"; fi
   ver=$(docker run --rm "ubuntu:$tag" sh -c '. /etc/os-release; echo $VERSION_ID')
-  img="stem-sandbox:$ver"; ubuntu_ver=$ver
+  img="stem-sandbox:$ver-$IMG_REV"; ubuntu_ver=$ver
   if ! docker image inspect "$img" >/dev/null 2>&1; then
     find_docker_dir; echo "[sandbox] building image $img (Ubuntu $ver; first use takes a few minutes)..." >&2
     docker build -q --build-arg "UBUNTU_TAG=$ver" -t "$img" "$dockerdir" >/dev/null || die "image build failed"
@@ -82,7 +86,7 @@ start_container() {
     # clone as part of the first start, before Claude runs
     startcmd=(bash -c '[ -d .git ] || git clone "$0" . || exit 1; exec "$@"' "$cloneurl" "${startcmd[@]}")
   fi
-  exec docker run "${args[@]}" "stem-sandbox:$ubuntu_ver" "${startcmd[@]}"
+  exec docker run "${args[@]}" "$img" "${startcmd[@]}"
 }
 tty=-i; [ -t 0 ] && tty=-it
 startcmd=(claude); [ $shellmode = 1 ] && startcmd=(bash); [ ${#extra[@]} -gt 0 ] && startcmd=("${extra[@]}")
@@ -100,7 +104,7 @@ case $cmd in
   stop) docker stop "$ctr" >/dev/null 2>&1 && echo "stopped $name" || echo "$name is not running";;
   export)
     docker volume inspect "$home_vol" >/dev/null 2>&1 || die "no sandbox '$name'"
-    out=${pos[1]:-.}; mkdir -p "$out"; out=$(cd "$out" && pwd); ver=$(vol_label "$home_vol" stem.ubuntu); img="stem-sandbox:${ver:-}"
+    out=${pos[1]:-${STEM_SANDBOX_EXPORT_DIR:-$HOME/stem-sandbox-exports}}; mkdir -p "$out"; out=$(cd "$out" && pwd); ver=$(vol_label "$home_vol" stem.ubuntu); img="stem-sandbox:${ver:-}-$IMG_REV"
     docker image inspect "$img" >/dev/null 2>&1 || img=$(docker images --format '{{.Repository}}:{{.Tag}}' stem-sandbox | head -1)
     [ -n "$img" ] || die "no sandbox image found; run start once"
     docker run --rm --entrypoint bash -v "$home_vol:/home/stem:ro" -v "$out:/out" "$img" -c \
@@ -114,5 +118,5 @@ case $cmd in
     docker volume ls -q -f name='^stem-sbx-' | sed 's/^stem-sbx-//' | while read -r n; do
       s=stopped; docker ps -q -f "name=^stem-sbx-$n$" | grep -q . && s=running
       echo "$n  ubuntu=$(vol_label "stem-sbx-$n" stem.ubuntu)  $s"; done;;
-  *) sed -n '2,16p' "${BASH_SOURCE[0]:-$0}" | sed 's/^# \{0,1\}//'; [ -z "$cmd" ] || exit 2;;
+  *) sed -n '2,18p' "${BASH_SOURCE[0]:-$0}" | sed 's/^# \{0,1\}//'; [ -z "$cmd" ] || exit 2;;
 esac

@@ -4,7 +4,7 @@ ARG UBUNTU_TAG=latest
 FROM ubuntu:${UBUNTU_TAG}
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      git python3 nodejs npm ripgrep curl ca-certificates jq less \
+      git gh python3 nodejs npm ripgrep curl ca-certificates jq less \
       iptables ipset dnsutils iproute2 util-linux \
     && rm -rf /var/lib/apt/lists/*
 RUN npm install -g @anthropic-ai/claude-code backlog.md && npm cache clean --force

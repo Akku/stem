@@ -402,6 +402,30 @@ class RetroMetrics(SandboxRepo):
         self.assertNotIn("decision-1", r.stdout)
 
 
+class SandboxScript(SandboxRepo):
+    """sandbox.sh with a stub docker on PATH (no Docker needed)."""
+    def stub(self):
+        b = self.tmp / "bin"; b.mkdir(exist_ok=True); (b / "docker").write_text("#!/bin/sh\nexit 0\n"); (b / "docker").chmod(0o755)
+        return {**self.env, "PATH": f"{b}:{self.env.get('PATH', os.environ['PATH'])}", "HOME": str(self.tmp / "home")}
+
+    def test_export_default_folder_is_not_the_current_directory(self):
+        env = self.stub(); (self.tmp / "home").mkdir()
+        r = run(["bash", "scripts/sandbox.sh", "export", "x"], self.repo, env)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertTrue((self.tmp / "home/stem-sandbox-exports").is_dir())
+        self.assertIn("stem-sandbox-exports/x.tar.gz", r.stdout)
+        self.assertEqual(sorted(p.name for p in self.repo.iterdir() if p.name.startswith("x.")), [])
+
+    def test_export_folder_can_be_set_or_given(self):
+        env = {**self.stub(), "STEM_SANDBOX_EXPORT_DIR": str(self.tmp / "out1")}; (self.tmp / "home").mkdir()
+        self.assertIn("out1/x.tar.gz", run(["bash", "scripts/sandbox.sh", "export", "x"], self.repo, env).stdout)
+        self.assertIn("out2/x.tar.gz", run(["bash", "scripts/sandbox.sh", "export", "x", str(self.tmp / "out2")], self.repo, env).stdout)
+
+    def test_dockerfile_installs_gh_and_image_tag_has_revision(self):
+        self.assertRegex((ROOT / "docker/Dockerfile").read_text(), r"git gh ")
+        self.assertRegex((ROOT / "scripts/sandbox.sh").read_text(), r'img="stem-sandbox:\$ver-\$IMG_REV"')
+
+
 class SessionStart(SandboxRepo):
     def start(self, extra_env=None):
         return run(["bash", "scripts/session-start.sh"], self.repo, {**self.env, **(extra_env or {})}).stdout

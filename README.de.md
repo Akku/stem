@@ -73,8 +73,8 @@ scripts/sandbox.sh new meinprojekt --repo https://github.com/du/dein-repo.git   
 scripts/sandbox.sh start meinprojekt    # später fortsetzen; außerdem: stop, export, reset, list
 ```
 
-- **Anmeldung:** `ANTHROPIC_API_KEY` aus der Umgebung oder Kontoanmeldung in der Sandbox (`/login`, bleibt im Volume).
-- **Rückweg:** Push nach GitHub (`GH_TOKEN` mit einem nur für dieses Repo gültigen Token; wird nur per Namen durchgereicht, nie gespeichert) oder `scripts/sandbox.sh export meinprojekt <ordner>` (tar.gz und Git-Bundle).
+- **Anmeldung:** `ANTHROPIC_API_KEY` aus der Umgebung oder Kontoanmeldung in der Sandbox (`/login`, bleibt im Volume; sie gehört zu dieser einen Sandbox, jede neue Sandbox fragt erneut: eine Sandbox für mehrere Projekte nutzen (darin klonen) oder den API-Key setzen).
+- **Rückweg:** Push nach GitHub (`GH_TOKEN` mit einem nur für dieses Repo gültigen Token; wird nur per Namen durchgereicht, nie gespeichert) oder `scripts/sandbox.sh export meinprojekt [ordner]` (tar.gz und Git-Bundle; Standardordner `~/stem-sandbox-exports`, nie der aktuelle Ordner). Das Image enthält `git` und `gh` (GitHub CLI, nutzt `GH_TOKEN`).
 - **Netz:** ausgehend offen, eingehend nichts. `--strict` erlaubt nur Claude-API, GitHub, npm und PyPI (`--allow HOST` für weitere). `--port 8080` leitet einen Container-Port auf localhost.
 - **Image:** neueste Ubuntu-LTS beim ersten Start (`--ubuntu TAG` überschreibt; wird mit der Sandbox gespeichert).
 - **Grenzen:** Projekte, die selbst Docker brauchen, laufen darin nicht (bewusst kein Docker-Socket); Windows nur mit WSL2; der erste Start baut das Image (einige Minuten).
