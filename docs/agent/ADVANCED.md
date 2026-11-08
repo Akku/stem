@@ -76,7 +76,7 @@ Rules that cost context in every session or change every session's behavior (con
 
 Do not build routing infrastructure before there is enough volume to justify it. Roles are provider-neutral: Claude Code, Codex, and future agents can be swapped according to capability, cost, availability, and task risk.
 
-**Default for newcomers and small/medium projects:** a mid-tier model at medium effort (observed in the maintainer's small to medium projects: sufficient and clearly cheaper than the largest model; anecdotal, to be checked in the retro). Escalate model or effort only for a concrete reason and de-escalate afterwards; lower effort is fine for mechanical tasks. Name the reason in the task notes when escalating. Cost grows with model size, effort and session length (see `R-BATCHING`).
+**Default for newcomers and small/medium projects:** a mid-tier model at medium effort (observed in the maintainer's small to medium projects: sufficient and clearly cheaper than the largest model; anecdotal, to be checked in the retro). Escalate model or effort only for a concrete reason and de-escalate afterwards; lower effort is fine for mechanical tasks. Name the reason in the task notes when escalating. Cost grows with model size, effort and session length (see `R-BATCHING`). Handing a complex task, batch or milestone to a larger model with more autonomy in its own session and branch: `handoff` skill step 6.
 
 Use stronger hosted models for ambiguity, architecture, high-risk changes, difficult debugging, or review where subtle reasoning matters. Use normal coding models for routine implementation. Cheap or local models are candidates only for bounded low-risk work.
 
