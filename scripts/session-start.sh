@@ -24,7 +24,7 @@ if [ -f STEM_VERSION ]; then
   fi
   rv=$(cat "$cache" 2>/dev/null)
   if [ -n "$rv" ] && [ -n "$lv" ] && [ "$rv" != "$lv" ] && [ "$(printf '%s\n%s\n' "$lv" "$rv" | sort -V | tail -1)" = "$rv" ]; then
-    echo "STEM UPDATE AVAILABLE: $lv -> $rv (offer the stem-update skill; do not update unasked)"
+    echo "STEM UPDATE AVAILABLE: $lv -> $rv (offer the stem-update skill, `R-STEM-UPDATE`; do not update unasked)"
     # distance in minor versions (patch releases do not count; another major always warns)
     lmaj=${lv%%.*}; rmaj=${rv%%.*}; lmin=$(echo "$lv" | cut -d. -f2); rmin=$(echo "$rv" | cut -d. -f2)
     if [ "$lmaj" != "$rmaj" ]; then lag=99; else lag=$((${rmin:-0} - ${lmin:-0})); fi

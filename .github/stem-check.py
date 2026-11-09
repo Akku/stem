@@ -92,6 +92,10 @@ for f in ("README.md", "README.de.md"):
 rn = subprocess.run([sys.executable, str(root / ".github/retired-names.py"), str(root)], capture_output=True, text=True)
 if rn.returncode: err(rn.stdout.strip())
 
+# every rule is named outside the rule files (.github/rule-reach.py, TASK-210)
+rr = subprocess.run([sys.executable, str(root / ".github/rule-reach.py"), str(root)], capture_output=True, text=True)
+if rr.returncode: err(rr.stdout.strip())
+
 # fixture tests for the scripts (.github/tests/test_scripts.py)
 tr = subprocess.run([sys.executable, str(root / ".github/tests/test_scripts.py")], capture_output=True, text=True)
 if tr.returncode: err("script fixture tests failed:\n" + "\n".join(tr.stderr.strip().splitlines()[-15:]))

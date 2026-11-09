@@ -426,6 +426,27 @@ class SandboxScript(SandboxRepo):
         self.assertRegex((ROOT / "scripts/sandbox.sh").read_text(), r'img="stem-sandbox:\$ver-\$IMG_REV"')
 
 
+class RuleReach(Sandbox):
+    """.github/rule-reach.py: a rule named only in the rule files (index) is reported (TASK-210)."""
+    def fixture(self, extra_ref=""):
+        (self.tmp / "docs/agent").mkdir(parents=True)
+        (self.tmp / "docs/agent/OPERATING_MODEL.md").write_text("<!-- RULE:R-INDEX:START -->\n| `R-A` | x |\n| `R-ORPHAN` | y |\n<!-- RULE:R-INDEX:END -->\n<!-- RULE:R-A:START -->\na\n<!-- RULE:R-A:END -->\n<!-- RULE:R-ORPHAN:START -->\nb\n<!-- RULE:R-ORPHAN:END -->\n")
+        (self.tmp / "docs/agent/ADVANCED.md").write_text("")
+        (self.tmp / "AGENTS.md").write_text("Rule `R-A` applies. " + extra_ref)
+        return run([sys.executable, str(ROOT / ".github/rule-reach.py"), str(self.tmp)], self.tmp)
+
+    def test_rule_named_only_in_rule_files_is_reported(self):
+        r = self.fixture()
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("rule R-ORPHAN is not named outside the rule files", r.stdout)
+        self.assertNotIn("rule R-A ", r.stdout)
+
+    def test_rule_named_in_agents_md_is_reachable(self):
+        r = self.fixture("See `R-ORPHAN` too.")
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("all rules reachable", r.stdout)
+
+
 class SessionStart(SandboxRepo):
     def start(self, extra_env=None):
         return run(["bash", "scripts/session-start.sh"], self.repo, {**self.env, **(extra_env or {})}).stdout
