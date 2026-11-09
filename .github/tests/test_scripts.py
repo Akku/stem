@@ -723,12 +723,14 @@ class RunWrapper(Sandbox):
         cases = {"node": "\u2714 failed run keeps issue open (1ms)\n\u2139 tests 196\n\u2139 pass 196\n\u2139 fail 0\n",
                  "pytest": "tests/test_a.py::test_failed_login PASSED\n=== 3 passed in 0.10s ===\n",
                  "unittest": "test_failed_case ... ok\nRan 5 tests in 0.001s\nOK\n",
-                 "tap": "ok 1 - failed parse is reported\n# pass 4\n# fail 0\n"}
+                 "tap": "ok 1 - failed parse is reported\n# pass 4\n# fail 0\n",
+                 "jest": "  \u2713 failed login is rejected (3 ms)\nTests:       3 passed, 3 total\n"}
         for name, out in cases.items():
             r = run(["bash", str(SCRIPTS / "run.sh"), name, "printf", "%b", out], self.tmp, env)
             summary = [l for l in r.stdout.splitlines() if l.startswith("summary:")]
             self.assertTrue(summary, (name, r.stdout))
-            self.assertFalse(any("failed" in l and ("keeps" in l or "login" in l or "case" in l or "parse" in l) for l in summary), (name, summary))
+            if name == "jest": self.assertIn("summary: Tests:       3 passed, 3 total", r.stdout)
+            self.assertFalse(any("failed" in l and ("keeps" in l or "login" in l or "case" in l or "parse" in l or "rejected" in l) for l in summary), (name, summary))
         self.assertIn("summary: \u2139 pass 196", run(["bash", str(SCRIPTS / "run.sh"), "n", "printf", "%b", cases["node"]], self.tmp, env).stdout)
 
     def test_default_log_is_durable_ignored_and_cited(self):

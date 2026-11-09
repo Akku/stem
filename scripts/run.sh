@@ -33,7 +33,7 @@ echo "log: $log"
 ptr=$log; [ -n "$root" ] && ptr=${log#"$root"/}  # repo-relative when inside the repo
 echo "evidence: run.sh $label $status $ptr"
 # Short hint for the summary line (test counts etc.); anchored at the line start so passing test names that contain 'failed' do not match; adapt per project.
-grep -E -m3 '^ℹ (pass|fail) |^(# )?(pass|fail) [0-9]|^Tests? +[:0-9]|^=+ .*(passed|failed)|^[0-9]+ (passing|failing)|^Ran [0-9]+ tests?|^(OK|FAILED)( \(|$)' "$log" | sed 's/^/summary: /' || true
+grep -E -m3 '^ℹ (pass|fail) |^(# )?(pass|fail) [0-9]|^Tests?:? +[0-9]|^=+ .*(passed|failed)|^[0-9]+ (passing|failing)|^Ran [0-9]+ tests?|^(OK|FAILED)( \(|$)' "$log" | sed 's/^/summary: /' || true
 if [ "$code" -ne 0 ]; then
   echo "--- last 15 lines ---"
   tail -n 15 "$log"
