@@ -418,6 +418,8 @@ Project agents live in `.claude/agents/<name>.md` (for example `ux-designer`, se
 <!-- RULE:R-REVIEW:START -->
 ## 11. Review should be risk-triggered, not universal
 
+The Definition of Done carries one item for it (see `SETUP.md`): for `size-L`, more than about 500 changed lines, or new command execution, data access or authentication, an independent review ran or the waiver is justified. It puts the decision at the moment of closing, where this section is otherwise not loaded.
+
 Independent review has value, but it also consumes tokens, wall-clock time, and coordination effort.
 
 Use the repository's existing task classification if one exists. Do not invent a new classification solely for this operating model.
@@ -640,6 +642,7 @@ Agree four horizons with the user; they describe scope, not a requirement to pla
 
 Create detailed tasks only for the current milestone; later milestones remain descriptions. Small projects can start with a one-sentence vision and the vertical slice alone, adding later horizons when useful. Moonshot ideas live in the vision document (`backlog doc`), not as dormant tasks.
 
+- **Tooling and maintenance:** product work belongs to a milestone; tooling and maintenance tasks (scripts, CI, housekeeping) may have none. Do not add a catch-all milestone: it forces an assignment again.
 - **Next work:** when the current milestone has no ready tasks left, propose the next 3-5 tasks from its description and the vision, each with reason and rough size; create them only after user agreement.
 - **Milestone completion:** verify its exit criterion, record what was learned, and ask whether MVP, 1.0 and Moonshot scope still hold. Check the project-version proposal in `R-LIFECYCLE` 1.8. Follow the `retro` skill; include the design-health check in `R-DESIGN` and propose at most one design task.
 - **Expansion:** when a large Moonshot becomes clearer, propose further milestones with goals, exit criteria and sequence. Obtain user agreement before creating, splitting or restructuring milestones or tasks. Keep the remaining vision revisable and detail only the next agreed milestone.

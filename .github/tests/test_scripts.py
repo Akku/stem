@@ -430,6 +430,23 @@ class SessionStart(SandboxRepo):
     def start(self, extra_env=None):
         return run(["bash", "scripts/session-start.sh"], self.repo, {**self.env, **(extra_env or {})}).stdout
 
+    def lag_start(self, local, remote):
+        (self.repo / "STEM_VERSION").write_text(f"version: {local}\nrepo: https://github.com/example/stem\n"); self.commit("init")
+        pwd = run(["bash", "-c", 'printf %s "$PWD" | cksum | cut -d" " -f1'], self.repo).stdout.strip()
+        cache = self.tmp / "agent-logs" / f"stem-check-{pwd}"; cache.parent.mkdir(exist_ok=True); cache.write_text(remote + "\n")
+        return self.start({"STEM_OFFLINE": "1"})
+
+    def test_far_behind_stem_version_warns(self):
+        out = self.lag_start("1.3.0", "1.16.0")
+        self.assertIn("STEM UPDATE AVAILABLE: 1.3.0 -> 1.16.0", out)
+        self.assertIn("WARNING: this project is far behind STEM (1.3.0 vs 1.16.0, 13 minor versions)", out)
+        self.assertIn("another major version", self.lag_start("1.3.0", "2.0.0"))
+
+    def test_close_stem_version_gets_no_lag_warning(self):
+        for remote in ("1.5.0", "1.4.9"):
+            out = self.lag_start("1.3.0", remote)
+            self.assertIn("STEM UPDATE AVAILABLE", out); self.assertNotIn("far behind STEM", out)
+
     def test_summary_sections_without_backlog_cli_state(self):
         (self.repo / "STEM_VERSION").write_text("version: 1.0.0\n"); self.commit("init")
         out = self.start()
@@ -700,6 +717,19 @@ class RunWrapper(Sandbox):
         self.assertTrue((logs / "20250101-000000-recent-4.log").exists())
         run(["bash", str(SCRIPTS / "run.sh"), "check", "true"], self.tmp, {**env, "AGENT_LOG_KEEP_DAYS": "0"})
         self.assertTrue((logs / names[2]).exists())  # 0 keeps everything, AGENT_LOG_REFS no longer set
+
+    def test_summary_shows_result_counts_not_test_names(self):
+        env = {**os.environ, "AGENT_LOG_DIR": str(self.tmp / "logs")}
+        cases = {"node": "\u2714 failed run keeps issue open (1ms)\n\u2139 tests 196\n\u2139 pass 196\n\u2139 fail 0\n",
+                 "pytest": "tests/test_a.py::test_failed_login PASSED\n=== 3 passed in 0.10s ===\n",
+                 "unittest": "test_failed_case ... ok\nRan 5 tests in 0.001s\nOK\n",
+                 "tap": "ok 1 - failed parse is reported\n# pass 4\n# fail 0\n"}
+        for name, out in cases.items():
+            r = run(["bash", str(SCRIPTS / "run.sh"), name, "printf", "%b", out], self.tmp, env)
+            summary = [l for l in r.stdout.splitlines() if l.startswith("summary:")]
+            self.assertTrue(summary, (name, r.stdout))
+            self.assertFalse(any("failed" in l and ("keeps" in l or "login" in l or "case" in l or "parse" in l) for l in summary), (name, summary))
+        self.assertIn("summary: \u2139 pass 196", run(["bash", str(SCRIPTS / "run.sh"), "n", "printf", "%b", cases["node"]], self.tmp, env).stdout)
 
     def test_default_log_is_durable_ignored_and_cited(self):
         run(["git", "init", "-q"], self.tmp)
