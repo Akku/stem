@@ -33,14 +33,11 @@ Use this index to load only the sections needed for the current action. Do not r
 | --- | --- |
 | `R-LIFECYCLE` | starting or resuming implementation work |
 | `R-INSTRUCTIONS` | changing agent instructions/adapters/skills |
-| `R-STATE` | designing handoff/bootstrap/current-state storage |
-| `R-BOOTSTRAP` | starting/resuming a non-trivial session |
+| `R-STATE` | designing handoff/bootstrap/current-state storage, or starting/resuming a non-trivial session |
 | `R-BACKLOG` | interacting with task lifecycle |
-| `R-BATCHING` | grouping multiple tasks in one context |
-| `R-BATCH-CONTRACT` | starting a non-trivial task batch |
+| `R-BATCHING` | grouping multiple tasks in one context, or starting a non-trivial task batch |
 | `R-CONTEXT-OUTPUT` | running verbose tests/CI/CLI commands |
-| `R-AGENT-TOPOLOGY` | deciding whether another agent is needed |
-| `R-DELEGATION` | delegating to subagents/skills |
+| `R-DELEGATION` | deciding whether another agent is needed, or delegating to subagents/skills |
 | `R-REVIEW` | deciding whether independent review is needed |
 | `R-VERIFY` | selecting or interpreting verification/evidence |
 | `R-STATE-COHERENCE` | committing, handing off, or interpreting CI |
@@ -231,10 +228,8 @@ A future agent should be able to answer two questions cheaply:
 
 1. What is the next permitted action?
 2. What evidence already exists for the current code state?
-<!-- RULE:R-STATE:END -->
 
-<!-- RULE:R-BOOTSTRAP:START -->
-## 4. Session bootstrap: summarize state, do not replay history
+### Session bootstrap: summarize state, do not replay history
 
 For repositories with non-trivial continuation across sessions, consider one read-only bootstrap command that presents a compact current-state summary, for example:
 
@@ -248,7 +243,7 @@ For repositories with non-trivial continuation across sessions, consider one rea
 The bootstrap should not dump entire logs, task archives, or all project documentation into context.
 
 Read stable mandatory sources at most as often as needed for the session/tool behavior. Load additional documentation by section or file only when the current task requires it.
-<!-- RULE:R-BOOTSTRAP:END -->
+<!-- RULE:R-STATE:END -->
 
 <!-- RULE:R-BACKLOG:START -->
 ## 5. Backlog.md remains authoritative
@@ -317,10 +312,8 @@ Every turn re-reads the whole carried context, so cost grows with session length
 - **A handoff always opens a fresh session** (asking for a handoff implies it; no batch approval needed): run the `handoff` skill, write `docs/agent/HANDOFF.md` only when something is open (an approved batch's remaining tasks count as open) and commit, then start a **fresh** session that does not carry the old conversation, first available of: (1) the tool's own new-session feature with fresh context (Claude desktop app: `start_session` with context `fresh`, never `hand_off_to_session` or a fork, then right away `detach_session` on the new session (the starter does it; the brief does not mention it), otherwise each of its turn ends is reported to and wakes the old session; Codex app: a new thread, if the agent can start one); (2) a headless child session in the background, log under `$TMPDIR/agent-logs/` (`claude -p "<brief>"`, `codex exec "<brief>"`); (3) if neither is available, end with one ready-to-paste prompt for the user. Brief: "Never message or answer the starting session (do not report back). Then <continuation>." The continuation is, with an approved batch or an unfinished task: "continue the approved batch per `docs/agent/HANDOFF.md` (or the task notes): run session start, then TASK-x."; otherwise: "run session start and propose the next steps to the user." End the old session with one line (handed off to <link or log path>, open: TASK-x, y or none) and stop. The new session never reports back to the old one (each report would make it re-read the large context): the brief says so, and if the tool relays notes automatically, the old session does not react to them. Only a session started for the purpose of reporting back (for example a review or a sub-task whose result the starter needs) reports to its starter. The new session starts with one line (continued from <link>, next: TASK-x or proposing next steps) and may hand off again; a batch chain ends with the batch or an `R-AUTONOMY` stop condition. If the start fails, fall back to (3). Continuing in another agent or tool is not covered: the user says so and gets the ready prompt instead.
 - **Context notice without a handoff request:** the hook notice only proposes; the agent hands off per the reaction rule above (inside an approved batch without asking), otherwise tells the user (in their language) that the context is large and the user may say "Handoff".
 
-<!-- RULE:R-BATCHING:END -->
 
-<!-- RULE:R-BATCH-CONTRACT:START -->
-## 7. Lightweight batch contract
+### Lightweight batch contract
 
 For a non-trivial batch, record only enough run information to keep the batch intentional:
 
@@ -334,7 +327,7 @@ For a non-trivial batch, record only enough run information to keep the batch in
 This is run metadata, not a second backlog system. Do not duplicate task descriptions or acceptance criteria already stored in Backlog.md.
 
 If the project's backlog supports pre-approved batches, use that mechanism to avoid repeated approval questions while preserving each task's individual state and evidence.
-<!-- RULE:R-BATCH-CONTRACT:END -->
+<!-- RULE:R-BATCHING:END -->
 
 <!-- RULE:R-CONTEXT-OUTPUT:START -->
 ## 8. Context-efficient tool output
@@ -365,8 +358,8 @@ Requirements:
 Token efficiency is therefore an information-architecture problem, not merely an instruction to "answer briefly".
 <!-- RULE:R-CONTEXT-OUTPUT:END -->
 
-<!-- RULE:R-AGENT-TOPOLOGY:START -->
-## 9. Default agent topology: one agent first; provider is interchangeable
+<!-- RULE:R-DELEGATION:START -->
+## 9. Default agent topology and delegation: one agent first; provider is interchangeable
 
 Do not treat Planner, Implementer, Reviewer, Orchestrator, and Harness Maintainer as permanently separate agents, and do not bind those roles permanently to Claude, Codex, or any other provider.
 
@@ -391,10 +384,8 @@ A separate Orchestrator is unnecessary unless multiple independent workers/workt
 A Harness Maintainer is not a resident agent. Harness improvement is a periodic retrospective activity.
 
 Multi-agent setups should therefore be the exception produced by task economics, not the default architecture.
-<!-- RULE:R-AGENT-TOPOLOGY:END -->
 
-<!-- RULE:R-DELEGATION:START -->
-## 10. Subagents and skills: narrow contracts, shared sources
+### Subagents and skills: narrow contracts, shared sources
 
 Subagents are most useful when they encapsulate a bounded independent question. Broad exploration can consume substantial context and tool calls without producing actionable evidence.
 

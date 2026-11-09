@@ -4,7 +4,7 @@ Fails with a file:line list when a retired name is still referenced, so a rename
 Add the old name to RETIRED on every rename; history (CHANGELOG.md) and migration notes may keep it."""
 import pathlib, re, sys
 
-RETIRED = ["KIT_VERSION", "kit-check", "kit-update", "design-alignment", "LEARNINGS.md", "R-KIT-UPDATE"]
+RETIRED = ["KIT_VERSION", "kit-check", "kit-update", "design-alignment", "LEARNINGS.md", "R-KIT-UPDATE", "R-BOOTSTRAP", "R-BATCH-CONTRACT", "R-AGENT-TOPOLOGY"]
 ALLOWED = ["CHANGELOG.md", ".github/retired-names.py", ".github/tests/"]  # add migration notes here
 SKIP_PARTS = {".git", "__pycache__", "node_modules"}
 pattern = re.compile(r"(?<![\w-])(" + "|".join(re.escape(n) for n in RETIRED) + r")(?![\w-])")
