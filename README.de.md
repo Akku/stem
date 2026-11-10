@@ -29,6 +29,16 @@ STEM ist ein Template-Harness, mit dem du dein Projekt schnell startest. Es setz
 
 Doku für Menschen gibt es auf Englisch und Deutsch, Agenten-Anweisungen sind englisch, und der Agent spricht mit dir in deiner Sprache.
 
+## Wie STEM sich weiterentwickelt
+
+STEM folgt dem Prinzip *evolutionäres Lernen*: Es verändert sich in kleinen Schritten, anhand dessen, was im echten Einsatz passiert, nicht nach einem großen Plan. Fünf Quellen fließen ein:
+
+- **Retros:** Der Skill `retro` wird regelmäßig angeboten. Er betrachtet Messwerte, Probleme und deine Eingaben. Jede Retro nimmt außerdem die nächsten Fragen aus einem vorbereiteten Satz von Reflexionsfragen (Regeln, Skills, Kontextkosten, neue Agenten-Funktionen und mehr), sodass jede Retro neue Verbesserungen aufdecken kann. Aus den Ergebnissen werden kleine Änderungen, die eine spätere Retro überprüft.
+- **Andere Projekte:** Projekte, die mit STEM gebaut werden, können zurückmelden, was sie gelernt haben (Field Reports, `promote-learning`), und erhalten Verbesserungen über `stem-update`.
+- **Dogfooding:** STEM wird mit STEM selbst entwickelt, in einem eigenen Projekt. Die meisten Änderungen werden dort zuerst ausprobiert.
+- **Aufräumen:** Retros messen, wie viel Kontext die Arbeit verbraucht und welche Regeln geladen werden. Regeln, die sich nicht lohnen, werden zusammengelegt oder entfernt. Ziel sind mit der Zeit weniger, bessere Regeln.
+- **Die LLM-Szene:** Der Maintainer verfolgt die LLM- und Coding-Agent-Community, testet neue Verbesserungsideen und bringt sie in STEM ein, wo sie helfen.
+
 ## Ist STEM etwas für dich?
 
 STEM ist gebaut für eine Person, die mit Claude Code an einem Projekt über viele Sitzungen arbeitet, ab mittlerer Größe. Für kleine Aufgaben und Einmal-Skripte kostet der Ablauf mehr, als er bringt: nimm den Agenten pur ([STEM oder der Agent pur?](#stem-oder-der-agent-pur)). Teams mit eigenem Prozess, CI und Review passen nicht.
