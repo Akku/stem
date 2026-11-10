@@ -10,7 +10,7 @@ Rule: `R-STEM-UPDATE`. STEM is public; only read from it (its changelog, PR text
 ## File ownership
 - **STEM-owned** (copy when the project did not change them on purpose): `scripts/` (except `scripts/local/`), `.claude/skills/`, `.agents/skills` (symlink to `../.claude/skills`; recreate it, never copy skill files into it), `.claude/agents/`, `docs/agent/OPERATING_MODEL.md`, `docs/agent/retro-steps.json`, `docs/agent/ADVANCED.md`, `docs/agent/PROCESS_IMPROVEMENTS.md`, `docs/agent/stacks/`, `.gitattributes`.
 - **Mixed** (merge by hand): `AGENTS.md` (keep `Project specifics` and the `Communication` block), `CLAUDE.md`, `.claude/settings.json` (keep project hooks and permissions), `.gitignore`.
-- **Project-owned** (never touch): `docs/agent/EXPERIMENTS.md`, `NEXT_RETRO.md`, `retro-runs/`, `PITFALLS.md`, `HANDOFF.md`, `backlog/`, `STEM_VERSION` (only its `version:` and `skipped:` lines).
+- **Project-owned** (never touch): `docs/agent/EXPERIMENTS.md`, `docs/agent/NEXT_RETRO.md`, `docs/agent/retro-runs/`, `docs/agent/PITFALLS.md`, `docs/agent/HANDOFF.md`, `backlog/`, `STEM_VERSION` (only its `version:` and `skipped:` lines).
 - **STEM-only** (not in projects): `README*`, `START*`, `SETUP.md`, `CONTRIBUTING.md`, `LICENSE`, `CHANGELOG.md`, `.github/`, `docs/assets/`.
 
 1. **Versions and clone:** `repo`, `version` and `skipped:` from `STEM_VERSION`. One shallow clone outside the project (`git clone --depth 1 <repo> <tmp>`); read its `CHANGELOG.md` entries newer than the local version, including their `Migration:` lines (renames, removals). STEM repo unreachable: say so and stop.
