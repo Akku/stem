@@ -6,7 +6,7 @@
 
 **Version 1.17.0** · ![License](https://img.shields.io/badge/license-MIT-green) ![Claude Code](https://img.shields.io/badge/Claude%20Code-tested-green) ![Codex](https://img.shields.io/badge/Codex-tested-green)
 
-[🇩🇪 Deutsch](README.de.md) · [Why STEM](#why-stem) · [Is STEM for you?](#is-stem-for-you) · [Get started](#get-started) · [Contents](#contents)
+[🇩🇪 Deutsch](README.de.md) · [Why](#why-stem) · [Evolution](#how-stem-evolves) · [For you?](#is-stem-for-you) · [Start](#get-started) · [Contents](#contents)
 
 </div>
 
