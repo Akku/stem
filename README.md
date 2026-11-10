@@ -135,7 +135,7 @@ Based on each project's own documentation as of November 2026; these projects ch
 | `scripts/githooks/pre-commit` | Guard against committing confidential source documents and common secrets (activated during setup) |
 | `STEM_VERSION`, `CHANGELOG.md` | STEM version this project is based on; what changed per version |
 | `.claude/settings.json` | Claude Code: safe commands pre-approved, session-start hook |
-| `LICENSE` | MIT (STEM); `.github/stem-check.py` + workflow check STEM itself |
+| `LICENSE`, `CITATION.cff` | MIT (STEM), citation data; `.github/stem-check.py` + workflow check STEM itself |
 | `scripts/check-backlog.sh`, `scripts/retro-metrics.sh`, `scripts/promote-check.sh` | Backlog consistency check (also in the pre-commit hook); measured evidence for retros; learnings ready to share with STEM |
 | `docs/agent/stacks/` | Stack-specific notes, loaded only when the stack applies |
 | `scripts/context-report.py` | Optional retro tool (Claude Code): where the context went, longest sessions; numbers only |
@@ -155,3 +155,7 @@ Based on each project's own documentation as of November 2026; these projects ch
 ## Contributing
 
 Please contribute proven learnings via pull request (pattern: problem, pattern, applicability, evidence – see `docs/agent/PROCESS_IMPROVEMENTS.md` or the `promote-learning` skill). No project or company internals, no credentials – this repository is public. Details and checklist: [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Credits and license
+
+STEM is created and maintained by Tim Dellas ([akku](https://github.com/Akku)) and contributors. It is released under the [MIT license](LICENSE): free to use, copy and adapt, including commercially. The only condition is to keep the copyright notice and license text with copies or substantial portions. If STEM helps your work, a mention or a star is appreciated; citation data is in [CITATION.cff](CITATION.cff).

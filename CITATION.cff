@@ -1,0 +1,10 @@
+cff-version: 1.2.0
+message: "If you use STEM, please cite it as below."
+title: "STEM: An Agile Agentic Coding Harness"
+type: software
+authors:
+  - family-names: "Dellas"
+    given-names: "Tim"
+    alias: "akku"
+repository-code: "https://github.com/Akku/stem"
+license: MIT

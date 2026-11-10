@@ -135,7 +135,7 @@ Stand laut eigener Dokumentation der Projekte, November 2026; diese Projekte än
 | `scripts/githooks/pre-commit` | Schutz vor dem Committen vertraulicher Quelldokumente und gängiger Secrets (wird beim Setup aktiviert) |
 | `STEM_VERSION`, `CHANGELOG.md` | STEM-Version, auf der das Projekt basiert; Änderungen je Version |
 | `.claude/settings.json` | Claude Code: sichere Befehle vorab freigegeben, Sitzungsstart-Hook |
-| `LICENSE` | MIT (STEM); `.github/stem-check.py` + Workflow prüfen STEM selbst |
+| `LICENSE`, `CITATION.cff` | MIT (STEM), citation data; `.github/stem-check.py` + Workflow prüfen STEM selbst |
 | `scripts/check-backlog.sh`, `scripts/retro-metrics.sh`, `scripts/promote-check.sh` | Backlog-Konsistenzprüfung (auch im Pre-commit-Hook); Messwerte für Retros; Learnings, die STEM teilen kann |
 | `docs/agent/stacks/` | Stack-spezifische Hinweise, nur bei passendem Stack geladen |
 | `scripts/context-report.py` | Optionales Retro-Werkzeug (Claude Code): wohin der Kontext floss, längste Sitzungen; nur Zahlen |
@@ -154,3 +154,7 @@ Stand laut eigener Dokumentation der Projekte, November 2026; diese Projekte än
 ## Beitragen
 
 Bewährte Learnings aus Projekten bitte per Pull Request einbringen (Muster: Problem, Muster, Geltungsbereich, Evidenz – siehe `docs/agent/PROCESS_IMPROVEMENTS.md`). Keine Projekt- oder Firmeninterna, keine Zugangsdaten – das Repository ist öffentlich. Ablauf und Checkliste (englisch): [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Credits und Lizenz
+
+STEM wird von Tim Dellas ([akku](https://github.com/Akku)) und Mitwirkenden erstellt und gepflegt. Es steht unter der [MIT-Lizenz](LICENSE): frei nutzbar, kopierbar und anpassbar, auch kommerziell. Einzige Bedingung: Copyright-Hinweis und Lizenztext bleiben bei Kopien oder wesentlichen Teilen erhalten. Wenn STEM deiner Arbeit hilft, freue ich mich über eine Erwähnung oder einen Stern; Zitierdaten stehen in [CITATION.cff](CITATION.cff).
