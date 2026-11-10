@@ -105,6 +105,8 @@ if [ -d backlog/tasks ]; then
 fi
 # waiting tasks whose outside event happened (fixed condition kinds only, see the script)
 [ -d backlog/tasks ] && [ -f scripts/wait-check.py ] && python3 scripts/wait-check.py 2>/dev/null
+# usage probes (docs/agent/PROBES.md): open and fired ones
+[ -d backlog/tasks ] && [ -f scripts/probe.py ] && python3 scripts/probe.py report 2>/dev/null
 echo; echo "## backlog check"; scripts/check-backlog.sh 2>/dev/null | head -10; [ "${PIPESTATUS[0]:-0}" -eq 0 ] && echo "ok"
 # open user questions: drafts whose description starts with "Question to the user" (recorded when a question stays open, see the handoff skill)
 oq=""

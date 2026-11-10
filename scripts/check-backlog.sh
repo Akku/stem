@@ -19,6 +19,15 @@ for f in "${files[@]}"; do
   [ "$(status_of "$f")" = "Done" ] || continue
   id=$(awk -F': ' '/^id:/{print $2; exit}' "$f")
   open=$(grep -c '^- \[ \] #' "$f" || true)
+  # Usage probe (docs/agent/PROBES.md): an unchecked AC with its own '[probe: <this task>#<ac>]' marker may stay open
+  # while exactly one 'probe.py fire <id>' call exists in the staged/tracked code (backlog, docs and .github excluded).
+  tid=$(awk -F': ' '/^id:/{print $2; exit}' "$f")
+  while IFS= read -r ln; do
+    n=${ln#- \[ \] #}; n=${n%% *}
+    case "$ln" in *"[probe: $tid#$n]") ;; *) continue ;; esac
+    calls=$(git grep --cached -h -F "probe.py fire $tid#$n " -- . ':!backlog' ':!docs' ':!.github' 2>/dev/null | wc -l | tr -d ' ')
+    [ "$calls" = 1 ] && open=$((open - 1))
+  done < <(sed -n '/<!-- AC:BEGIN -->/,/<!-- AC:END -->/p' "$f" | grep '^- \[ \] #')
   if [ "$open" -gt 0 ]; then echo "$id: Done with $open unchecked box(es)"; bad=1; fi
   if [ -n "$cutoff" ] && ! grep -q '^Outcome:' "$f"; then
     upd=$(awk -F"'" '/^updated_date:/{print substr($2,1,16); exit}' "$f")

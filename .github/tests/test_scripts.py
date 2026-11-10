@@ -644,6 +644,73 @@ class PromoteCheck(SandboxRepo):
         self.assertIn("promote candidate: NEXT_RETRO.md: - [TASK-2", r.stdout)
 
 
+class Probes(SandboxRepo):
+    AC = "<!-- AC:BEGIN -->\n{}\n<!-- AC:END -->"
+
+    def probe_task(self, n, lines, status="Done"):
+        self.task(n, status=status, extra=self.AC.format("\n".join(lines)))
+
+    def fire(self, pid, extra_env=None, at="scripts/x.sh:1"):
+        env = {"STEM_TEST": "", "CI": ""}; env.update(extra_env or {})
+        return run(["python3", "scripts/probe.py", "fire", pid, "--at", at], self.repo, dict(self.env, **env))
+
+    def log(self):
+        p = self.repo / "docs/agent/probes.jsonl"
+        return [json.loads(x) for x in p.read_text().splitlines()] if p.exists() else []
+
+    def test_fire_writes_three_keys_and_skips_tests(self):
+        self.assertEqual(self.fire("TASK-1#1", {"STEM_TEST": "1"}).returncode, 0)
+        self.assertEqual(self.fire("TASK-1#1", {"CI": "true"}).returncode, 0)
+        self.assertEqual(self.log(), [])
+        self.assertEqual(self.fire("TASK-1#1").returncode, 0)
+        (rec,) = self.log()
+        self.assertEqual(sorted(rec), ["at", "id", "ts"]); self.assertEqual((rec["id"], rec["at"]), ("TASK-1#1", "scripts/x.sh:1"))
+
+    def test_fire_never_fails_on_bad_input(self):
+        for args in ([], ["nonsense", "--at", "x"], ["TASK-1#1"], ["TASK-1#1", "--at"]):
+            r = run(["python3", "scripts/probe.py", "fire", *args], self.repo, self.env)
+            self.assertEqual((r.returncode, r.stdout, self.log()), (0, "", []))
+
+    def test_report_open_fired_and_silent(self):
+        run(["git", "init", "-q"], self.repo)
+        r = lambda: run(["python3", "scripts/probe.py", "report"], self.repo, self.env).stdout
+        self.probe_task(1, ["- [ ] #1 plain"]); self.assertEqual(r(), "")
+        self.probe_task(1, ["- [ ] #1 a [probe: TASK-1#1]", "- [ ] #2 b [probe: TASK-1#2]", "- [x] #3 c [probe: TASK-1#3]", "- [ ] #4 d [probe: TASK-9#4]"])
+        self.assertEqual(r().strip(), "probes: 2 open, 0 fired")
+        self.fire("TASK-1#2")
+        out = r(); self.assertIn("1 open, 1 fired (TASK-1#2)", out); self.assertIn("close the AC", out)
+
+    def test_orphans_count_commit_dates_after_marker(self):
+        self.probe_task(1, ["- [ ] #1 a [probe: TASK-1#1]"], status="To Do")
+        run(["git", "add", "-A"], self.repo)
+        run(["git", "commit", "-qm", "add", "--date=2026-01-01T10:00:00"], self.repo, {"GIT_COMMITTER_DATE": "2026-01-01T10:00:00"})
+        for d in ("02", "03", "04"):
+            (self.repo / f"f{d}").write_text(d); run(["git", "add", "-A"], self.repo)
+            run(["git", "commit", "-qm", d], self.repo, {"GIT_COMMITTER_DATE": f"2026-01-{d}T10:00:00"})
+        o = lambda n: run(["python3", "scripts/probe.py", "orphans", "--sessions", str(n)], self.repo, self.env).stdout
+        self.assertIn("TASK-1#1: 3 sessions without firing", o(3)); self.assertEqual(o(4), "")
+        self.fire("TASK-1#1"); self.assertEqual(o(3), "")
+
+    def test_session_start_prints_probe_line(self):
+        self.probe_task(1, ["- [ ] #1 a [probe: TASK-1#1]"], status="To Do")
+        self.assertIn("probes: 1 open, 0 fired", run(["bash", "scripts/session-start.sh"], self.repo, dict(self.env, STEM_OFFLINE="1")).stdout)
+
+    def test_done_task_may_keep_probe_ac_open_only_with_one_call(self):
+        run(["git", "config", "core.hooksPath", "scripts/githooks"], self.repo)
+        self.probe_task(1, ["- [ ] #1 a [probe: TASK-1#1]"])
+        check = lambda: run(["bash", "scripts/check-backlog.sh"], self.repo, self.env)
+        self.assertNotEqual(check().returncode, 0)  # no probe call in code yet
+        (self.repo / "scripts/feature.sh").write_text("python3 scripts/probe.py fire TASK-1#1 --at scripts/feature.sh:1\n")
+        run(["git", "add", "-A"], self.repo)
+        self.assertEqual(check().returncode, 0, check().stdout)
+        (self.repo / "scripts/feature2.sh").write_text("python3 scripts/probe.py fire TASK-1#1 --at scripts/feature2.sh:1\n")
+        run(["git", "add", "-A"], self.repo)
+        self.assertNotEqual(check().returncode, 0)  # two calls: ambiguous
+        run(["git", "rm", "-qf", "scripts/feature2.sh"], self.repo)
+        self.probe_task(1, ["- [ ] #1 a [probe: TASK-1#2]", "- [ ] #2 b"]); run(["git", "add", "-A"], self.repo)
+        self.assertIn("Done with 2 unchecked", check().stdout)  # wrong id on #1 and a plain AC #2
+
+
 class PreCommit(SandboxRepo):
     def commit(self, msg):  # commit-msg hook is active together with pre-commit
         return super().commit("TASK-1: " + msg)
