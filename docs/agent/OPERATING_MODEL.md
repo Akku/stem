@@ -115,6 +115,8 @@ Examples include real assistive-technology checks, device-specific behavior, pro
 
 Missing evidence should remain clearly open with a concrete continuation point.
 
+An AC that can only be proven by later real use may carry a usage probe (`[probe: <task>#<ac>]`, `docs/agent/PROBES.md`): the task may then close with that AC open, and the agent closes it with an evidence line when session start reports the probe as fired. Never for wording, design or decision approvals, which stay with the user.
+
 ### 1.6 Complete with evidence, not activity narration
 
 Use the repository's existing completion mechanism to record what changed and the evidence that supports completion. Prefer concise, reproducible evidence over long descriptions of everything the agent did.
@@ -481,6 +483,7 @@ Practical points:
 - A check that cannot parse its input (NaN, empty file) fails instead of passing silently: assert the input is valid first.
 - A browser or UI check done by hand a second time is the signal to propose a test framework (`R-DESIGN` "Propose missing tools"). Playwright pitfalls: run the main flows in a phone viewport too (the desktop viewport may open a two-pane layout); `getByText` matches substrings case-insensitively, so give indicators their own element or use `exact`; a shared e2e database makes names collide, use unique ones per test.
 - Run suites via `scripts/run.sh`; load only failing sections of a log.
+- A probe firing in `probes.jsonl` proves only that the code ran in a real session, not that its result was right; test runs never count as firing (`docs/agent/PROBES.md`).
 <!-- RULE:R-VERIFY:END -->
 
 <!-- RULE:R-STATE-COHERENCE:START -->
