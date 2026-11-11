@@ -63,7 +63,7 @@ def matrix(manifest):
         lines.append("| `%s` | %s | %s | %s |" % (g["script"], g["purpose"], " | ".join(cells), g["fallback"]))
     lines += ["", "## Evidence per agent", ""] + ["- **%s:** %s." % (a["name"], a["evidence"]) for a in agents.values()]
     lines += ["", "## Project choices", "",
-              "A project switches a guard off in `docs/agent/stem-config.json`, which the scripts read at run time: `{\"context_warning\": false}`, `{\"large_read_warning\": false}`. "
+              "A project switches a guard off in `docs/agent/stem-config.json`, which the scripts read at run time: `{\"context_warning\": false}`, `{\"large_read_warning\": false}`, `{\"deny_guard\": false}`. "
               "The hook entries stay as shipped. Never edit `.claude/settings.json` hooks or `.codex/hooks.json` for such a choice: Codex binds its trust to the file's hash and may block the edit.", ""]
     lines += ["## Changing the wiring", "",
               "1. Edit `scripts/hooks/manifest.json` (new agent: a key under `agents`, a command template in `scripts/hooks-sync.py`, a `wiring` entry per guard).",

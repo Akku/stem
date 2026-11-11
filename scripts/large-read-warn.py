@@ -3,48 +3,17 @@
 Bash command runs `cat FILE...` (alone or as a step of a compound command with &&, ||, ;, | or newlines; `cd DIR` steps are followed),
 and the text file is larger than 8 KB (env LARGE_READ_BYTES), it adds one line to the agent's context suggesting a partial read
 (offset/limit, grep, sed -n). A cat piped into another command, redirected, or with options or $/` in a path is left alone. Reads the hook JSON from stdin. Silent and exit 0 on any problem or small file."""
-import os, re, shlex, sys
+import os, re, sys
 import hooklib
 
 LIMIT = int(os.environ.get("LARGE_READ_BYTES", "8192"))
 SKIP = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".pdf", ".ipynb")
 
 
-def strip_heredocs(command):
-    """Drop heredoc bodies and the << operators so commands after the terminators are still seen. Several heredocs on one line are
-    read in order; here-strings (<<<) are not heredocs. A heredoc without terminator is left alone."""
-    lines, out, i = command.split("\n"), [], 0
-    while i < len(lines):
-        line = lines[i]
-        ms = list(re.finditer(r"(?<!<)<<(?!<)-?\s*(['\"]?)(\w+)\1", line))
-        end, j = None, i + 1
-        for m in ms:
-            end = next((k for k in range(j, len(lines)) if lines[k].strip() == m.group(2)), None)
-            if end is None: break
-            j = end + 1
-        if not ms or end is None:
-            out.append(line); i += 1
-        else:
-            out.append(re.sub(r"(?<!<)<<(?!<)-?\s*(['\"]?)(\w+)\1", "", line)); i = end + 1
-    return "\n".join(out)
-
-
 def cat_targets(command, cwd):
     """Files a Bash command prints whole with cat. Heredoc bodies are skipped; ignores cat whose output goes into a pipe or redirect."""
-    command = strip_heredocs(command)
-    lex = shlex.shlex(command, posix=True, punctuation_chars="();<>|&\n")
-    lex.whitespace, lex.whitespace_split = " \t\r", True
-    try: tokens = list(lex)
-    except ValueError: return []
-    steps, step = [], []
-    for tok in tokens:
-        if tok == "<<": break  # unterminated heredoc (terminated ones are stripped above)
-        if tok in ("&&", "||", ";", "\n", "|", "&", "(", ")"):
-            steps.append((step, tok)); step = []
-        else: step.append(tok)
-    steps.append((step, ""))
     found = []
-    for words, sep in steps:
+    for words, sep in hooklib.steps(command):
         if words[:1] == ["cd"] and len(words) == 2 and not re.search(r"[$`]", words[1]):
             cwd = os.path.join(cwd, os.path.expanduser(words[1]))
         elif words[:1] == ["cat"] and len(words) > 1 and sep != "|":

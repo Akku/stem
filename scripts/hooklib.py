@@ -12,7 +12,7 @@ fixed here once. Wiring per agent: scripts/hooks/manifest.json (generator: scrip
 
 CLI (for session-start.sh): hooklib.py class [--root DIR]  -> prints "<class> <model>" from the hook input on stdin.
 Never raises towards the caller: a guard that cannot read its input stays silent."""
-import json, os, re, select, sys
+import json, os, re, select, shlex, sys
 
 PLAIN_EVENTS = ("SessionStart", "UserPromptSubmit")  # plain stdout reaches the model in Claude Code and Codex; other events need JSON
 
@@ -65,6 +65,42 @@ def fields(data, env=None):
         "file": inp.get("file_path") if isinstance(inp.get("file_path"), str) else "",
         "ranged": bool(inp.get("offset") or inp.get("limit") or inp.get("pages")),
     }
+
+
+def strip_heredocs(command):
+    """Drop heredoc bodies and the << operators so commands after the terminators are still seen. Several heredocs on one line are
+    read in order; here-strings (<<<) are not heredocs. A heredoc without terminator is left alone."""
+    lines, out, i = command.split("\n"), [], 0
+    while i < len(lines):
+        line = lines[i]
+        ms = list(re.finditer(r"(?<!<)<<(?!<)-?\s*(['\"]?)(\w+)\1", line))
+        end, j = None, i + 1
+        for m in ms:
+            end = next((k for k in range(j, len(lines)) if lines[k].strip() == m.group(2)), None)
+            if end is None: break
+            j = end + 1
+        if not ms or end is None:
+            out.append(line); i += 1
+        else:
+            out.append(re.sub(r"(?<!<)<<(?!<)-?\s*(['\"]?)(\w+)\1", "", line)); i = end + 1
+    return "\n".join(out)
+
+
+def steps(command):
+    """A shell command as [(words, separator after it)], split at &&, ||, ;, |, &, parentheses and newlines. Heredoc bodies are
+    skipped; quoted text stays one word, so a command named inside a commit message is not a step. [] when it cannot be parsed."""
+    lex = shlex.shlex(strip_heredocs(command), posix=True, punctuation_chars="();<>|&\n")
+    lex.whitespace, lex.whitespace_split = " \t\r", True
+    try: tokens = list(lex)
+    except ValueError: return []
+    out, step = [], []
+    for tok in tokens:
+        if tok == "<<": break  # unterminated heredoc (terminated ones are stripped above)
+        if tok in ("&&", "||", ";", "\n", "|", "&", "(", ")"):
+            out.append((step, tok)); step = []
+        else: step.append(tok)
+    out.append((step, ""))
+    return out
 
 
 def emit_context(event, message, out=None):

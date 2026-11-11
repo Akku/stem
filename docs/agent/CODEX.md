@@ -22,6 +22,8 @@ STEM_OFFLINE=1 scripts/session-start.sh
 
 `.codex/hooks.json` runs `scripts/context-check.py` as `UserPromptSubmit` hook; it reads the Codex session log (`transcript_path`, last `token_count`). Whether Codex shows the hook output to the model is unverified; inside a batch the task-end check `python3 scripts/context-check.py --auto` (finds the log via `CODEX_THREAD_ID`) is the dependable signal (`R-BATCHING`). Do not invent a token count or treat the session-start handoff-size warning as a context-window warning.
 
+`.codex/hooks.json` also wires two `PreToolUse` hooks on shell commands: `scripts/large-read-warn.py` (note before a whole-file `cat` of a large file) and `scripts/deny-guard.py` (refuses destructive git commands, `--no-verify`, and reads of `.env` files or SSH keys; the same list Claude Code denies in `.claude/settings.json`). Both are written from the Codex hook documentation and covered by fixture tests; that Codex delivers the note and honours the refusal is not yet observed in a live run. The wiring comes from `scripts/hooks/manifest.json` (`docs/agent/HOOKS.md`); after any change to `.codex/hooks.json` Codex asks to review the hooks again (`/hooks`).
+
 ## Sandbox access and external checks
 
 Check which directories the current task can write. Product checkouts outside that boundary, their Git metadata and commits may need scoped approval; a sibling checkout inside the writable workspace may already be authorized. Request only the filesystem/network access needed for the operation, using the runtime's approval mechanism. Claude's allow-list does not authorize Codex actions. Preserve the sandbox; follow `R-AUTONOMY` for missing decisions or repeated failures and `R-STATE-COHERENCE` for commits.

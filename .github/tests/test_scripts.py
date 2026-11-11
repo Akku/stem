@@ -1180,6 +1180,35 @@ class RunWrapperContextNotice(Sandbox):
         self.assertEqual((r.returncode, r.stdout), (0, ""))
 
 
+class DenyGuard(Sandbox):
+    """Deny guard for agents without permission rules (wired for Codex)."""
+    def guard(self, command, tool="Bash"):
+        r = run([sys.executable, str(SCRIPTS / "deny-guard.py")], self.tmp, stdin=json.dumps({"hook_event_name": "PreToolUse", "tool_name": tool, "tool_input": {"command": command}}))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return json.loads(r.stdout)["hookSpecificOutput"] if r.stdout else None
+
+    def test_destructive_git_and_secret_reads_are_denied(self):
+        for c in ("git push --force origin main", "git push -f", "git push origin +main", "git push origin --delete x", "git push origin :x",
+                  "git reset --hard HEAD~1", "cd sub && git clean -fd", "git checkout .", "git restore .", "git branch -D old",
+                  "git commit --no-verify -m x", "git -C repo push --no-verify", "cat .env", "grep KEY config/.env.local", "head ~/.ssh/id_ed25519",
+                  ["bash", "-lc", "git reset --hard"]):
+            out = self.guard(c)
+            self.assertIsNotNone(out, c); self.assertEqual(out["permissionDecision"], "deny", c); self.assertIn("STEM guard", out["permissionDecisionReason"])
+
+    def test_ordinary_commands_pass(self):
+        for c in ("git push origin main", "git reset --soft HEAD~1", "git clean -n", "git checkout main", "git restore --staged .", "git branch -d merged",
+                  'git commit -m "explain git reset --hard and cat .env in the docs"', "cat .env.example", "git add .env.example", "ls -la", "echo .env",
+                  "git status && git diff", "not 'parsable"):
+            self.assertIsNone(self.guard(c), c)
+        self.assertIsNone(self.guard("git reset --hard", tool="Read"))
+
+    def test_codex_wiring_comes_from_the_manifest(self):
+        codex = json.loads((ROOT / ".codex/hooks.json").read_text())["hooks"]["PreToolUse"]
+        cmds = " ".join(h["command"] for e in codex for h in e["hooks"])
+        self.assertIn("scripts/deny-guard.py", cmds); self.assertIn("scripts/large-read-warn.py", cmds)
+        self.assertEqual({e["matcher"] for e in codex}, {"^Bash$"})
+
+
 class StemConfig(Sandbox):
     """Project choices in docs/agent/stem-config.json switch guards off without touching hook files."""
     def project(self, cfg):
