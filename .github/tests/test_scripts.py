@@ -1201,6 +1201,10 @@ class ModelClass(SandboxRepo):
                           ({"source": "clear"}, None), (None, None), ({"model": "claude-fable-5-2"}, {"CLAUDE_EFFORT": "low"})):
             self.assertNotIn("MODEL CLASS", self.start(hook, env), (hook, env))
 
+    def test_model_line_only_when_the_agent_names_the_model(self):
+        self.assertIn("MODEL IN USE: some-mid-model (from the agent", self.start({"model": "some-mid-model", "session_id": "m"}))
+        self.assertNotIn("MODEL IN USE", self.start({"session_id": "m"}))
+
     def test_astra_family_is_lean_and_its_siblings_are_not(self):
         for model, lean in (("gpt-6-astra", True), ("gpt-6.1-astra", True), ("GPT-6-Astra", True), ("gpt-6-sol", False), ("gpt-6.1-terra", False), ("gpt-6-luna", False)):
             self.assertEqual("MODEL CLASS lean" in self.start({"model": model, "session_id": "a"}), lean, model)
