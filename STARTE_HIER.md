@@ -10,7 +10,7 @@ STEM ist ein Startpunkt für agentische Entwicklung mit Git und Backlog.md. Du g
 
 1. **Lade** STEM **herunter**: [stem.zip](https://github.com/Akku/stem/archive/refs/heads/main.zip) (alternativ: grüner Button **Code** → **Download ZIP** auf der GitHub-Seite).
 2. **Entpacke** es (macOS: Doppelklick; Windows: Rechtsklick → *Alle extrahieren*). Benenne den Ordner nach deinem Projekt um und lege ihn dort ab, wo du Projekte aufbewahrst. **Verwende den ganzen Ordner; kopiere keine einzelnen Dateien heraus**: Er enthält versteckte Elemente (Namen mit Punkt am Anfang, z. B. `.claude`), die der Finder standardmäßig ausblendet (macOS: Cmd+Shift+. blendet sie ein). Fehlt trotzdem etwas, stellt der Agent es wieder her.
-3. **Öffne deinen Agenten** (z. B. die Claude-Desktop-App, Tab Code) und wähle diesen Ordner als Arbeitsordner.
+3. **Öffne deinen Agenten** und wähle diesen Ordner als Arbeitsordner. Claude: Desktop-App, Tab Code. Codex: den Ordner in der Codex-App öffnen, oder im Terminal in den Ordner wechseln und `codex` starten.
 4. **Gib dem Agenten diesen Prompt**, mit deinem Ziel:
 
    > Richte dieses Projekt ein: Folge `SETUP.md`. Arbeite in meiner Sprache und installiere alles, was fehlt, selbst (ich genehmige die Schritte). Was ich entwickeln will, ist folgendes: *<deine Idee: was, für wen, woran erkennt man „fertig“ – ein paar Sätze>*
@@ -18,7 +18,7 @@ STEM ist ein Startpunkt für agentische Entwicklung mit Git und Backlog.md. Du g
 5. **Beantworte die Rückfragen** (Technologie, welche Agenten du nutzt, GitHub ja/nein). Der Agent prüft, welche Werkzeuge fehlen (Git, Node.js, Backlog.md), und installiert sie für dich; du genehmigst jeden Schritt in der App (lehnst du ab, gibt er dir stattdessen eine Anleitung). Der Installer fragt eventuell nach deinem Computer-Passwort. Fragt ein Installer nach deinem Computer-Passwort, gib es selbst dort ein, niemals im Chat. Unter Windows brauchen die Hilfsskripte Git für Windows (enthält *Git Bash*); der Agent führt dich dabei.
 6. **Am Ende** fasst der Agent zusammen, was angelegt wurde und welcher Task zuerst kommt. Sag ihm, dass er starten soll.
 
-**Sicherheitshinweis:** Lade STEM nur aus dem offiziellen Repository (Link oben). Es enthält einen kleinen Start-Hook (`scripts/session-start.sh`, eingerichtet in `.claude/settings.json`); lies die Vertrauensabfrage deiner App, wenn sie fragt, ob du dem Ordner vertraust. STEM verhindert, dass `.env`-Dateien und gängige API-Token-Formate committet werden (keine Garantie für andere Formate), aber füge nie Passwörter in den Chat ein.
+**Sicherheitshinweis:** Lade STEM nur aus dem offiziellen Repository (Link oben). Es enthält einen kleinen Start-Hook (`scripts/session-start.sh`, eingerichtet in `.claude/settings.json` für Claude Code und in `.codex/hooks.json` für Codex); lies die Vertrauensabfrage deiner App, wenn sie fragt, ob du dem Ordner oder den Hooks vertraust. Lehnst du ab, läuft der Hook nicht; der Agent holt sich den Stand dann zu Beginn selbst. STEM verhindert, dass `.env`-Dateien und gängige API-Token-Formate committet werden (keine Garantie für andere Formate), aber füge nie Passwörter in den Chat ein.
 
 ## Für technisch Versierte: über GitHub
 

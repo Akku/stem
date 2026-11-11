@@ -10,7 +10,7 @@ STEM is a starting point for agent-driven development with Git and Backlog.md. Y
 
 1. **Download** STEM: [stem.zip](https://github.com/Akku/stem/archive/refs/heads/main.zip) (also: green **Code** button → **Download ZIP** on the GitHub page).
 2. **Unzip** it (macOS: double-click; Windows: right-click → *Extract All*). Rename the folder to your project name and put it where you keep your projects. **Use the whole folder; do not copy files out of it one by one**: it contains hidden items (names starting with a dot, e.g. `.claude`) that Finder hides by default (macOS: Cmd+Shift+. shows them). If something is missing anyway, the agent restores it.
-3. **Open your agent** (e.g. the Claude desktop app, Code tab) and choose that folder as the working folder.
+3. **Open your agent** and choose that folder as the working folder. Claude: desktop app, Code tab. Codex: open the folder in the Codex app, or change into the folder in a terminal and start `codex`.
 4. **Give the agent this prompt**, with your goal filled in:
 
    > Set up this project: follow `SETUP.md`. Work in my language and install anything that is missing yourself (I will approve the steps). What I want to build is the following: *<your idea: what, for whom, what "done" looks like – a few sentences>*
@@ -18,7 +18,7 @@ STEM is a starting point for agent-driven development with Git and Backlog.md. Y
 5. **Answer the questions** (technology, which agents you use, GitHub yes/no). The agent checks which tools are missing (Git, Node.js, Backlog.md) and installs them for you; you approve each step in the app (if you decline, it gives you manual instructions instead). The installer may ask for your computer password. If an installer asks for your computer password, type it yourself, never into the chat. On Windows the helper scripts need Git for Windows (includes *Git Bash*); the agent will guide you.
 6. **At the end** the agent summarizes what exists and which task comes first. Tell it to start.
 
-**Security note:** download STEM only from the official repository (link above). STEM contains a small start hook (`scripts/session-start.sh`, configured in `.claude/settings.json`); when your app asks whether to trust the folder, read that prompt. STEM blocks `.env` files and common API-token formats from being committed (no guarantee for other formats), but never paste passwords into the chat.
+**Security note:** download STEM only from the official repository (link above). STEM contains a small start hook (`scripts/session-start.sh`, configured in `.claude/settings.json` for Claude Code and in `.codex/hooks.json` for Codex); when your app asks whether to trust the folder or its hooks, read that prompt. If you decline, the hook does not run; the agent then fetches the state itself at the start. STEM blocks `.env` files and common API-token formats from being committed (no guarantee for other formats), but never paste passwords into the chat.
 
 ## For technical users: via GitHub
 
