@@ -70,8 +70,15 @@ if not dg.exists() or "`AGENTS.md`" not in dg.read_text() or len(dg.read_bytes()
 
 # AGENTS.md is loaded in every session: keep it within budget; settings deny secrets
 if len((root / "AGENTS.md").read_bytes()) > 7680: err("AGENTS.md exceeds the 7.5 KB budget (move rules to OPERATING_MODEL.md)")
-handoff = root / "docs/agent/HANDOFF.md"
-if handoff.exists() and len(handoff.read_bytes()) > 2048: err("docs/agent/HANDOFF.md exceeds 2 KB (rewrite it, handoff skill)")
+# the template ships no project state: a new project would read it as its own (a stale handoff was printed at session start)
+for rel in ("docs/agent/HANDOFF.md", "backlog"):
+    if (root / rel).exists(): err(f"{rel} must not exist in the STEM template (project state)")
+tracked = subprocess.run(["git", "-C", str(root), "ls-files", "-z"], capture_output=True, text=True).stdout.split("\0")
+for rel in tracked:
+    if not rel or rel.startswith(".github/tests/") or not (root / rel).is_file(): continue
+    try: body = (root / rel).read_text(encoding="utf-8")
+    except (UnicodeDecodeError, OSError): continue
+    if re.search(r"/Users/[A-Za-z0-9._-]+/", body): err(f"{rel}: absolute home path (machine-specific text in the template)")
 st = json.loads((root / ".claude/settings.json").read_text())
 if "Read(./.env)" not in st.get("permissions", {}).get("deny", []): err("settings.json: deny rule for .env missing")
 for rule in ("Bash(git reset --hard:*)", "Bash(git clean *-f*)", "Bash(git commit *--no-verify*)", "Bash(git push *--no-verify*)"):
