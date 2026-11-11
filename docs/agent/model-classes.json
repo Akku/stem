@@ -1,6 +1,7 @@
 {
   "about": "Which model families count as class lean (R-ROUTING, Model classes). Patterns are regular expressions matched against the model name the agent reports in its hook input, case-insensitive. Every model that matches nothing is class standard, so a stale table costs tokens, never safety. Add a family only on evidence (a retro, the model bench) or on the user's word. A project overrides the table with a line 'Model class: lean' or 'Model class: standard' under Project specifics in AGENTS.md.",
   "lean": [
-    "^claude-(fable|mythos|opus)-"
+    "^claude-(fable|mythos|opus)-",
+    "^gpt-6(\\.[0-9]+)?-astra"
   ]
 }
