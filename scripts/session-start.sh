@@ -2,6 +2,8 @@
 # Session bootstrap: compact current-state summary. Changes no project files; writes a version-check cache
 # under ${TMPDIR:-/tmp}/agent-logs and contacts GitHub at most daily. Offline: STEM_OFFLINE=1 skips all network calls.
 set -u
+# model class (R-ROUTING, Model classes): read the hook input before anything else can consume stdin; empty without python3 or input
+mc=$(python3 "$(dirname "$0")/hooklib.py" class --root "$PWD" 2>/dev/null)
 echo "## git"
 if git rev-parse --git-dir >/dev/null 2>&1; then
   echo "branch: $(git branch --show-current)"
@@ -131,4 +133,7 @@ if [ -f docs/agent/HANDOFF.md ]; then
     [ -n "$hv" ] && [ -n "${lv:-}" ] && [ "$hv" != "$lv" ] && echo "WARNING: HANDOFF.md names stem $hv but STEM_VERSION is $lv: the handoff may be stale; check it against the current state"
   fi
 else echo "no HANDOFF.md (clean boundary: state is in git and the backlog)"; fi
+case "$mc" in lean\ *)
+  mm=${mc#lean }; echo; echo "MODEL CLASS lean (${mm% *}; \`R-ROUTING\`, Model classes): the size-S fast path (core rule 1a) also covers size-M tasks; core rule 3 applies only when instruction files are edited; core rule 5 and the tool-proposal sentence of rule 4 need no reminder. Everything else applies unchanged, including security, stop conditions and evidence." ;;
+esac
 echo; echo "Rules: see AGENTS.md; further rules by ID via docs/agent/OPERATING_MODEL.md"

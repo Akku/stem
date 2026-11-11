@@ -1180,6 +1180,44 @@ class RunWrapperContextNotice(Sandbox):
         self.assertEqual((r.returncode, r.stdout), (0, ""))
 
 
+class ModelClass(SandboxRepo):
+    """Model class at session start (R-ROUTING, Model classes): lean only for a known top-tier family, everything else standard."""
+    def setUp(self):
+        super().setUp()
+        (self.repo / "docs/agent").mkdir(parents=True); shutil.copy(ROOT / "docs/agent/model-classes.json", self.repo / "docs/agent/model-classes.json")
+        (self.repo / "AGENTS.md").write_text("## Project specifics\n- Model: mid-tier\n")
+
+    def start(self, hook=None, env=None):
+        e = {**self.env, "STEM_OFFLINE": "1", "CLAUDE_EFFORT": "", **(env or {})}
+        return run(["bash", "scripts/session-start.sh"], self.repo, e, stdin=json.dumps(hook) if hook is not None else "").stdout
+
+    def test_top_tier_claude_model_gets_the_lean_line(self):
+        out = self.start({"hook_event_name": "SessionStart", "session_id": "s-lean", "model": "claude-fable-5-2", "transcript_path": "/u/.claude/projects/p/s.jsonl"})
+        self.assertIn("MODEL CLASS lean (claude-fable-5-2;", out); self.assertIn("also covers size-M", out)
+        self.assertIn("## handoff", out)  # the rest of the summary is unchanged
+
+    def test_standard_unknown_missing_and_low_effort_print_nothing(self):
+        for hook, env in (({"model": "claude-sonnet-5-5"}, None), ({"model": "gpt-6.1-sol", "transcript_path": "/u/.codex/sessions/r.jsonl"}, None),
+                          ({"source": "clear"}, None), (None, None), ({"model": "claude-fable-5-2"}, {"CLAUDE_EFFORT": "low"})):
+            self.assertNotIn("MODEL CLASS", self.start(hook, env), (hook, env))
+
+    def test_project_line_overrides_the_table_both_ways(self):
+        (self.repo / "AGENTS.md").write_text("## Project specifics\n- Model class: lean\n")
+        self.assertIn("MODEL CLASS lean", self.start({"model": "some-local-model"}))
+        (self.repo / "AGENTS.md").write_text("## Project specifics\n- **Model class:** standard\n")
+        self.assertNotIn("MODEL CLASS", self.start({"model": "claude-fable-5-2"}))
+
+    def test_no_model_names_in_rule_text(self):
+        for f in ("AGENTS.md", "docs/agent/OPERATING_MODEL.md", "docs/agent/ADVANCED.md"):
+            self.assertNotRegex((ROOT / f).read_text(), r"(?i)\b(fable|mythos|opus|gpt-\d)", f)
+
+    def test_detach_reminder_is_silent_for_lean_sessions(self):
+        self.start({"session_id": "s-lean2", "model": "claude-fable-5-2"}); self.start({"session_id": "s-std", "model": "claude-sonnet-5-5"})
+        hook = lambda sid: run([sys.executable, "scripts/detach-reminder.py"], self.repo, self.env, stdin=json.dumps(
+            {"session_id": sid, "tool_name": "mcp__ccd_session__start_session", "tool_response": {"text": "Session started: local_9fba1ca7-f86e-4b22-8699-7acdf0890fa8"}})).stdout
+        self.assertEqual(hook("s-lean2"), ""); self.assertIn("detach_session", hook("s-std")); self.assertIn("detach_session", hook("unseen"))
+
+
 class DenyGuard(Sandbox):
     """Deny guard for agents without permission rules (wired for Codex)."""
     def guard(self, command, tool="Bash"):

@@ -9,6 +9,7 @@ import hooklib
 try:
     data = hooklib.read_input()
     if "start_session" not in str(data.get("tool_name", "")): sys.exit(0)
+    if hooklib.session_class(str(data.get("session_id") or "")) == "lean": sys.exit(0)  # R-ROUTING, Model classes: no reminder for class lean
     text = json.dumps(data.get("tool_response", ""))
     m = re.search(r"local_[0-9a-f]{8}-[0-9a-f-]{27}", text)
     if not m or "started" not in text.lower(): sys.exit(0)
