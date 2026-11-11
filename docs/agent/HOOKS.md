@@ -17,7 +17,7 @@ Read when adding an agent, when a hook API changed, or in the `port-check` skill
 ## Evidence per agent
 
 - **Claude Code:** daily use.
-- **Codex:** automated probe runs without project hooks; hooks need the user's trust (bound to the file's hash); the PreToolUse wiring (large-read warning, deny guard) is written from the Codex hook documentation and not yet observed in a live run.
+- **Codex:** automated probe runs; hooks need the user's trust (bound to the file's hash); PreToolUse wiring observed in one CLI run (codex-cli 0.166.0, 2026-11-11: the large-read note reached the model, the deny guard stopped the command); the Codex app and the trust review itself are not covered.
 - **DeutschlandGPT Code:** from its documentation only, no run recorded; the app documents no hooks.
 
 ## Project choices

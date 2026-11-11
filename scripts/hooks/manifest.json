@@ -2,7 +2,7 @@
   "about": "One source for STEM's guards and their wiring per agent. scripts/hooks-sync.py writes the agent config files and docs/agent/HOOKS.md from this file; edit here, never there. Order per guard: native hook, else an agent-independent mechanism (git hook, scripts/run.sh), else the instruction sentence.",
   "agents": {
     "claude-code": {"name": "Claude Code", "file": ".claude/settings.json", "evidence": "daily use"},
-    "codex": {"name": "Codex", "file": ".codex/hooks.json", "evidence": "automated probe runs without project hooks; hooks need the user's trust (bound to the file's hash); the PreToolUse wiring (large-read warning, deny guard) is written from the Codex hook documentation and not yet observed in a live run"},
+    "codex": {"name": "Codex", "file": ".codex/hooks.json", "evidence": "automated probe runs; hooks need the user's trust (bound to the file's hash); PreToolUse wiring observed in one CLI run (codex-cli 0.166.0, 2026-11-11: the large-read note reached the model, the deny guard stopped the command); the Codex app and the trust review itself are not covered"},
     "deutschlandgpt": {"name": "DeutschlandGPT Code", "file": null, "evidence": "from its documentation only, no run recorded; the app documents no hooks"}
   },
   "guards": [
