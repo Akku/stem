@@ -1,0 +1,62 @@
+{
+  "about": "One source for STEM's guards and their wiring per agent. scripts/hooks-sync.py writes the agent config files and docs/agent/HOOKS.md from this file; edit here, never there. Order per guard: native hook, else an agent-independent mechanism (git hook, scripts/run.sh), else the instruction sentence.",
+  "agents": {
+    "claude-code": {"name": "Claude Code", "file": ".claude/settings.json", "evidence": "daily use"},
+    "codex": {"name": "Codex", "file": ".codex/hooks.json", "evidence": "automated probe runs; hooks need the user's trust (bound to the file's hash)"},
+    "deutschlandgpt": {"name": "DeutschlandGPT Code", "file": null, "evidence": "from its documentation only, no run recorded; the app documents no hooks"}
+  },
+  "guards": [
+    {
+      "id": "session-start",
+      "script": "scripts/session-start.sh",
+      "purpose": "State summary at the start of a session",
+      "fallback": "instruction: the agent runs the script itself (AGENTS.md, Session start)",
+      "wiring": {
+        "claude-code": {"event": "SessionStart", "matcher": "^(startup|clear)$"},
+        "codex": {"event": "SessionStart", "matcher": "^(startup|clear)$"}
+      }
+    },
+    {
+      "id": "context-check",
+      "script": "scripts/context-check.py",
+      "purpose": "Notice when the context is large and a new session is due",
+      "fallback": "instruction: core rule 9 (new session after a finished batch)",
+      "wiring": {
+        "claude-code": {"event": "UserPromptSubmit"},
+        "codex": {"event": "UserPromptSubmit"}
+      }
+    },
+    {
+      "id": "large-read-warn",
+      "script": "scripts/large-read-warn.py",
+      "purpose": "Warning before a whole-file read of a large file",
+      "fallback": "instruction: read files over 8 KB in parts; command output goes through scripts/run.sh",
+      "wiring": {
+        "claude-code": {"event": "PreToolUse", "matcher": "Read|Bash"}
+      }
+    },
+    {
+      "id": "detach-reminder",
+      "script": "scripts/detach-reminder.py",
+      "purpose": "Reminder to detach a session started for a handoff (Claude desktop app only)",
+      "fallback": "not applicable outside the Claude desktop app",
+      "wiring": {
+        "claude-code": {"event": "PostToolUse", "matcher": "mcp__ccd_session__start_session"}
+      }
+    },
+    {
+      "id": "pre-commit",
+      "script": "scripts/githooks/pre-commit",
+      "purpose": "No secrets, source documents or half-finished Done tasks in a commit",
+      "git": true,
+      "fallback": "git hook, the same for every agent (core.hooksPath, set at setup)"
+    },
+    {
+      "id": "commit-msg",
+      "script": "scripts/githooks/commit-msg",
+      "purpose": "Commit messages carry a task ID",
+      "git": true,
+      "fallback": "git hook, the same for every agent"
+    }
+  ]
+}

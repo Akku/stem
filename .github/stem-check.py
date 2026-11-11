@@ -96,6 +96,10 @@ for f in ("README.md", "README.de.md"):
 rn = subprocess.run([sys.executable, str(root / ".github/retired-names.py"), str(root)], capture_output=True, text=True)
 if rn.returncode: err(rn.stdout.strip())
 
+# hook wiring: agent config files and docs/agent/HOOKS.md come from scripts/hooks/manifest.json (TASK-232)
+hs = subprocess.run([sys.executable, str(root / "scripts/hooks-sync.py"), "--check", "--root", str(root)], capture_output=True, text=True)
+if hs.returncode: err(hs.stdout.strip() or "hooks-sync --check failed")
+
 # every rule is named outside the rule files (.github/rule-reach.py, TASK-210)
 rr = subprocess.run([sys.executable, str(root / ".github/rule-reach.py"), str(root)], capture_output=True, text=True)
 if rr.returncode: err(rr.stdout.strip())

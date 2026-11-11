@@ -3,10 +3,11 @@
 current context exceeds a threshold, then again every +30k. Threshold = smallest of: first-turn context of the session + 40k (the
 fixed floor of system prompt, tools and instructions is not session growth), a cap of 100k (env CONTEXT_WARN_TOKENS) and half the model's
 window (Claude: model read from the transcript; Codex: model_context_window from the session log; unknown -> cap of 100k).
-Reads the hook JSON from stdin (transcript_path, session_id); manual use: --transcript FILE; task-end check: --auto finds the current
+Reads the hook JSON from stdin through hooklib.py (transcript_path, session_id); manual use: --transcript FILE; task-end check: --auto finds the current
 session log itself (Codex: CODEX_THREAD_ID; Claude: newest transcript of this directory) and also prints one line below the threshold.
 Silent and exit 0 on any problem or below the threshold (hook mode). Numbers only, no transcript content is printed."""
 import glob, json, os, re, sys
+import hooklib
 
 CAP = int(os.environ.get("CONTEXT_WARN_TOKENS", "100000"))
 GROWTH = 40000
@@ -73,7 +74,7 @@ def main():
         elif "--auto" in args:
             path, sid = current_log(), "manual"
         else:
-            data = json.load(sys.stdin); path, sid = data.get("transcript_path", ""), str(data.get("session_id", "x"))
+            f = hooklib.fields(hooklib.read_input()); path, sid = f["transcript"], f["session"] or "x"
         tokens, first, model = scan(path)
         THRESHOLD = threshold(first, model)
     except Exception:

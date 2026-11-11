@@ -141,6 +141,7 @@ Stand laut eigener Dokumentation der Projekte, November 2026; diese Projekte än
 | `docs/agent/stacks/` | Stack-spezifische Hinweise, nur bei passendem Stack geladen |
 | `scripts/context-report.py` | Optionales Retro-Werkzeug (Claude Code): wohin der Kontext floss, längste Sitzungen; nur Zahlen |
 | `scripts/context-check.py` | Claude-Code-Hook: warnt bei großem Kontext, dass eine neue Sitzung fällig ist |
+| `scripts/hooks/manifest.json`, `scripts/hooks-sync.py`, `scripts/hooklib.py`, `docs/agent/HOOKS.md` | Eine Quelle für die Hooks: Das Manifest nennt jeden Schutzmechanismus und seine Verdrahtung je Agent; der Generator schreibt die Konfigurationsdateien der Agenten und die Übersichtstabelle; der gemeinsame Leser verarbeitet die Hook-Eingaben der Agenten |
 | `scripts/run.sh` | Kompakte Ausgabe für Tests/CI/CLI (Exitcode bleibt erhalten, Volllog im git-ignorierten `.agent-logs/`, `evidence:`-Verweis für Task-Notizen; nicht zitierte Logs älter als 30 Tage werden gelöscht) |
 | `scripts/session-start.sh` | Zustandsüberblick zum Sitzungsstart (Branch, Änderungen, Tasks, Übergabe); ändert keine Projektdateien, `STEM_OFFLINE=1` ohne Netzwerk |
 | `docs/agent/OPERATING_MODEL.md` | Regeln mit stabilen IDs (`R-*`), gezielt per ID geladen |

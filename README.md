@@ -141,6 +141,7 @@ Based on each project's own documentation as of November 2026; these projects ch
 | `docs/agent/stacks/` | Stack-specific notes, loaded only when the stack applies |
 | `scripts/context-report.py` | Optional retro tool (Claude Code): where the context went, longest sessions; numbers only |
 | `scripts/context-check.py` | Claude Code hook: warns when the context is large and a new session is due |
+| `scripts/hooks/manifest.json`, `scripts/hooks-sync.py`, `scripts/hooklib.py`, `docs/agent/HOOKS.md` | One source for the hooks: the manifest names every guard and its wiring per agent; the generator writes the agents' config files and the support table; the shared reader handles each agent's hook input |
 | `scripts/run.sh` | Compact output for tests/CI/CLI (exit code preserved, full log in git-ignored `.agent-logs/`, `evidence:` pointer for task notes; uncited logs older than 30 days are pruned) |
 | `scripts/sandbox.sh`, `docker/` | Optional: run Claude Code inside a Docker container (project only in a volume; `--strict` network mode) |
 | `scripts/session-start.sh` | Session start summary (branch, changes, tasks, handoff); changes no project files, `STEM_OFFLINE=1` for no network |

@@ -9,7 +9,7 @@ Rule: `R-STEM-UPDATE`. STEM is public; only read from it (its changelog, PR text
 
 ## File ownership
 - **STEM-owned** (copy when the project did not change them on purpose): `scripts/` (except `scripts/local/`), `.claude/skills/`, `.agents/skills` (symlink to `../.claude/skills`; recreate it, never copy skill files into it), `.claude/agents/`, `docs/agent/OPERATING_MODEL.md`, `docs/agent/retro-steps.json`, `docs/agent/ADVANCED.md`, `docs/agent/PROCESS_IMPROVEMENTS.md`, `docs/agent/stacks/`, `.gitattributes`.
-- **Mixed** (merge by hand): `AGENTS.md` (keep `Project specifics` and the `Communication` block), `CLAUDE.md`, `.claude/settings.json` (keep project hooks and permissions), `.gitignore`.
+- **Mixed** (merge by hand): `AGENTS.md` (keep `Project specifics` and the `Communication` block), `CLAUDE.md`, `.claude/settings.json` (keep project hooks and permissions; STEM's own hook entries come from `scripts/hooks/manifest.json`: after copying `scripts/`, run `python3 scripts/hooks-sync.py`, which leaves the project's entries alone; a changed `.codex/hooks.json` makes Codex ask for trust again, tell the user), `.gitignore`.
 - **Project-owned** (never touch): `docs/agent/EXPERIMENTS.md`, `docs/agent/NEXT_RETRO.md`, `docs/agent/retro-runs/`, `docs/agent/PITFALLS.md`, `docs/agent/HANDOFF.md`, `backlog/`, `STEM_VERSION` (only its `version:` and `skipped:` lines).
 - **STEM-only** (not in projects): `README*`, `START*`, `SETUP.md`, `CONTRIBUTING.md`, `LICENSE`, `CHANGELOG.md`, `.github/`, `docs/assets/`.
 

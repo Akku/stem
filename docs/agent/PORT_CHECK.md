@@ -14,7 +14,7 @@ Grade each item `pass | partial | fail`; on partial/fail give one failure catego
 
 | ID | Item |
 | --- | --- |
-| C1 | Session start and hooks (`scripts/session-start.sh` output complete; hooks fire or are explicitly not supported) |
+| C1 | Session start and hooks (`scripts/session-start.sh` output complete; hooks fire or are explicitly not supported; wiring and per-agent state: `docs/agent/HOOKS.md`, changed through `scripts/hooks/manifest.json`) |
 | C2 | `scripts/run.sh <label> <command>` (log written, exit code kept) |
 | C3 | Backlog cycle (create, plan, note, done a throwaway task; `scripts/check-backlog.sh`) |
 | C4 | Verify script of the project (or `scripts/check-backlog.sh` if none) |

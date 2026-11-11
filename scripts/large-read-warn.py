@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Whole-file read warning for Claude Code (PreToolUse hook on Read and Bash). Warns, never blocks: when Read has no offset/limit, or a
+"""Whole-file read warning (PreToolUse hook on Read and Bash; input and output form per agent: hooklib.py). Warns, never blocks: when Read has no offset/limit, or a
 Bash command runs `cat FILE...` (alone or as a step of a compound command with &&, ||, ;, | or newlines; `cd DIR` steps are followed),
 and the text file is larger than 8 KB (env LARGE_READ_BYTES), it adds one line to the agent's context suggesting a partial read
 (offset/limit, grep, sed -n). A cat piped into another command, redirected, or with options or $/` in a path is left alone. Reads the hook JSON from stdin. Silent and exit 0 on any problem or small file."""
-import json, os, re, shlex, sys
+import os, re, shlex, sys
+import hooklib
 
 LIMIT = int(os.environ.get("LARGE_READ_BYTES", "8192"))
 SKIP = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".pdf", ".ipynb")
@@ -54,16 +55,16 @@ def cat_targets(command, cwd):
 
 
 def targets(data):
-    tool, inp = data.get("tool_name"), data.get("tool_input") or {}
-    if tool == "Read":
-        return [] if inp.get("offset") or inp.get("limit") or inp.get("pages") else [inp.get("file_path")]
-    if tool == "Bash":
-        return cat_targets(inp.get("command", ""), data.get("cwd") or os.getcwd())
+    f = hooklib.fields(data)
+    if f["tool"] == "Read":
+        return [] if f["ranged"] else [f["file"]]
+    if f["tool"] == "Bash":
+        return cat_targets(f["command"], f["cwd"] or os.getcwd())
     return []
 
 
 def main():
-    try: paths = targets(json.load(sys.stdin))
+    try: paths = targets(hooklib.read_input())
     except (ValueError, AttributeError): return
     big = []
     for path in paths:
@@ -73,7 +74,7 @@ def main():
         if size > LIMIT: big.append(f"{os.path.basename(path)} is {size // 1024} KB")
     if big:
         msg = f"Large read: {'; '.join(big)}. A whole-file read is carried in every later turn; prefer grep, sed -n or Read with offset/limit unless you need all of it."
-        print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": msg}}))
+        hooklib.emit_context("PreToolUse", msg)
 
 
 if __name__ == "__main__":

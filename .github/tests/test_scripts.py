@@ -1121,5 +1121,84 @@ class LargeReadWarn(Sandbox):
             self.assertEqual((r.returncode, r.stdout), (0, ""))
 
 
+class HookLib(Sandbox):
+    """Shared hook input reader: the same fields for Claude Code and Codex input."""
+    def lib(self):
+        sys.path.insert(0, str(SCRIPTS)); self.addCleanup(sys.path.remove, str(SCRIPTS))
+        import importlib, hooklib
+        return importlib.reload(hooklib)
+
+    def test_claude_and_codex_input_give_the_same_fields(self):
+        h = self.lib()
+        claude = h.fields({"hook_event_name": "PreToolUse", "session_id": "s1", "transcript_path": "/u/.claude/projects/p/s1.jsonl", "cwd": "/w",
+                           "tool_name": "Bash", "tool_input": {"command": "cat big.md"}}, env={})
+        codex = h.fields({"hook_event_name": "PreToolUse", "session_id": "s2", "transcript_path": "/u/.codex/sessions/r.jsonl", "cwd": "/w", "model": "gpt-x",
+                          "tool_name": "Bash", "tool_input": {"command": ["bash", "-lc", "cat big.md"]}}, env={})
+        self.assertEqual((claude["agent"], codex["agent"]), ("claude-code", "codex"))
+        self.assertEqual((claude["tool"], claude["command"]), (codex["tool"], codex["command"]))
+        self.assertEqual((claude["model"], codex["model"]), ("", "gpt-x"))  # Claude Code sends the model only at session start, and not always
+
+    def test_bad_or_missing_input_is_empty(self):
+        for stdin in ("not json", "", "[1]"):
+            r = run([sys.executable, "-c", "import hooklib; print(hooklib.read_input())"], SCRIPTS, stdin=stdin)
+            self.assertEqual(r.stdout.strip(), "{}")
+        self.assertEqual(self.lib().fields(None, env={})["agent"], "unknown")
+
+    def test_output_form_follows_the_event(self):
+        import io
+        h, plain, js = self.lib(), io.StringIO(), io.StringIO()
+        h.emit_context("UserPromptSubmit", "note", plain); h.emit_context("PreToolUse", "note", js)
+        self.assertEqual(plain.getvalue(), "note\n")
+        self.assertEqual(json.loads(js.getvalue())["hookSpecificOutput"], {"hookEventName": "PreToolUse", "additionalContext": "note"})
+
+
+class HooksSync(Sandbox):
+    """Hook manifest and generator: the shipped config files come from the manifest; the user's own entries survive."""
+    def project(self):
+        p = self.tmp / "proj"; shutil.copytree(SCRIPTS, p / "scripts", ignore=shutil.ignore_patterns("__pycache__"))
+        for f in (".claude/settings.json", ".codex/hooks.json", "docs/agent/HOOKS.md"):
+            (p / f).parent.mkdir(parents=True, exist_ok=True); shutil.copy(ROOT / f, p / f)
+        return p
+
+    def sync(self, p, *args):
+        return run([sys.executable, "scripts/hooks-sync.py", *args], p)
+
+    def test_shipped_files_match_the_manifest(self):
+        r = run([sys.executable, str(SCRIPTS / "hooks-sync.py"), "--check"], ROOT)
+        self.assertEqual(r.returncode, 0, r.stdout)
+
+    def test_check_reports_drift_and_sync_repairs_it(self):
+        p = self.project(); s = p / ".claude/settings.json"; d = json.loads(s.read_text())
+        d["hooks"]["PreToolUse"][0]["matcher"] = "Read"; s.write_text(json.dumps(d))
+        r = self.sync(p, "--check")
+        self.assertEqual(r.returncode, 1); self.assertIn(".claude/settings.json", r.stdout); self.assertNotIn(".codex/hooks.json", r.stdout)
+        self.assertEqual(self.sync(p).returncode, 0)
+        self.assertEqual(json.loads(s.read_text()), json.loads((ROOT / ".claude/settings.json").read_text()))
+
+    def test_user_hooks_and_permissions_are_kept(self):
+        p = self.project(); s = p / ".claude/settings.json"; d = json.loads(s.read_text())
+        d["hooks"]["Stop"] = [{"hooks": [{"type": "command", "command": "say done"}]}]
+        d["hooks"]["PreToolUse"].append({"matcher": "Write", "hooks": [{"type": "command", "command": "my-lint.sh"}]})
+        d["permissions"]["allow"].append("Bash(npm test)"); d["outputStyle"] = "Concise"; s.write_text(json.dumps(d))
+        (p / ".codex/hooks.json").unlink()  # a missing file is created
+        self.assertEqual(self.sync(p).returncode, 0)
+        out = json.loads(s.read_text())
+        self.assertEqual(out["hooks"]["Stop"], d["hooks"]["Stop"])
+        self.assertIn({"matcher": "Write", "hooks": [{"type": "command", "command": "my-lint.sh"}]}, out["hooks"]["PreToolUse"])
+        self.assertEqual((out["permissions"], out["outputStyle"]), (d["permissions"], "Concise"))
+        self.assertEqual((p / ".codex/hooks.json").read_text(), (ROOT / ".codex/hooks.json").read_text())  # byte-identical: keeps Codex hook trust
+        self.assertEqual(self.sync(p, "--check").returncode, 0)
+
+    def test_unchanged_files_are_not_rewritten(self):
+        p = self.project(); before = {f: (p / f).stat().st_mtime_ns for f in (".claude/settings.json", ".codex/hooks.json")}
+        self.sync(p)
+        self.assertEqual(before, {f: (p / f).stat().st_mtime_ns for f in before})
+
+    def test_matrix_lists_every_guard_and_marks_missing_hooks(self):
+        m = json.loads((SCRIPTS / "hooks/manifest.json").read_text()); doc = (ROOT / "docs/agent/HOOKS.md").read_text()
+        for g in m["guards"]: self.assertIn("`%s`" % g["script"], doc)
+        self.assertIn("no hook", doc); self.assertIn("no run recorded", doc)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)
