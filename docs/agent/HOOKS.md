@@ -6,10 +6,11 @@ Read when adding an agent, when a hook API changed, or in the `port-check` skill
 | Guard | Purpose | Claude Code | Codex | DeutschlandGPT Code | Without a hook |
 | --- | --- | --- | --- | --- | --- |
 | `scripts/session-start.sh` | State summary at the start of a session | `SessionStart` on `^(startup\|clear)$` | `SessionStart` on `^(startup\|clear)$` | no hook | instruction: the agent runs the script itself (AGENTS.md, Session start) |
-| `scripts/context-check.py` | Notice when the context is large and a new session is due | `UserPromptSubmit` | `UserPromptSubmit` | no hook | instruction: core rule 9 (new session after a finished batch) |
+| `scripts/context-check.py` | Notice when the context is large and a new session is due | `UserPromptSubmit` | `UserPromptSubmit` | no hook | scripts/run.sh prints the notice after a run when the session log is found; else instruction: core rule 9 |
 | `scripts/large-read-warn.py` | Warning before a whole-file read of a large file | `PreToolUse` on `Read\|Bash` | no hook | no hook | instruction: read files over 8 KB in parts; command output goes through scripts/run.sh |
 | `scripts/detach-reminder.py` | Reminder to detach a session started for a handoff (Claude desktop app only) | `PostToolUse` on `mcp__ccd_session__start_session` | no hook | no hook | not applicable outside the Claude desktop app |
 | `scripts/githooks/pre-commit` | No secrets, source documents or half-finished Done tasks in a commit | git hook | git hook | git hook | git hook, the same for every agent (core.hooksPath, set at setup) |
+| `scripts/githooks/pre-push` | No force push, no deletion of a remote branch | git hook | git hook | git hook | git hook, the same for every agent; other destructive git commands: deny rules where the agent has them, else core rule 6 |
 | `scripts/githooks/commit-msg` | Commit messages carry a task ID | git hook | git hook | git hook | git hook, the same for every agent |
 
 ## Evidence per agent

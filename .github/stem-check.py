@@ -20,7 +20,7 @@ for f in ("docs/agent/OPERATING_MODEL.md", "docs/agent/ADVANCED.md"):
     if indexed != rules: err(f"{f}: index mismatch: {sorted(indexed ^ rules)}")
 
 # shell scripts parse
-for s in list((root / "scripts").glob("*.sh")) + [root / "scripts/githooks/pre-commit", root / ".github/bump-version.sh"]:
+for s in list((root / "scripts").glob("*.sh")) + [root / "scripts/githooks/pre-commit", root / "scripts/githooks/pre-push", root / "scripts/githooks/commit-msg", root / ".github/bump-version.sh"]:
     if subprocess.run(["bash", "-n", str(s)]).returncode: err(f"{s.name}: bash syntax error")
 
 for s in (root / "scripts").glob("*.py"):

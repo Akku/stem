@@ -1121,6 +1121,65 @@ class LargeReadWarn(Sandbox):
             self.assertEqual((r.returncode, r.stdout), (0, ""))
 
 
+class PrePush(SandboxRepo):
+    """pre-push guard: force pushes and remote branch deletion are refused for every agent."""
+    def setUp(self):
+        super().setUp()
+        self.remote = self.tmp / "remote.git"; run(["git", "init", "-q", "--bare", "-b", "main", str(self.remote)], self.tmp)
+        run(["git", "config", "core.hooksPath", "scripts/githooks"], self.repo); run(["git", "remote", "add", "origin", str(self.remote)], self.repo)
+        (self.repo / "a.txt").write_text("1\n"); self.assertEqual(self.commit("TASK-1: one").returncode, 0)
+
+    def push(self, *args):
+        return run(["git", "push", "-q", *args], self.repo, self.env)
+
+    def test_normal_pushes_and_new_branches_pass(self):
+        self.assertEqual(self.push("origin", "main").returncode, 0)
+        (self.repo / "a.txt").write_text("2\n"); self.commit("TASK-1: two")
+        self.assertEqual(self.push("origin", "main").returncode, 0)
+        run(["git", "checkout", "-q", "-b", "feature"], self.repo)
+        self.assertEqual(self.push("origin", "feature").returncode, 0)
+        run(["git", "tag", "v1"], self.repo); self.assertEqual(self.push("origin", "v1").returncode, 0)
+
+    def test_force_push_is_refused_and_can_be_overridden(self):
+        self.push("origin", "main"); (self.repo / "a.txt").write_text("2\n"); self.commit("TASK-1: two"); self.push("origin", "main")
+        run(["git", "reset", "-q", "--hard", "HEAD~1"], self.repo); (self.repo / "a.txt").write_text("3\n"); self.commit("TASK-1: other")
+        r = self.push("--force", "origin", "main")
+        self.assertNotEqual(r.returncode, 0); self.assertIn("not a fast-forward", r.stderr)
+        self.assertEqual(self.push("--force", "--no-verify", "origin", "main").returncode, 0)
+
+    def test_remote_branch_deletion_is_refused(self):
+        self.push("origin", "main"); run(["git", "checkout", "-q", "-b", "feature"], self.repo); self.push("origin", "feature")
+        r = self.push("origin", "--delete", "feature")
+        self.assertNotEqual(r.returncode, 0); self.assertIn("deletes the branch", r.stderr)
+
+
+class RunWrapperContextNotice(Sandbox):
+    """run.sh prints the context notice when the agent's session log is findable, and nothing otherwise."""
+    def runsh(self, tokens):
+        work = self.tmp / "work"; work.mkdir(exist_ok=True); conf = self.tmp / "claude"
+        env = {"AGENT_LOG_DIR": str(self.tmp / "logs"), "TMPDIR": str(self.tmp / "t"), "CLAUDE_CONFIG_DIR": str(conf), "CODEX_THREAD_ID": ""}
+        if tokens:
+            d = conf / "projects" / re.sub(r"[^A-Za-z0-9]", "-", str(work.resolve())); d.mkdir(parents=True, exist_ok=True)
+            write_jsonl(d / "sess1.jsonl", [assistant("claude-sonnet-5-5", 10000), assistant("claude-sonnet-5-5", tokens)])
+        return run(["bash", str(SCRIPTS / "run.sh"), "x", "true"], work.resolve(), env)
+
+    def test_silent_without_a_session_log_and_below_the_threshold(self):
+        for tokens in (0, 30000):
+            r = self.runsh(tokens)
+            self.assertEqual(r.returncode, 0); self.assertNotIn("CONTEXT", r.stdout); self.assertNotIn("context check", r.stdout)
+
+    def test_notice_once_above_the_threshold_and_exit_code_kept(self):
+        r = self.runsh(90000)
+        self.assertIn("CONTEXT NOTICE (run.sh)", r.stdout); self.assertIn("status: PASS", r.stdout)
+        self.assertNotIn("CONTEXT NOTICE", self.runsh(90000).stdout)  # again only after +30k, like the hook
+        f = run(["bash", str(SCRIPTS / "run.sh"), "x", "false"], self.tmp, {"AGENT_LOG_DIR": str(self.tmp / "logs")})
+        self.assertEqual(f.returncode, 1)
+
+    def test_notice_only_mode_is_silent_without_a_log(self):
+        r = run([sys.executable, str(SCRIPTS / "context-check.py"), "--auto", "--notice-only"], self.tmp, {"CLAUDE_CONFIG_DIR": str(self.tmp / "none"), "CODEX_THREAD_ID": ""})
+        self.assertEqual((r.returncode, r.stdout), (0, ""))
+
+
 class StemConfig(Sandbox):
     """Project choices in docs/agent/stem-config.json switch guards off without touching hook files."""
     def project(self, cfg):

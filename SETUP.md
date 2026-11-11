@@ -74,7 +74,7 @@ If something cannot be installed, explain what is lost and continue where possib
 
 ## 4. Git
 If this folder is not a git repository (typical for the ZIP route): `git init -b main`; set `user.name`/`user.email` only if missing (ask the user). Add a `.gitignore` for the chosen stack (include `.env*`, logs, build output). **Never commit secrets** because the repository may become public (the pre-commit hook blocks `.env` files and common token patterns).
-Always activate the pre-commit hook with `git config core.hooksPath scripts/githooks`: it blocks office/PDF/database files and rejects Done tasks with open boxes (`scripts/check-backlog.sh`); the `commit-msg` hook there enforces the commit message convention (`R-STATE-COHERENCE`: first line `TASK-<n>: <summary>`; the setup commits use `Initial commit` or `Set up ...`). Confidential inputs: create the agreed folder and add it to `.gitignore`; stage explicit paths, not `git add -A`, while untracked inputs exist.
+Always activate the pre-commit hook with `git config core.hooksPath scripts/githooks`: it blocks office/PDF/database files and rejects Done tasks with open boxes (`scripts/check-backlog.sh`); the `pre-push` hook there refuses force pushes and the deletion of remote branches; the `commit-msg` hook there enforces the commit message convention (`R-STATE-COHERENCE`: first line `TASK-<n>: <summary>`; the setup commits use `Initial commit` or `Set up ...`). Confidential inputs: create the agreed folder and add it to `.gitignore`; stage explicit paths, not `git add -A`, while untracked inputs exist.
 
 ## 5. Initialise Backlog.md
 ```sh

@@ -4,7 +4,8 @@ current context exceeds a threshold, then again every +30k. Threshold = smallest
 fixed floor of system prompt, tools and instructions is not session growth), a cap of 100k (env CONTEXT_WARN_TOKENS) and half the model's
 window (Claude: model read from the transcript; Codex: model_context_window from the session log; unknown -> cap of 100k).
 Reads the hook JSON from stdin through hooklib.py (transcript_path, session_id); manual use: --transcript FILE; task-end check: --auto finds the current
-session log itself (Codex: CODEX_THREAD_ID; Claude: newest transcript of this directory) and also prints one line below the threshold.
+session log itself (Codex: CODEX_THREAD_ID; Claude: newest transcript of this directory) and also prints one line below the threshold;
+--auto --notice-only (used by scripts/run.sh, so agents without a prompt hook get the notice too) stays silent below it.
 Switched off per project with "context_warning": false in docs/agent/stem-config.json (the hook entry stays).
 Silent and exit 0 on any problem or below the threshold (hook mode). Numbers only, no transcript content is printed."""
 import glob, json, os, re, sys
@@ -68,13 +69,14 @@ def current_log():
 
 def main():
     args = sys.argv[1:]
-    manual = "--transcript" in args or "--auto" in args
+    quiet = "--notice-only" in args  # scripts/run.sh: like the hook (silent below the threshold, then every +30k), log found like --auto
+    manual = ("--transcript" in args or "--auto" in args) and not quiet
     if "--transcript" not in args and hooklib.config("context_warning", True) is False: return 0  # module switched off at setup
     try:
         if "--transcript" in args:
             path, sid = args[args.index("--transcript") + 1], "manual"
         elif "--auto" in args:
-            path, sid = current_log(), "manual"
+            path = current_log(); sid = os.path.splitext(os.path.basename(path))[0] if quiet else "manual"
         else:
             f = hooklib.fields(hooklib.read_input()); path, sid = f["transcript"], f["session"] or "x"
         tokens, first, model = scan(path)
@@ -82,7 +84,7 @@ def main():
     except Exception:
         return 0
     if tokens < THRESHOLD:
-        if "--auto" in args and tokens: print("context check: about %dk tokens, threshold %dk: continue." % (tokens // 1000, THRESHOLD // 1000))
+        if "--auto" in args and tokens and not quiet: print("context check: about %dk tokens, threshold %dk: continue." % (tokens // 1000, THRESHOLD // 1000))
         return 0
     state = os.path.join(os.environ.get("TMPDIR", "/tmp"), "agent-logs", "ctx-" + "".join(c for c in sid if c.isalnum())[:40])
     last = 0
@@ -93,7 +95,7 @@ def main():
         os.makedirs(os.path.dirname(state), exist_ok=True); open(state, "w").write(str(tokens))
     except Exception: pass
     urgent = tokens >= THRESHOLD * 1.5
-    print("CONTEXT NOTICE (hook): the context holds about %dk tokens (threshold %dk, session started at %dk). %s" % (tokens // 1000, THRESHOLD // 1000, (first or 0) // 1000,
+    print("CONTEXT NOTICE (%s): the context holds about %dk tokens (threshold %dk, session started at %dk). %s" % ("run.sh" if quiet else "hook", tokens // 1000, THRESHOLD // 1000, (first or 0) // 1000,
           "Hand off at the next task end, even inside a related batch (R-BATCHING)." if urgent else
           "Do not interrupt the current task. When it is finished, check: hand off only if at least ~5 turns of unrelated work are ahead; continue in this session if the rest is short, closely related (batch) or needs hard-won context."),
           "Hand-off (R-BATCHING): run the handoff skill; it always ends by starting a fresh session yourself, detached (no fork of this conversation) and stopping. Inside an approved batch do it without asking; otherwise tell the user (in their language) the context is large and that they may say Handoff.")

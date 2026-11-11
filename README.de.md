@@ -133,7 +133,7 @@ Stand laut eigener Dokumentation der Projekte, November 2026; diese Projekte än
 | `SETUP.md` | Einmalige Setup-Anleitung für den Agenten (wird nach dem Setup gelöscht) |
 | `AGENTS.md` | Gemeinsame Kernregeln (Codex & kompatible Tools) |
 | `CLAUDE.md` | Dünner Adapter, verweist auf `AGENTS.md` |
-| `scripts/githooks/pre-commit` | Schutz vor dem Committen vertraulicher Quelldokumente und gängiger Secrets (wird beim Setup aktiviert) |
+| `scripts/githooks/pre-commit`, `pre-push` | Schutz für jeden Agenten: keine vertraulichen Quelldokumente oder gängigen Secrets in einem Commit; kein Force-Push und kein Löschen von Remote-Branches (wird beim Setup aktiviert) |
 | `STEM_VERSION`, `CHANGELOG.md` | STEM-Version, auf der das Projekt basiert; Änderungen je Version |
 | `.claude/settings.json` | Claude Code: sichere Befehle vorab freigegeben, Sitzungsstart-Hook |
 | `LICENSE`, `CITATION.cff` | MIT (STEM), citation data; `.github/stem-check.py` + Workflow prüfen STEM selbst |

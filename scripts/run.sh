@@ -38,6 +38,9 @@ if [ "$code" -ne 0 ]; then
   echo "--- last 15 lines ---"
   tail -n 15 "$log"
 fi
+# Context notice (R-BATCHING) for agents without a prompt hook and inside batches: silent unless the agent's session log is found and the context is large.
+cc="$(dirname "$0")/context-check.py"
+[ -f "$cc" ] && command -v python3 >/dev/null 2>&1 && { python3 "$cc" --auto --notice-only 2>/dev/null || true; }
 keep=${AGENT_LOG_KEEP_DAYS:-30}
 if [ -n "$root" ] && [ "$logdir" = "$root/.agent-logs" ] && [ "$keep" -gt 0 ] 2>/dev/null; then
   refs=(); for r in "$root/backlog" "$root/docs"; do [ -e "$r" ] && refs+=("$r"); done

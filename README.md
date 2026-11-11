@@ -133,7 +133,7 @@ Based on each project's own documentation as of November 2026; these projects ch
 | `.agents/skills` | Link to `.claude/skills/` for shared Codex skill sources; Codex lists these skills natively (automated probe) |
 | `dgpt.md`, `.deutschlandgpt/skills` | Adapter for DeutschlandGPT Code: pointer to `AGENTS.md` and link to `.claude/skills/` (untested) |
 | `.claude/agents/` | Agents: `ux-designer` (optional module, for projects with a UI) |
-| `scripts/githooks/pre-commit` | Guard against committing confidential source documents and common secrets (activated during setup) |
+| `scripts/githooks/pre-commit`, `pre-push` | Guards for every agent: no confidential source documents or common secrets in a commit; no force push or remote branch deletion (activated during setup) |
 | `STEM_VERSION`, `CHANGELOG.md` | STEM version this project is based on; what changed per version |
 | `.claude/settings.json` | Claude Code: safe commands pre-approved, session-start hook |
 | `LICENSE`, `CITATION.cff` | MIT (STEM), citation data; `.github/stem-check.py` + workflow check STEM itself |

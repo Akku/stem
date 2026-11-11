@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Refuses pushes that destroy work on the remote, for every agent (not only those with deny rules):
+# a force push (the remote branch has commits the push would drop) and the deletion of a remote branch. Tags are left alone.
+# git passes one line per ref on stdin: <local ref> <local sha> <remote ref> <remote sha>.
+# Override only deliberately: git push --no-verify
+bad=()
+while read -r _ lsha rref rsha; do
+  case "$rref" in refs/heads/*) ;; *) continue ;; esac
+  branch=${rref#refs/heads/}
+  if [ -z "${lsha//0/}" ]; then bad+=("$branch: deletes the branch on the remote"); continue; fi
+  [ -z "${rsha//0/}" ] && continue  # new branch on the remote
+  git merge-base --is-ancestor "$rsha" "$lsha" 2>/dev/null || bad+=("$branch: not a fast-forward, commits on the remote would be dropped")
+done
+if [ ${#bad[@]} -gt 0 ]; then
+  echo "pre-push: refusing to push:" >&2
+  printf '  %s\n' "${bad[@]}" >&2
+  echo "Fetch and merge or rebase first. Override only deliberately, after the user agreed: git push --no-verify" >&2
+  exit 1
+fi
