@@ -1121,6 +1121,39 @@ class LargeReadWarn(Sandbox):
             self.assertEqual((r.returncode, r.stdout), (0, ""))
 
 
+class StemConfig(Sandbox):
+    """Project choices in docs/agent/stem-config.json switch guards off without touching hook files."""
+    def project(self, cfg):
+        p = self.tmp / "proj"; shutil.copytree(SCRIPTS, p / "scripts", ignore=shutil.ignore_patterns("__pycache__"))
+        (p / "AGENTS.md").write_text("x\n"); (p / "docs/agent").mkdir(parents=True)
+        if cfg is not None: (p / "docs/agent/stem-config.json").write_text(cfg)
+        big = p / "big.md"; big.write_text("x" * 20000)
+        t = p / "t.jsonl"; write_jsonl(t, [assistant("claude-sonnet-5-5", 10000), assistant("claude-sonnet-5-5", 90000)])
+        return p, json.dumps({"tool_name": "Read", "tool_input": {"file_path": str(big)}}), json.dumps({"transcript_path": str(t), "session_id": "s"})
+
+    def outputs(self, cfg):
+        p, read, prompt = self.project(cfg); env = {"TMPDIR": str(self.tmp / ("tmp-%s" % hash(cfg)))}
+        return (run([sys.executable, "scripts/large-read-warn.py"], p, env, stdin=read).stdout,
+                run([sys.executable, "scripts/context-check.py"], p, env, stdin=prompt).stdout)
+
+    def test_guards_are_on_without_a_config_and_with_a_broken_one(self):
+        for cfg in (None, "not json", "{}"):
+            read, ctx = self.outputs(cfg)
+            self.assertIn("Large read", read, cfg); self.assertIn("CONTEXT NOTICE", ctx, cfg)
+            shutil.rmtree(self.tmp / "proj")
+
+    def test_each_guard_can_be_switched_off(self):
+        read, ctx = self.outputs('{"context_warning": false}')
+        self.assertIn("Large read", read); self.assertEqual(ctx, "")
+        shutil.rmtree(self.tmp / "proj")
+        read, ctx = self.outputs('{"large_read_warning": false}')
+        self.assertEqual(read, ""); self.assertIn("CONTEXT NOTICE", ctx)
+
+    def test_setup_does_not_tell_the_agent_to_edit_hook_files(self):
+        s = (ROOT / "SETUP.md").read_text()
+        self.assertNotIn("hook entry and `scripts/context-check.py`", s); self.assertIn("docs/agent/stem-config.json", s)
+
+
 class HookLib(Sandbox):
     """Shared hook input reader: the same fields for Claude Code and Codex input."""
     def lib(self):

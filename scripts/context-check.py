@@ -5,6 +5,7 @@ fixed floor of system prompt, tools and instructions is not session growth), a c
 window (Claude: model read from the transcript; Codex: model_context_window from the session log; unknown -> cap of 100k).
 Reads the hook JSON from stdin through hooklib.py (transcript_path, session_id); manual use: --transcript FILE; task-end check: --auto finds the current
 session log itself (Codex: CODEX_THREAD_ID; Claude: newest transcript of this directory) and also prints one line below the threshold.
+Switched off per project with "context_warning": false in docs/agent/stem-config.json (the hook entry stays).
 Silent and exit 0 on any problem or below the threshold (hook mode). Numbers only, no transcript content is printed."""
 import glob, json, os, re, sys
 import hooklib
@@ -68,6 +69,7 @@ def current_log():
 def main():
     args = sys.argv[1:]
     manual = "--transcript" in args or "--auto" in args
+    if "--transcript" not in args and hooklib.config("context_warning", True) is False: return 0  # module switched off at setup
     try:
         if "--transcript" in args:
             path, sid = args[args.index("--transcript") + 1], "manual"

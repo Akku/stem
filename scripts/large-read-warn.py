@@ -64,6 +64,7 @@ def targets(data):
 
 
 def main():
+    if hooklib.config("large_read_warning", True) is False: return
     try: paths = targets(hooklib.read_input())
     except (ValueError, AttributeError): return
     big = []

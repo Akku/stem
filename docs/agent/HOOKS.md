@@ -18,6 +18,10 @@ Read when adding an agent, when a hook API changed, or in the `port-check` skill
 - **Codex:** automated probe runs; hooks need the user's trust (bound to the file's hash).
 - **DeutschlandGPT Code:** from its documentation only, no run recorded; the app documents no hooks.
 
+## Project choices
+
+A project switches a guard off in `docs/agent/stem-config.json`, which the scripts read at run time: `{"context_warning": false}`, `{"large_read_warning": false}`. The hook entries stay as shipped. Never edit `.claude/settings.json` hooks or `.codex/hooks.json` for such a choice: Codex binds its trust to the file's hash and may block the edit.
+
 ## Changing the wiring
 
 1. Edit `scripts/hooks/manifest.json` (new agent: a key under `agents`, a command template in `scripts/hooks-sync.py`, a `wiring` entry per guard).

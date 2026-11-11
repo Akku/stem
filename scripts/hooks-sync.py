@@ -62,7 +62,10 @@ def matrix(manifest):
             else: cells.append("no hook")
         lines.append("| `%s` | %s | %s | %s |" % (g["script"], g["purpose"], " | ".join(cells), g["fallback"]))
     lines += ["", "## Evidence per agent", ""] + ["- **%s:** %s." % (a["name"], a["evidence"]) for a in agents.values()]
-    lines += ["", "## Changing the wiring", "",
+    lines += ["", "## Project choices", "",
+              "A project switches a guard off in `docs/agent/stem-config.json`, which the scripts read at run time: `{\"context_warning\": false}`, `{\"large_read_warning\": false}`. "
+              "The hook entries stay as shipped. Never edit `.claude/settings.json` hooks or `.codex/hooks.json` for such a choice: Codex binds its trust to the file's hash and may block the edit.", ""]
+    lines += ["## Changing the wiring", "",
               "1. Edit `scripts/hooks/manifest.json` (new agent: a key under `agents`, a command template in `scripts/hooks-sync.py`, a `wiring` entry per guard).",
               "2. Run `python3 scripts/hooks-sync.py`; `--check` must then pass.",
               "3. Run the session-start and hook item of the port-check checklist (`docs/agent/PORT_CHECK.md`, C1) in that agent and record the result under `evidence`.",

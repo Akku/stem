@@ -83,7 +83,7 @@ def project_root(start=None):
     while True:
         if os.path.exists(os.path.join(d, "AGENTS.md")): return d
         up = os.path.dirname(d)
-        if up == d: return os.path.abspath(start or ".")
+        if up == d: return os.path.abspath(start or os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
         d = up
 
 
