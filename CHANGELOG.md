@@ -2,7 +2,7 @@
 
 Newest first. Projects read the entries newer than their `STEM_VERSION` (see `stem-update` skill). Each entry: what changed and who benefits; renames and removals get a `Migration:` line (what to rename or delete) that `stem-update` carries out.
 
-## Unreleased
+## 1.18.1
 - **Setup takes the model from the agent:** session start prints `MODEL IN USE: <model>` (with the effort level where the agent gives it) when the hook input names the model; setup skips its model question when the model is known from that line or from the agent itself, and asks only otherwise.
 - **Setup asks one question less:** the stack is no longer a question. Users with a constraint name it with the goal (expert and technical profile are invited to); otherwise the agent chooses, states the choice with its reason in one sentence, and it can be changed before the first task.
 - **Fix: no foreign handoff in new projects:** the template carried a `docs/agent/HANDOFF.md` from a maintenance run (since 1.5.0), which session start printed in a fresh project. Removed; `stem-check` now fails when the template holds project state (`HANDOFF.md`, `backlog/`, absolute home paths). Migration: a project that never wrote a handoff of its own and still has this file (it starts with "Dispatcher run 2026-10-23") deletes it.
