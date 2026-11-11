@@ -1364,7 +1364,7 @@ class HooksSync(Sandbox):
     def test_matrix_lists_every_guard_and_marks_missing_hooks(self):
         m = json.loads((SCRIPTS / "hooks/manifest.json").read_text()); doc = (ROOT / "docs/agent/HOOKS.md").read_text()
         for g in m["guards"]: self.assertIn("`%s`" % g["script"], doc)
-        self.assertIn("no hook", doc); self.assertIn("no run recorded", doc)
+        self.assertIn("no hook", doc); self.assertIn("one user run on 2026-11-11", doc)
 
 
 if __name__ == "__main__":

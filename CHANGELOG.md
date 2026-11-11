@@ -2,6 +2,11 @@
 
 Newest first. Projects read the entries newer than their `STEM_VERSION` (see `stem-update` skill). Each entry: what changed and who benefits; renames and removals get a `Migration:` line (what to rename or delete) that `stem-update` carries out.
 
+## Unreleased
+- **Field report variant `trial`:** the issue template accepts the result of a first-run check (fixed checks after setup and the first task, the agent's look back, the user's answers), so a new user's run can come back to STEM in a comparable form.
+- **Setup cleans up completely:** the list of STEM maintenance files that setup removes now includes `.github/rule-reach.py`, `.github/retired-names.py` and `.github/tests/`, and setup leaves STEM's scripts unedited. Rule text that is read after setup no longer points to the deleted `SETUP.md`. Migration: a project may delete those three paths; a `scripts/session-start.sh` that was edited by hand is replaced by STEM's version at the next update.
+- **DeutschlandGPT Code adapter tested once:** a real run (setup, first tasks, handoff) worked; README and `docs/agent/HOOKS.md` say what was observed and what was not.
+
 ## 1.18.1
 - **Setup takes the model from the agent:** session start prints `MODEL IN USE: <model>` (with the effort level where the agent gives it) when the hook input names the model; setup skips its model question when the model is known from that line or from the agent itself, and asks only otherwise.
 - **Setup asks one question less:** the stack is no longer a question. Users with a constraint name it with the goal (expert and technical profile are invited to); otherwise the agent chooses, states the choice with its reason in one sentence, and it can be changed before the first task.

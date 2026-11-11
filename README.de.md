@@ -65,7 +65,7 @@ Beantworte die Rückfragen des Agenten und genehmige nötige Installationsschrit
 <details>
 <summary>Teststand der Agenten und Plattformen</summary>
 
-Claude Code ist im praktischen Einsatz getestet. Codex ist durch einen automatisierten Testlauf getestet (Einrichtung eines neuen Projekts, native Skill-Liste, Abstimmungsgespräch, eine Aufgabe bis Done) sowie in einem bestehenden Projekt mit dokumentierten Umgehungslösungen; Projekt-Hooks, die Codex-Oberfläche, Codex Cloud und das Verhalten bei langem Kontext sind nicht abgedeckt. Die [Codex-Hinweise](docs/agent/CODEX.md) erklären Voraussetzungen, Sitzungsstart, Sandbox-Zugriff und das Vorgehen ohne Kontextwarnung (Agentenhinweise auf Englisch). Für DeutschlandGPT Code gibt es einen Adapter (`dgpt.md`, Skill-Verweis), geschrieben nach dessen Dokumentation; er ist noch nicht getestet, und diese App führt keine STEM-Hooks aus.
+Claude Code ist im praktischen Einsatz getestet. Codex ist durch einen automatisierten Testlauf getestet (Einrichtung eines neuen Projekts, native Skill-Liste, Abstimmungsgespräch, eine Aufgabe bis Done) sowie in einem bestehenden Projekt mit dokumentierten Umgehungslösungen; Projekt-Hooks, die Codex-Oberfläche, Codex Cloud und das Verhalten bei langem Kontext sind nicht abgedeckt. Die [Codex-Hinweise](docs/agent/CODEX.md) erklären Voraussetzungen, Sitzungsstart, Sandbox-Zugriff und das Vorgehen ohne Kontextwarnung (Agentenhinweise auf Englisch). Für DeutschlandGPT Code gibt es einen Adapter (`dgpt.md`, Skill-Verweis), geschrieben nach dessen Dokumentation und in einem echten Durchlauf getestet (macOS, Einrichtung, erste Aufgaben, Übergabe); diese App führt keine STEM-Hooks aus, die Leitplanken gibt es dort nur als Anweisungen.
 
 macOS ist getestet. Auf anderen Systemen, Agenten oder Modellen passt der Skill `port-check` STEM als Overlay an, misst das Ergebnis und berichtet es (Angebot beim Session-Start).
 
@@ -128,7 +128,7 @@ Stand laut eigener Dokumentation der Projekte, November 2026; diese Projekte än
 | `STARTE_HIER.md` / `START_HERE.md` | Anleitung für Menschen (DE/EN) |
 | `.claude/skills/` | Skills: `retro`, `alignment`, `handoff`, `promote-learning`, `stem-update`, `port-check`; optionales Modul (Auswahl beim Setup): `market-analysis` |
 | `.agents/skills` | Verweis auf `.claude/skills/` für gemeinsame Codex-Skill-Quellen; Codex listet diese Skills nativ (automatisierter Testlauf) |
-| `dgpt.md`, `.deutschlandgpt/skills` | Adapter für DeutschlandGPT Code: Verweis auf `AGENTS.md` und auf `.claude/skills/` (ungetestet) |
+| `dgpt.md`, `.deutschlandgpt/skills` | Adapter für DeutschlandGPT Code: Verweis auf `AGENTS.md` und auf `.claude/skills/` (ein echter Durchlauf) |
 | `.claude/agents/` | Agenten: `ux-designer` (optionales Modul, für Projekte mit Oberfläche) |
 | `SETUP.md` | Einmalige Setup-Anleitung für den Agenten (wird nach dem Setup gelöscht) |
 | `AGENTS.md` | Gemeinsame Kernregeln (Codex & kompatible Tools) |

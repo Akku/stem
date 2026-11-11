@@ -256,7 +256,7 @@ This operating model should NOT redefine a parallel task schema, status model, p
 
 Where the existing Backlog.md setup provides concepts such as Acceptance Criteria, Implementation Plan, Implementation Notes, Definition of Done, Final Summary, Docs, or Decisions, use those native structures instead of inventing duplicates.
 
-Defaults when the project has no stricter convention (set up by `SETUP.md`): `autoCommit` is off; code and its task changes are committed together; unfinished tasks end with a concrete continuation point; approved batches avoid repeated approval questions. Use `backlog <cmd> --help` for unknown commands. The long `backlog instructions` guides (`overview`, `task-creation`, `task-execution`, `task-finalization`) are optional: read one only when `--help` and this file do not answer.
+Defaults when the project has no stricter convention (set at setup): `autoCommit` is off; code and its task changes are committed together; unfinished tasks end with a concrete continuation point; approved batches avoid repeated approval questions. Use `backlog <cmd> --help` for unknown commands. The long `backlog instructions` guides (`overview`, `task-creation`, `task-execution`, `task-finalization`) are optional: read one only when `--help` and this file do not answer.
 
 Use the Backlog.md CLI when the repository expects it. Consult detailed lifecycle documentation at the relevant lifecycle action rather than preloading every procedure at session start. For unfamiliar commands, prefer built-in help over guessing.
 
@@ -411,7 +411,7 @@ Project agents live in `.claude/agents/<name>.md` (for example `ux-designer`, se
 <!-- RULE:R-REVIEW:START -->
 ## 11. Review should be risk-triggered, not universal
 
-The Definition of Done carries one item for it (see `SETUP.md`): for `size-L`, more than about 500 changed lines, or new command execution, data access or authentication, an independent review ran or the waiver is justified. It puts the decision at the moment of closing, where this section is otherwise not loaded.
+The Definition of Done carries one item for it (written at setup into the Backlog.md configuration): for `size-L`, more than about 500 changed lines, or new command execution, data access or authentication, an independent review ran or the waiver is justified. It puts the decision at the moment of closing, where this section is otherwise not loaded.
 
 Independent review has value, but it also consumes tokens, wall-clock time, and coordination effort.
 

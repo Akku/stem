@@ -26,4 +26,4 @@ Process every item in this section at the first retro, then delete the section.
 
 ## Project setup
 
-Written by `SETUP.md` (profile, size and modules, agents used); the retro checks what was used. Kept after the first retro.
+Written at setup (profile, size and modules, agents used); the retro checks what was used. Kept after the first retro.

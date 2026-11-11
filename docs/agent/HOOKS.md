@@ -18,7 +18,7 @@ Read when adding an agent, when a hook API changed, or in the `port-check` skill
 
 - **Claude Code:** daily use.
 - **Codex:** automated probe runs; hooks need the user's trust (bound to the file's hash); PreToolUse wiring observed in one CLI run (codex-cli 0.166.0, 2026-11-11: the large-read note reached the model, the deny guard stopped the command); the Codex app and the trust review itself are not covered.
-- **DeutschlandGPT Code:** from its documentation only, no run recorded; the app documents no hooks.
+- **DeutschlandGPT Code:** one user run on 2026-11-11 (STEM 1.18.0, macOS): `dgpt.md` followed, session start run by the agent, skills found, tasks taken to Done, handoff through the fallback; the read-in-parts line and destructive commands were not tested; the app documents no hooks.
 
 ## Project choices
 
