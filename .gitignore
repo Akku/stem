@@ -7,3 +7,7 @@ __pycache__/
 .env
 .env.*
 !.env.example
+
+# DeutschlandGPT Code: local state of the app (the skills link and dgpt.md are versioned)
+.deutschlandgpt/worktrees/
+.deutschlandgpt/settings.local.json

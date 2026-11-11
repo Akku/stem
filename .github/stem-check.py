@@ -59,10 +59,14 @@ for pth in (".claude/skills", ".claude/settings.json", ".github", ".gitignore", 
     if not (root / pth).exists(): err(f"{pth} missing (SETUP.md step 0 expects it)")
 
 # Codex skill path: link to the Claude skills (one source for skill text); symlink or git's text-file fallback
-link = root / ".agents/skills"
-ok_link = link.is_symlink() and link.resolve() == (root / ".claude/skills").resolve()
-ok_fallback = link.is_file() and link.read_text().strip() == "../.claude/skills"  # git on Windows without symlink support writes the target as text
-if not (ok_link or ok_fallback): err(".agents/skills must be a symlink to ../.claude/skills")
+for rel in (".agents/skills", ".deutschlandgpt/skills"):  # Codex, DeutschlandGPT Code
+    link = root / rel
+    ok_link = link.is_symlink() and link.resolve() == (root / ".claude/skills").resolve()
+    ok_fallback = link.is_file() and link.read_text().strip() == "../.claude/skills"  # git on Windows without symlink support writes the target as text
+    if not (ok_link or ok_fallback): err(f"{rel} must be a symlink to ../.claude/skills")
+# DeutschlandGPT Code adapter: read every turn, so it stays a pointer to AGENTS.md
+dg = root / "dgpt.md"
+if not dg.exists() or "`AGENTS.md`" not in dg.read_text() or len(dg.read_bytes()) > 1536: err("dgpt.md must exist, point to AGENTS.md and stay under 1.5 KB")
 
 # AGENTS.md is loaded in every session: keep it within budget; settings deny secrets
 if len((root / "AGENTS.md").read_bytes()) > 7680: err("AGENTS.md exceeds the 7.5 KB budget (move rules to OPERATING_MODEL.md)")

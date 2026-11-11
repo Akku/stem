@@ -65,7 +65,7 @@ Answer the agent's questions and approve installation steps as needed. It sets u
 <details>
 <summary>Agent and platform test status</summary>
 
-Claude Code is tested in real use. Codex is tested by an automated probe run (fresh setup, native skill listing, alignment interview, one task to Done) and in an existing project with documented workarounds; project hooks, the Codex UI, Codex Cloud and long-context behaviour are not covered. See [Codex mechanics](docs/agent/CODEX.md) for prerequisites, session start, sandbox access and the context-warning fallback.
+Claude Code is tested in real use. Codex is tested by an automated probe run (fresh setup, native skill listing, alignment interview, one task to Done) and in an existing project with documented workarounds; project hooks, the Codex UI, Codex Cloud and long-context behaviour are not covered. See [Codex mechanics](docs/agent/CODEX.md) for prerequisites, session start, sandbox access and the context-warning fallback. DeutschlandGPT Code has an adapter (`dgpt.md`, skills link) written from its documentation; it is not tested yet, and that app runs no STEM hooks.
 
 macOS is tested. On other systems, agents or models the `port-check` skill adapts STEM as an overlay, measures it and reports the result (offered at session start).
 
@@ -131,6 +131,7 @@ Based on each project's own documentation as of November 2026; these projects ch
 | `CLAUDE.md` | Thin adapter pointing to `AGENTS.md` |
 | `.claude/skills/` | Skills: `retro`, `alignment`, `handoff`, `promote-learning`, `stem-update`, `port-check`; optional module (chosen in setup): `market-analysis` |
 | `.agents/skills` | Link to `.claude/skills/` for shared Codex skill sources; Codex lists these skills natively (automated probe) |
+| `dgpt.md`, `.deutschlandgpt/skills` | Adapter for DeutschlandGPT Code: pointer to `AGENTS.md` and link to `.claude/skills/` (untested) |
 | `.claude/agents/` | Agents: `ux-designer` (optional module, for projects with a UI) |
 | `scripts/githooks/pre-commit` | Guard against committing confidential source documents and common secrets (activated during setup) |
 | `STEM_VERSION`, `CHANGELOG.md` | STEM version this project is based on; what changed per version |
