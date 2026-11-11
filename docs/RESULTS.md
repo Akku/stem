@@ -1,6 +1,6 @@
 # Results from using STEM on itself
 
-Three curves from the author's own work. They are **dogfooding data, not a benchmark**: 291 Claude Code sessions in 14 projects, one user, 2026-10-03 to 2026-11-07, no control group without STEM. Numbers only; no project names or session content. A controlled comparison (STEM vs. a plain agent) is planned as experiment G2 in [EXPERIMENTS.md](agent/EXPERIMENTS.md).
+Three curves from the author's own work. They are **dogfooding data, not a benchmark**: 291 Claude Code sessions in 14 projects, one user, 2026-10-03 to 2026-11-07, no control group without STEM. Numbers only; no project names or session content. A first controlled comparison (experiment G2: 24 runs, Codex, small single-session fixture tasks) ran on 2026-11-06; see [below](#controlled-comparison-g2-small-tasks-only).
 
 ## 1. Traceability: commits that carry a task ID
 
@@ -25,3 +25,9 @@ The median peak context of a session fell from several hundred thousand tokens i
 - Not a with/without comparison, and not generalised beyond one user.
 - Not fewer model calls per task: that figure stayed flat in the same period.
 - The start context of a session (about 58k at the start, about 71k now) is mostly Claude Code itself, global settings and tools, not STEM.
+
+## Controlled comparison G2 (small tasks only)
+
+STEM against the plain agent on the same small coding tasks: 24 runs on Codex, 3 per task and variant, hidden tests decide acceptance. Both variants were accepted in 100 % of the runs. STEM used 2.4 times (small tasks) and 3.0 times (medium tasks) the tokens per accepted change; after two cuts to the workflow for small tasks the factor was about 2.0 in a re-run of the small tasks.
+
+This matches the advice in the README: for one-off and small single-session work, use the plain agent. The comparison does not cover what STEM is built for: alignment on unclear requirements, continuity across many sessions and larger projects. It ran on one agent with one fixture project, and the maintainer did not spot-check the runs by hand. A test for ambiguous, larger tasks is in preparation.
