@@ -1201,6 +1201,10 @@ class ModelClass(SandboxRepo):
                           ({"source": "clear"}, None), (None, None), ({"model": "claude-fable-5-2"}, {"CLAUDE_EFFORT": "low"})):
             self.assertNotIn("MODEL CLASS", self.start(hook, env), (hook, env))
 
+    def test_sed_hint_only_on_macos(self):
+        import platform
+        self.assertEqual("macOS: write `sed -i '' -e" in self.start({}), platform.system() == "Darwin")
+
     def test_model_line_only_when_the_agent_names_the_model(self):
         self.assertIn("MODEL IN USE: some-mid-model (from the agent", self.start({"model": "some-mid-model", "session_id": "m"}))
         self.assertNotIn("MODEL IN USE", self.start({"session_id": "m"}))

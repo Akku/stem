@@ -133,6 +133,8 @@ if [ -f docs/agent/HANDOFF.md ]; then
     [ -n "$hv" ] && [ -n "${lv:-}" ] && [ "$hv" != "$lv" ] && echo "WARNING: HANDOFF.md names stem $hv but STEM_VERSION is $lv: the handoff may be stale; check it against the current state"
   fi
 else echo "no HANDOFF.md (clean boundary: state is in git and the backlog)"; fi
+# BSD sed (macOS) needs the backup argument that GNU sed lets you omit; agents trip over it again and again
+[ "$(uname -s 2>/dev/null)" = Darwin ] && { echo; echo "macOS: write \`sed -i '' -e ...\` (in-place sed needs the empty argument here; \`sed -i -e ...\` fails or leaves a stray file)"; }
 mn=$(echo "$mc" | awk '{print $2}')  # named by the agent's hook input; setup then skips its model question
 [ -n "$mn" ] && [ "$mn" != "-" ] && { echo; echo "MODEL IN USE: $mn${CLAUDE_EFFORT:+, effort $CLAUDE_EFFORT} (from the agent, not asked)"; }
 case "$mc" in lean\ *)
