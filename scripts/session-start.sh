@@ -138,6 +138,6 @@ else echo "no HANDOFF.md (clean boundary: state is in git and the backlog)"; fi
 mn=$(echo "$mc" | awk '{print $2}')  # named by the agent's hook input; setup then skips its model question
 [ -n "$mn" ] && [ "$mn" != "-" ] && { echo; echo "MODEL IN USE: $mn${CLAUDE_EFFORT:+, effort $CLAUDE_EFFORT} (from the agent, not asked)"; }
 case "$mc" in lean\ *)
-  mm=${mc#lean }; echo; echo "MODEL CLASS lean (${mm% *}; \`R-ROUTING\`, Model classes): the size-S fast path (core rule 1a) also covers size-M tasks; core rule 3 applies only when instruction files are edited; core rule 5 and the tool-proposal sentence of rule 4 need no reminder. Everything else applies unchanged, including security, stop conditions and evidence." ;;
+  mm=${mc#lean }; echo; echo "MODEL CLASS lean (${mm% *}; \`R-ROUTING\`, Model classes): the size-S fast path (core rule 1a) also covers size-M tasks, but a point the task leaves undecided is settled with the user before implementing (core rule 1d); core rule 3 applies only when instruction files are edited; core rule 5 and the tool-proposal sentence of rule 4 need no reminder. Everything else applies unchanged, including security, stop conditions and evidence." ;;
 esac
 echo; echo "Rules: see AGENTS.md; further rules by ID via docs/agent/OPERATING_MODEL.md"

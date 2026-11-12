@@ -1193,7 +1193,7 @@ class ModelClass(SandboxRepo):
 
     def test_top_tier_claude_model_gets_the_lean_line(self):
         out = self.start({"hook_event_name": "SessionStart", "session_id": "s-lean", "model": "claude-fable-5-2", "transcript_path": "/u/.claude/projects/p/s.jsonl"})
-        self.assertIn("MODEL CLASS lean (claude-fable-5-2;", out); self.assertIn("also covers size-M", out)
+        self.assertIn("MODEL CLASS lean (claude-fable-5-2;", out); self.assertIn("also covers size-M", out); self.assertIn("settled with the user before implementing", out)
         self.assertIn("## handoff", out)  # the rest of the summary is unchanged
 
     def test_standard_unknown_missing_and_low_effort_print_nothing(self):
