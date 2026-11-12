@@ -14,7 +14,7 @@ STEM is a template harness to kickstart your project. It sits on top of the codi
 
 ## Why STEM
 
-**Humor-warning:** The name STEM is derived from the AI in the movie 'Upgrade (2018)'.
+**Humor-warning:** The name STEM is derived from the AI in the movie '[Upgrade (2018)](https://www.imdb.com/de/title/tt6499752/)'.
 
 | Assumption | What STEM provides |
 | --- | --- |
