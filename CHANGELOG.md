@@ -2,7 +2,7 @@
 
 Newest first. Projects read the entries newer than their `STEM_VERSION` (see `stem-update` skill). Each entry: what changed and who benefits; renames and removals get a `Migration:` line (what to rename or delete) that `stem-update` carries out.
 
-## Unreleased
+## 1.18.2
 - **Field report variant `trial`:** the issue template accepts the result of a first-run check (fixed checks after setup and the first task, the agent's look back, the user's answers), so a new user's run can come back to STEM in a comparable form.
 - **Setup cleans up completely:** the list of STEM maintenance files that setup removes now includes `.github/rule-reach.py`, `.github/retired-names.py` and `.github/tests/`, and setup leaves STEM's scripts unedited. Rule text that is read after setup no longer points to the deleted `SETUP.md`. Migration: a project may delete those three paths; a `scripts/session-start.sh` that was edited by hand is replaced by STEM's version at the next update.
 - **DeutschlandGPT Code adapter tested once:** a real run (setup, first tasks, handoff) worked; README and `docs/agent/HOOKS.md` say what was observed and what was not.
