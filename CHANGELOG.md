@@ -2,6 +2,9 @@
 
 Newest first. Projects read the entries newer than their `STEM_VERSION` (see `stem-update` skill). Each entry: what changed and who benefits; renames and removals get a `Migration:` line (what to rename or delete) that `stem-update` carries out.
 
+## Unreleased
+- **Update notice prints the rule ID:** in `scripts/session-start.sh` the backticks around `R-STEM-UPDATE` in the "STEM UPDATE AVAILABLE" line were unescaped inside double quotes and ran as a command ("command not found", empty spot in the notice); now escaped. Found in a STEM project. Migration: copy `scripts/session-start.sh`.
+
 ## 1.18.3
 - **market-analysis without length limits:** the skill no longer caps the result at one page or 8 alternatives (a prompt-audit finding: such caps date from more verbose models).
 - **Lean class asks first:** the lean line now says that a point the task leaves undecided is settled with the user before implementing. In a 36-run test on size-M tasks (two top-tier models) lean kept the result quality and used 25 to 34 % fewer uncached tokens, but one model implemented first and asked afterwards more often than with the standard rules. The added half sentence itself is not measured yet.
