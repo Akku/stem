@@ -736,6 +736,24 @@ class PreCommit(SandboxRepo):
         (self.repo / "prod.env.example").write_text("K=\n")
         self.assertEqual(self.commit("example").returncode, 0)
 
+    def test_newly_done_task_needs_an_outcome_line(self):
+        run(["git", "config", "core.hooksPath", "scripts/githooks"], self.repo)
+        self.assertEqual(self.commit("init").returncode, 0)
+        d = self.repo / "backlog/tasks"; d.mkdir(parents=True, exist_ok=True)
+        f = d / "task-1 - x.md"
+        f.write_text("---\nid: TASK-1\nstatus: Done\n---\n\nbody\n")
+        r = self.commit("done without outcome")
+        self.assertNotEqual(r.returncode, 0); self.assertIn("Outcome", r.stderr)
+        f.write_text("---\nid: TASK-1\nstatus: Done\n---\n\nOutcome: unknown\n")
+        self.assertEqual(self.commit("done with outcome").returncode, 0)
+        f.write_text("---\nid: TASK-1\nstatus: Done\n---\n\nOutcome: unknown\nmore notes\n")
+        self.assertEqual(self.commit("edit a finished task").returncode, 0)
+        g = d / "task-2 - y.md"  # an old Done task without Outcome that is only edited never blocks
+        g.write_text("---\nid: TASK-2\nstatus: Done\n---\n\nold\n")
+        run(["git", "add", "-A"], self.repo); run(["git", "commit", "-qm", "TASK-1: old", "--no-verify"], self.repo, self.env)
+        g.write_text("---\nid: TASK-2\nstatus: Done\n---\n\nold edited\n")
+        self.assertEqual(self.commit("touch old").returncode, 0)
+
     def test_api_key_pattern_needs_a_boundary(self):
         run(["git", "config", "core.hooksPath", "scripts/githooks"], self.repo)
         self.assertEqual(self.commit("init").returncode, 0)
