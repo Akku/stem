@@ -4,7 +4,7 @@
   "steps": [
     {"id": "stem-version", "title": "Query current STEM version; author chooses update or current state", "stage": "base", "kind": "version", "ref": "retro#stem-version", "skill": ["retro/SKILL.md", "stem-update/SKILL.md"]},
     {"id": "topics", "title": "Extra topics", "stage": "base", "kind": "tech", "ref": "retro#extra-topics", "command": ["python3", "scripts/retro-topics.py", "--retro", "{label}"], "skill": ["retro/SKILL.md"]},
-    {"id": "user-input", "title": "Ask user for problems, ideas, goals", "stage": "base", "kind": "decision", "ref": "retro#user-input", "skill": ["retro/SKILL.md"]},
+    {"id": "user-input", "title": "Tell the user they can add problems, ideas or hints at any time; record them", "stage": "base", "kind": "decision", "ref": "retro#user-input", "skill": ["retro/SKILL.md"]},
     {"id": "context-report", "title": "Context report", "stage": "base", "kind": "tech", "ref": "retro#measure", "command": ["python3", "scripts/context-report.py"], "skill": ["retro/SKILL.md"]},
     {"id": "start-context", "title": "Start context per session and trend (dialog in retro 2 or 3)", "stage": "base", "kind": "tech", "ref": "retro#start-context", "command": ["python3", "scripts/start-context.py", "report"], "skill": ["retro/SKILL.md", "retro/start-context.md"]},
     {"id": "metrics", "title": "Retro metrics", "stage": "base", "kind": "tech", "ref": "retro#measure", "command": ["bash", "scripts/retro-metrics.sh"], "since": "last-retro", "value_flags": ["--repo"], "skill": ["retro/SKILL.md"]},
@@ -19,7 +19,6 @@
     {"id": "independent-read", "title": "Independent read by one agent", "stage": "full", "kind": "analysis", "ref": "full-stage#independent-read", "skill": ["retro/full-stage.md"]},
     {"id": "optional-practices", "title": "Optional and advanced practices", "stage": "full", "kind": "decision", "ref": "full-stage#optional-and-advanced-practices", "skill": ["retro/full-stage.md"]},
     {"id": "agents-budget", "title": "AGENTS.md budget", "stage": "full", "kind": "analysis", "ref": "full-stage#agentsmd-budget", "skill": ["retro/full-stage.md"]},
-    {"id": "user-communication", "title": "Ask whether explanations and questions were right", "stage": "full", "kind": "decision", "ref": "retro#user-input", "skill": ["retro/SKILL.md"]},
     {"id": "milestone-check", "title": "Milestone check", "stage": "full", "when": "milestone-completed", "kind": "analysis", "ref": "full-stage#milestone-check", "skill": ["retro/full-stage.md"]},
     {"id": "promote", "title": "Promote validated items", "stage": "full", "kind": "decision", "ref": "full-stage#promote", "skill": ["retro/full-stage.md"]},
     {"id": "first-retro-section", "title": "Work through the First retro section of NEXT_RETRO.md, then delete it", "stage": "first", "kind": "analysis", "ref": "retro#close", "skill": ["retro/SKILL.md"]}

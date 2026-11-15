@@ -3,6 +3,7 @@
 Newest first. Projects read the entries newer than their `STEM_VERSION` (see `stem-update` skill). Each entry: what changed and who benefits; renames and removals get a `Migration:` line (what to rename or delete) that `stem-update` carries out.
 
 ## Unreleased
+- **Retro: standing invitation instead of questions:** the `retro` skill tells the user once at the start that problems, ideas or hints can be given at any time (when calling the retro, during it, afterwards) and no longer asks for them or for a communication check; the step `user-communication` is removed from `docs/agent/retro-steps.json`. Benefits: one question less per retro, input stays possible. Migration: copy `.claude/skills/retro/SKILL.md` and `docs/agent/retro-steps.json`.
 - **Pre-commit refuses a newly Done task without an Outcome line:** `scripts/githooks/pre-commit` blocks a commit whose staged task file adds `status: Done` but has no `Outcome:` line (message names the format, `Outcome: unknown` is accepted). Tasks already Done are not checked, so old tasks never block. Origin: field report 20 (text rule alone left 4 of 19 tasks without one). Migration: copy `scripts/githooks/pre-commit`.
 - **Update notice prints the rule ID:** in `scripts/session-start.sh` the backticks around `R-STEM-UPDATE` in the "STEM UPDATE AVAILABLE" line were unescaped inside double quotes and ran as a command ("command not found", empty spot in the notice); now escaped. Found in a STEM project. Migration: copy `scripts/session-start.sh`.
 
