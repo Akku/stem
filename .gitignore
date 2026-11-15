@@ -4,7 +4,6 @@ __pycache__/
 .agent-logs/
 .claude/settings.local.json
 .claude/start-context-known.local.json
-docs/agent/decisions-tmp/
 .env
 .env.*
 !.env.example
