@@ -48,6 +48,23 @@ if beh == "verify_fail":
 if beh == "placeholder":
     os.makedirs("src", exist_ok=True)
     open("src/a.py", "w").write("def f():\\n    pass\\n# TODO later\\n")
+if beh == "rename_protected":
+    run("git", "mv", "scripts/tron.py", "scripts/t2.py")
+if beh == "edit_runsh":
+    open("scripts/run.sh", "a").write("# weakened\\n")
+if beh == "leave_branch":
+    run("git", "checkout", "-q", "-b", "elsewhere")
+if beh == "rewrite_history":
+    run("git", "reset", "-q", "--soft", "HEAD~1")
+if beh == "new_task":
+    open("backlog/tasks/task-9 - new.md", "w").write(open(f).read().replace("TASK-1", "TASK-9"))
+    st = json.load(open("state.json")); st["tasks"].append({"id": "TASK-9", "title": "new", "status": "To Do", "deps": []}); json.dump(st, open("state.json", "w"))
+if beh == "rename_task":
+    run("git", "mv", f, "backlog/tasks/task-%s - renamed.md" % task.split("-")[1])
+if beh == "hide":
+    run("git", "update-index", "--skip-worktree", "scripts/run.sh"); open("scripts/run.sh", "a").write("# hidden\\n")
+if beh == "delete_test":
+    os.remove("scripts/t.py")
 if beh == "dirty":
     open("junk.txt", "w").write("x")
 run("git", "add", "-A", ":!junk.txt")
@@ -90,6 +107,8 @@ class Tron(unittest.TestCase):
         git(self.proj, "init", "-q", "-b", "main")
         (self.proj / "scripts").mkdir()
         (self.proj / "scripts/tron.py").write_text("# original\n")
+        (self.proj / "scripts/run.sh").write_text("#!/bin/sh\n")
+        (self.proj / "scripts/t.py").write_text("# test\n")
         self.state([("TASK-1", []), ("TASK-2", []), ("TASK-3", ["TASK-1"])])
         self.config({})
         git(self.proj, "add", "-A"); git(self.proj, "commit", "-qm", "init")
@@ -241,6 +260,60 @@ class Tron(unittest.TestCase):
         git(self.proj, "add", "-A"); git(self.proj, "commit", "-qm", "cfg")
         r = self.tron("run", "--milestone", "m-1")
         self.assertEqual(r.returncode, 2); self.assertIn("verify_cmd", r.stderr)
+
+    def checks(self, task="TASK-1"):
+        return [f["check"] for f in self.gate_of(task)["failures"]]
+
+    def test_review_rename_of_protected_file_is_caught(self):
+        self.behavior({"TASK-1": "rename_protected"})
+        self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
+        self.assertIn("protected", self.checks())
+
+    def test_review_verdict_files_are_protected(self):
+        self.behavior({"TASK-1": "edit_runsh"})
+        self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
+        self.assertIn("protected", self.checks())
+
+    def test_review_leaving_the_run_branch_is_caught_and_stops_the_run(self):
+        self.behavior({"TASK-1": "leave_branch"})
+        r = self.tron("run", "--milestone", "m-1")
+        self.assertEqual(r.returncode, 4)
+        self.assertIn("branch", self.checks()); self.assertIn("refs", self.checks())
+        self.assertEqual([c["task"] for c in self.calls()], ["TASK-1"])
+        self.assertIn("gate damage", self.journal()["aborted"])
+
+    def test_review_rewritten_history_is_caught(self):
+        self.behavior({"TASK-1": "rewrite_history"})
+        (self.proj / "scripts/extra.txt").write_text("x"); git(self.proj, "add", "-A"); git(self.proj, "commit", "-qm", "extra")
+        self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
+        self.assertIn("branch", self.checks())
+
+    def test_review_git_failure_is_a_failure_not_a_pass(self):
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import tron
+        g = tron.gate(self.proj, {"verify_cmd": [str(self.bin / "verify")]}, "TASK-1", "0" * 40, {}, "0" * 40, "main", {})
+        self.assertFalse(g["passed"]); self.assertIn("git", [f["check"] for f in g["failures"]])
+
+    def test_review_tasks_created_by_a_session_are_not_run(self):
+        self.behavior({"TASK-1": "new_task"})
+        self.tron("run", "--milestone", "m-1")
+        self.assertNotIn("TASK-9", [c["task"] for c in self.calls()])
+
+    def test_review_renamed_task_file_is_still_ac_checked_against_run_start(self):
+        self.behavior({"TASK-1": "rename_task"})
+        self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
+        self.assertEqual(self.checks(), [])  # same ACs under a new file name: no false alarm
+        self.assertTrue(self.gate_of("TASK-1")["passed"])
+
+    def test_review_hidden_edits_are_caught(self):
+        self.behavior({"TASK-1": "hide"})
+        self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
+        self.assertIn("tree", self.checks())
+
+    def test_review_deleted_files_are_listed_for_the_evaluator(self):
+        self.behavior({"TASK-1": "delete_test"})
+        self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
+        self.assertEqual(self.gate_of("TASK-1")["deleted_files"], ["scripts/t.py"])
 
     def test_role_commands_fall_back_to_worker(self):
         sys.path.insert(0, str(ROOT / "scripts"))

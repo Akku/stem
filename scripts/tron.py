@@ -95,11 +95,13 @@ def prepare_branch(root, milestone, dry):
     branch = f"tron/{milestone}"
     exists = sh(["git", "rev-parse", "--verify", "-q", f"refs/heads/{branch}"], root).returncode == 0
     cur = sh(["git", "branch", "--show-current"], root).stdout.strip()
-    if dry or cur == branch:
+    if dry:
         return branch, exists
-    dirty = [l for l in sh(["git", "status", "--porcelain", "--", ".", f":!{JOURNAL_DIR}"], root).stdout.splitlines() if l.strip()]
+    dirty = [l for l in sh(["git", "status", "--porcelain", "--", ".", *EXCLUDE], root).stdout.splitlines() if l.strip()]
     if dirty:
         raise TronError("working tree is not clean; commit or stash first (the run starts on its own branch)")
+    if cur == branch:
+        return branch, exists
     sh(["git", "checkout", "-q", branch] if exists else ["git", "checkout", "-q", "-b", branch], root, check=True)
     return branch, exists
 
@@ -166,8 +168,25 @@ def run_session(root, tron, role, task_id, run_id, milestone, prompt=None):
 
 # ---- gate (runner side; the session only proposes Done) ----
 
+def git_ok(root, *args):
+    """Run git; a failing command is an error, never an empty answer that looks like 'nothing changed'."""
+    r = subprocess.run(["git", "-c", "core.quotePath=false", *args], cwd=root, capture_output=True, text=True)
+    if r.returncode:
+        raise TronError(f"git {' '.join(args[:2])} failed: {(r.stderr or r.stdout).strip()[:200]}")
+    return r.stdout
+
+
 def head(root):
-    return sh(["git", "rev-parse", "HEAD"], root).stdout.strip()
+    return git_ok(root, "rev-parse", "HEAD").strip()
+
+
+def branch_refs(root):
+    """{branch: commit} of all local branches."""
+    out = {}
+    for line in git_ok(root, "for-each-ref", "--format=%(refname:short) %(objectname)", "refs/heads").splitlines():
+        name, _, sha = line.rpartition(" ")
+        out[name] = sha
+    return out
 
 
 def task_files(root):
@@ -191,52 +210,74 @@ def parse_task(text):
 
 def ac_hash(text):
     acs = parse_task(text)[1]
-    return hashlib.sha256("\n".join(s for _, _, s in acs).encode()).hexdigest()
+    return hashlib.sha256("\n".join(f"{n} {s}" for _, n, s in acs).encode()).hexdigest()
 
 
 def snapshot_acs(root):
     return {i: ac_hash(p.read_text()) for i, p in task_files(root).items()}
 
 
+def start_text(root, task_id, start_commit):
+    """Task file text of the run-start commit, found by task id (the file may have been renamed since)."""
+    n = task_id.split("-")[1]
+    for f in git_ok(root, "ls-tree", "-r", "--name-only", start_commit, "backlog").splitlines():
+        if re.match(rf"backlog/(tasks|completed|archive/tasks)/task-{n} - ", f):
+            return git_ok(root, "show", f"{start_commit}:{f}")
+    return None
+
+
 def restore_acs(root, task_id, path, start_commit):
     """Put the AC block of the run-start commit back into the task file and commit the restoration."""
-    rel = path.relative_to(root).as_posix()
-    old = sh(["git", "show", f"{start_commit}:{rel}"], root)
-    if old.returncode:
+    try:
+        old = start_text(root, task_id, start_commit)
+        pat = re.compile(r"<!-- AC:BEGIN -->.*?<!-- AC:END -->", re.S)
+        blk = pat.search(old or "")
+        cur = path.read_text()
+        if not blk or not pat.search(cur):
+            return False
+        path.write_text(pat.sub(lambda _: blk.group(0), cur, count=1))
+        rel = path.relative_to(root).as_posix()
+        git_ok(root, "add", "--", rel)
+        git_ok(root, "commit", "-q", "-m", f"{task_id}: Tron gate restored the acceptance criteria", "--", rel)
+        return True
+    except TronError:
         return False
-    pat = re.compile(r"<!-- AC:BEGIN -->.*?<!-- AC:END -->", re.S)
-    blk = pat.search(old.stdout)
-    cur = path.read_text()
-    if not blk or not pat.search(cur):
-        return False
-    path.write_text(pat.sub(lambda _: blk.group(0), cur, count=1))
-    sh(["git", "add", "--", rel], root)
-    return sh(["git", "commit", "-q", "-m", f"{task_id}: Tron gate restored the acceptance criteria", "--", rel], root).returncode == 0
+
+
+# run output the runner itself writes; every other path under docs/agent/tron/ counts as a change
+EXCLUDE = [":(exclude,glob)docs/agent/tron/run-*", ":(exclude,glob)docs/agent/tron/REPORT-*"]
+RUNNER_FILE = re.compile(r"^docs/agent/tron/(run-|REPORT-)")
 
 
 def tree_dirty(root):
-    r = sh(["git", "status", "--porcelain", "--", ".", f":!{JOURNAL_DIR}"], root)
-    return [l for l in r.stdout.splitlines() if l.strip()]
+    lines = [l for l in git_ok(root, "status", "--porcelain", "--", ".", *EXCLUDE).splitlines() if l.strip()]
+    # edits hidden from status (assume-unchanged / skip-worktree) still change what the next session runs
+    lines += ["hidden: " + l[2:] for l in git_ok(root, "ls-files", "-v").splitlines() if l[:1].islower() or l[:1] == "S"]
+    return lines
 
 
 def changed_paths(root, base):
-    """Paths changed since base: committed, uncommitted and new files."""
-    a = sh(["git", "diff", "--name-only", base], root).stdout.splitlines()
-    b = sh(["git", "ls-files", "--others", "--exclude-standard"], root).stdout.splitlines()
-    return sorted({x for x in a + b if x and not x.startswith(str(JOURNAL_DIR) + "/")})
+    """Paths changed since base: committed, uncommitted, new, deleted; renames count as delete plus add."""
+    a = git_ok(root, "diff", "--name-only", "--no-renames", base).splitlines()
+    b = git_ok(root, "ls-files", "--others", "--exclude-standard").splitlines()
+    return sorted({x for x in a + b if x and not RUNNER_FILE.match(x)})
+
+
+def deleted_paths(root, base):
+    return [x for x in git_ok(root, "diff", "--name-only", "--no-renames", "--diff-filter=D", base).splitlines() if x]
 
 
 def added_lines(root, base):
     """{file: [added lines]} since base, including untracked files."""
     out, cur = {}, None
-    for line in sh(["git", "diff", "-U0", base], root).stdout.splitlines():
+    for line in git_ok(root, "diff", "-U0", "--no-renames", base).splitlines():
         if line.startswith("+++ "):
-            cur = line[6:] if line.startswith("+++ b/") else None
+            cur = line[6:].rstrip("\t") if line.startswith("+++ b/") else None
         elif cur and line.startswith("+"):
             out.setdefault(cur, []).append(line[1:])
-    for f in sh(["git", "ls-files", "--others", "--exclude-standard"], root).stdout.splitlines():
+    for f in git_ok(root, "ls-files", "--others", "--exclude-standard").splitlines():
         p = root / f
-        if f.startswith(str(JOURNAL_DIR) + "/") or not p.is_file() or p.stat().st_size > 200_000:
+        if RUNNER_FILE.match(f) or not p.is_file() or p.stat().st_size > 200_000:
             continue
         try:
             out[f] = p.read_text().splitlines()
@@ -246,8 +287,8 @@ def added_lines(root, base):
 
 
 PLACEHOLDER = re.compile(r"\b(TODO|stub|NotImplemented\w*)\b", re.I)
-EMPTY_BODY = (re.compile(r"def\s+\w+\s*\([^)]*\)[^\n]*:\s*\n\s*(pass|\.\.\.)\s*(\n|$)"),
-              re.compile(r"(function\s*\w*\s*\([^)]*\)|=>)\s*\{\s*\}"))
+EMPTY_BODY = (re.compile(r"def\s+\w+\s*\([^)]*\)[^\n]*:\s*(\n\s*(\"\"\"[^\n]*\"\"\"\s*\n\s*)?)?(pass|\.\.\.)\s*(\n|$)"),
+              re.compile(r"(function\s*\w*\s*\([^)]*\))\s*\{\s*\}"))
 
 
 def scan_placeholders(root, base):
@@ -267,42 +308,77 @@ def scan_placeholders(root, base):
 
 
 def verify(root, tron):
-    r = subprocess.run(tron["verify_cmd"], cwd=root, capture_output=True, text=True)
+    try:
+        r = subprocess.run(tron["verify_cmd"], cwd=root, capture_output=True, text=True)
+    except OSError as e:
+        return 127, f"verify_cmd could not start: {e}"
     return r.returncode, ((r.stdout or "") + (r.stderr or "")).strip()[-300:]
 
 
-def gate(root, tron, task_id, base, acs0, start_commit):
-    """Checks after a session: verify, Done state, evidence, clean tree, frozen ACs, protected paths. task_id None: baseline repair."""
+def protected_paths(root, tron):
+    """Gate and config files plus the files that decide the verdict: run.sh and every repo file named in verify_cmd."""
+    prot = set(PROTECTED) | {"scripts/run.sh"} | set(tron.get("protected", []))
+    for arg in tron["verify_cmd"]:
+        p = (root / arg)
+        try:
+            if arg and p.is_file() and root.resolve() in p.resolve().parents:
+                prot.add(p.resolve().relative_to(root.resolve()).as_posix())
+        except OSError:
+            pass
+    return prot
+
+
+STOPPING = {"tree", "ac_freeze", "protected", "branch", "refs", "git"}  # damage on the branch: the run stops (until TASK-269 adds Blocked)
+
+
+def gate(root, tron, task_id, base, acs_before, start_commit, branch, refs0):
+    """Checks after a session: verify, Done state, evidence, clean tree, frozen ACs, protected paths, branch and refs.
+    task_id None: baseline repair session."""
     fails = []
     code, tail = verify(root, tron)
     if code:
         fails.append({"check": "verify", "reason": f"verification exited {code}", "detail": tail})
-    files = task_files(root)
-    if task_id:
-        path = files.get(task_id)
-        status, acs, notes = parse_task(path.read_text()) if path else (None, [], "")
-        if status != "Done":
-            fails.append({"check": "status", "reason": f"status is {status}, not Done"})
-        for ticked, n, _ in acs:
-            if not ticked:
-                fails.append({"check": "ac", "reason": f"AC#{n} is not ticked"})
-            elif not re.search(rf"^\s*AC#{n}: E2\b", notes, re.M):
-                fails.append({"check": "evidence", "reason": f"AC#{n} has no 'AC#{n}: E2' line in the notes"})
-        if not acs:
-            fails.append({"check": "ac", "reason": "task has no acceptance criteria"})
-    dirty = tree_dirty(root)
-    if dirty:
-        fails.append({"check": "tree", "reason": f"working tree not clean ({len(dirty)} entries)", "detail": "; ".join(dirty[:5])})
-    changed = [i for i, p in files.items() if i in acs0 and ac_hash(p.read_text()) != acs0[i]]
-    changed += [i for i in acs0 if i not in files]
-    if changed:
-        restored = [i for i in changed if i in files and restore_acs(root, i, files[i], start_commit)]
-        fails.append({"check": "ac_freeze", "reason": "acceptance criteria changed in " + ", ".join(changed),
-                      "detail": "restored from the run-start commit: " + (", ".join(restored) or "none")})
-    prot = [f for f in changed_paths(root, base) if f in PROTECTED or f in tron.get("protected", [])]
-    if prot:
-        fails.append({"check": "protected", "reason": "protected files changed: " + ", ".join(prot)})
-    return {"passed": not fails, "failures": fails, "placeholders": scan_placeholders(root, base)}
+    try:
+        files = task_files(root)
+        if task_id:
+            path = files.get(task_id)
+            status, acs, notes = parse_task(path.read_text()) if path else (None, [], "")
+            if status != "Done":
+                fails.append({"check": "status", "reason": f"status is {status}, not Done"})
+            for ticked, n, _ in acs:
+                if not ticked:
+                    fails.append({"check": "ac", "reason": f"AC#{n} is not ticked"})
+                elif not re.search(rf"^\s*AC#{n}: E2 +\S", notes, re.M):
+                    fails.append({"check": "evidence", "reason": f"AC#{n} has no 'AC#{n}: E2 <pointer>' line in the notes"})
+            if not acs:
+                fails.append({"check": "ac", "reason": "task has no acceptance criteria"})
+        cur = git_ok(root, "branch", "--show-current").strip()
+        if cur != branch:
+            fails.append({"check": "branch", "reason": f"session left the run branch (now on '{cur or 'detached HEAD'}', expected {branch})"})
+        elif subprocess.run(["git", "merge-base", "--is-ancestor", base, "HEAD"], cwd=root).returncode:
+            fails.append({"check": "branch", "reason": "history rewritten: the commit before the session is no longer an ancestor of HEAD"})
+        other = {k: v for k, v in branch_refs(root).items() if k != branch}
+        if other != {k: v for k, v in refs0.items() if k != branch}:
+            fails.append({"check": "refs", "reason": "other branches changed during the run: " +
+                          ", ".join(sorted(k for k in set(other) | set(refs0) if other.get(k) != refs0.get(k) and k != branch))})
+        dirty = tree_dirty(root)
+        if dirty:
+            fails.append({"check": "tree", "reason": f"working tree not clean ({len(dirty)} entries)", "detail": "; ".join(dirty[:5])})
+        changed = [i for i, p in files.items() if i in acs_before and ac_hash(p.read_text()) != acs_before[i]]
+        changed += [i for i in acs_before if i not in files]
+        if changed:
+            restored = [i for i in changed if i in files and restore_acs(root, i, files[i], start_commit)]
+            fails.append({"check": "ac_freeze", "reason": "acceptance criteria changed in " + ", ".join(changed),
+                          "detail": "restored from the run-start commit: " + (", ".join(restored) or "none")})
+        prot = protected_paths(root, tron)
+        hit = [f for f in changed_paths(root, base) if f in prot]
+        if hit:
+            fails.append({"check": "protected", "reason": "protected files changed: " + ", ".join(hit)})
+        return {"passed": not fails, "failures": fails, "placeholders": scan_placeholders(root, base),
+                "deleted_files": [f for f in deleted_paths(root, base) if not f.startswith("backlog/")]}
+    except TronError as e:
+        fails.append({"check": "git", "reason": str(e)})
+        return {"passed": False, "failures": fails, "placeholders": [], "deleted_files": []}
 
 
 def cmd_run(args):
@@ -333,6 +409,8 @@ def cmd_run(args):
     write_journal(jpath, journal)
     print(f"run {run_id} on branch {branch} ({'reused' if existed else 'created'}); journal {jpath.relative_to(root)}")
     acs0 = journal["ac_hashes"]
+    refs0 = branch_refs(root)
+    journal["refs_start"] = refs0
     attempted = []
     while True:
         if args.max_tasks is not None and len(attempted) >= args.max_tasks:
@@ -340,9 +418,9 @@ def cmd_run(args):
         code, tail = verify(root, tron)  # baseline: a red branch gets a repair session before the next task
         if code:
             print(f"baseline verification failed (exit {code}); starting a repair session")
-            base = head(root)
+            base = head(root); acs_before = snapshot_acs(root)
             entry = run_session(root, tron, "worker", "baseline", run_id, milestone, tron.get("baseline_prompt", BASELINE_PROMPT))
-            entry["gate"] = gate(root, tron, None, base, acs0, start_commit)
+            entry["gate"] = gate(root, tron, None, base, acs_before, start_commit, branch, refs0)
             journal["sessions"].append(entry)
             write_journal(jpath, journal)
             if not entry["gate"]["passed"]:
@@ -350,20 +428,27 @@ def cmd_run(args):
                 write_journal(jpath, journal)
                 print("baseline still red after the repair session: run stopped (nothing is built on a red branch)", file=sys.stderr)
                 return 3
-        todo = [t for t in ready_tasks(root, milestone) if t not in attempted]
+        # only tasks that existed when the run was approved; tasks a session creates stay drafts for the report
+        todo = [t for t in ready_tasks(root, milestone) if t not in attempted and t in acs0]
         if not todo:
             break
         task_id = todo[0]
         attempted.append(task_id)
         print(f"{task_id}: starting worker session")
-        base = head(root)
+        base = head(root); acs_before = snapshot_acs(root)
         entry = run_session(root, tron, "worker", task_id, run_id, milestone)
-        entry["gate"] = gate(root, tron, task_id, base, acs0, start_commit)
+        entry["gate"] = gate(root, tron, task_id, base, acs_before, start_commit, branch, refs0)
         journal["sessions"].append(entry)
         write_journal(jpath, journal)
         g = entry["gate"]
         print(f"{task_id}: exit {entry['exit_code']}, gate " + ("passed" if g["passed"] else "FAILED: " + "; ".join(f["reason"] for f in g["failures"]))
               + (f", cost {entry['cost_usd']}" if entry["cost_usd"] is not None else ""))
+        stop = sorted({f["check"] for f in g["failures"]} & STOPPING)
+        if stop:  # damage on the branch (dirty tree, protected or AC change, left branch): nothing is built on top of it
+            journal["ended"] = now(); journal["aborted"] = "gate damage: " + ", ".join(stop)
+            write_journal(jpath, journal)
+            print(f"run stopped after {task_id}: {', '.join(stop)} (see the journal); nothing was discarded", file=sys.stderr)
+            return 4
     journal["ended"] = now()
     write_journal(jpath, journal)
     print(f"run {run_id} ended after {len(attempted)} task(s)")
