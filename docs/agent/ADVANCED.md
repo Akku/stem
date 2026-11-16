@@ -7,6 +7,7 @@ Same ID mechanism as `OPERATING_MODEL.md`: `sed -n "/<!-- RULE:${ID}:START -->/,
 | `R-PARALLEL` | running coding agents in parallel |
 | `R-MEASUREMENT` | measuring process cost/effectiveness |
 | `R-ROUTING` | choosing provider/model or local worker |
+| `R-TRON` | session started by the Tron mode runner (`STEM_TRON=1`) |
 
 <!-- RULE:R-PARALLEL:START -->
 ## 14. Parallelism and worktrees
@@ -168,3 +169,31 @@ STOP / ESCALATE WHEN:
 ## Integration rule
 
 Start manually. Do not add routers, queues, labels, or automated model selection until repeated use demonstrates a payoff. Reuse existing Backlog.md metadata if suitable instead of creating a parallel task taxonomy.
+
+<!-- RULE:R-TRON:START -->
+## 19. Tron mode: duties of a session the runner started
+
+Applies when session start prints the Tron mode line (`STEM_TRON=1`). An unattended run hands one approved milestone to `scripts/tron.py`; nobody answers questions during the run.
+
+**Session duties**
+- Work on exactly one task, the one named in the prompt, on the run branch the runner prepared. No push, tag, release or merge; no other branch.
+- Search the code before writing new code; reuse what exists.
+- Finding outside the task: write a draft task, do not fix it silently.
+- A stub, placeholder or TODO never counts as Done.
+- Propose Done with evidence lines; the runner's gate confirms it.
+- Never edit acceptance criteria, the gate and runner files, `docs/agent/stem-config.json`, `DECISION_FRAME.md` or `INVARIANTS.md`.
+
+**Ambiguity** (`DECISION_FRAME.md` lists what may be decided alone)
+- Small, reversible, inside the frame: decide and record `Assumption: ...` in the task notes.
+- Outside the frame or touching an invariant (`INVARIANTS.md`): record the question as a draft task, set the task Blocked, stop; the runner continues with an independent task.
+
+**Roles by tier** (tendencies, tested by the trials; model names live in the config, `R-ROUTING` decides escalation)
+
+| Role | Tier |
+| --- | --- |
+| Intent work, planner, Doctor, unattended retro (analysis), evaluator at milestone end | top |
+| Worker, repair session, per-task evaluator (not below the worker), retro changes | mid, medium effort |
+| Runner, gate, report, placeholder scan | none (scripts) |
+
+Escalate by role, not by raising the worker for everything. A small or local model is never worker, evaluator or acceptance.
+<!-- RULE:R-TRON:END -->

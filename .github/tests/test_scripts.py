@@ -244,6 +244,26 @@ class StartContext(Sandbox):
         self.assertIn("foo [project (.mcp.json)] DENIED", r.stdout)
 
 
+class TronMode(Sandbox):
+    """TASK-266: session start names R-TRON only when STEM_TRON=1; rule and templates stay short."""
+    def start(self, env):
+        return run(["bash", str(SCRIPTS / "session-start.sh")], self.tmp, dict({"STEM_OFFLINE": "1"}, **env)).stdout
+
+    def test_mode_line_only_with_stem_tron(self):
+        self.assertIn("TRON MODE", self.start({"STEM_TRON": "1"}))
+        self.assertIn("R-TRON", self.start({"STEM_TRON": "1"}))
+        self.assertNotIn("TRON", self.start({}))
+        self.assertNotIn("TRON", self.start({"STEM_TRON": "0"}))
+
+    def test_rule_and_templates_are_short(self):
+        adv = (ROOT / "docs/agent/ADVANCED.md").read_text()
+        rule = re.search(r"<!-- RULE:R-TRON:START -->(.*?)<!-- RULE:R-TRON:END -->", adv, re.S).group(1)
+        self.assertLessEqual(len(rule.strip().splitlines()), 40)
+        self.assertIn("R-ROUTING", rule)
+        for f in ("DECISION_FRAME.md", "INVARIANTS.md"):
+            self.assertLess(len((ROOT / "docs/agent" / f).read_text().splitlines()), 25)
+
+
 class SandboxRepo(Sandbox):
     """A project folder with STEM scripts, a git repository and a few backlog tasks."""
     def setUp(self):
