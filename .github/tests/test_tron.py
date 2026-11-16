@@ -18,16 +18,59 @@ if sys.argv[1:3] == ["task", "list"] and "--ready" in sys.argv:
             print("  [feature] %s - %s (ac: 0/1)" % (t["id"], t["title"]))
 '''
 FAKE_AGENT = '''#!/usr/bin/env python3
-import json, os, sys
+import glob, json, os, re, subprocess, sys
 task, sid = sys.argv[1], sys.argv[2]
-open("calls.log", "a").write(json.dumps({"task": task, "stem_tron": os.environ.get("STEM_TRON"), "sid": sid}) + "\\n")
+td = os.environ["TRON_TEST_DIR"]
+open(td + "/calls.log", "a").write(json.dumps({"task": task, "stem_tron": os.environ.get("STEM_TRON"), "sid": sid}) + "\\n")
+beh = json.load(open(td + "/behavior.json")).get(task, "ok")
+def run(*a): subprocess.run(a, check=True, capture_output=True)
+if task == "baseline":
+    if os.path.exists(td + "/verify_fail") and beh != "stay_red": os.remove(td + "/verify_fail")
+    print(json.dumps({"session_id": sid, "total_cost_usd": 0.1})); sys.exit(0)
+if beh == "noop":
+    sys.exit(0)
 st = json.load(open("state.json"))
 for t in st["tasks"]:
-    if t["id"] == task:
-        t["status"] = "Done"
+    if t["id"] == task: t["status"] = "Done"
 json.dump(st, open("state.json", "w"))
+f = glob.glob("backlog/tasks/task-%s - *.md" % task.split("-")[1])[0]
+s = open(f).read()
+s = s.replace("status: To Do", "status: Done").replace("- [ ] #1", "- [x] #1")
+if beh != "no_evidence":
+    s = s.replace("<!-- SECTION:NOTES:BEGIN -->\\n", "<!-- SECTION:NOTES:BEGIN -->\\nAC#1: E2 fake evidence\\n")
+if beh == "ac_change":
+    s = s.replace("works", "works differently")
+open(f, "w").write(s)
+if beh == "protected":
+    open("scripts/tron.py", "a").write("# tampered\\n")
+if beh == "verify_fail":
+    open(td + "/verify_fail", "w").write("x")
+if beh == "placeholder":
+    os.makedirs("src", exist_ok=True)
+    open("src/a.py", "w").write("def f():\\n    pass\\n# TODO later\\n")
+if beh == "dirty":
+    open("junk.txt", "w").write("x")
+run("git", "add", "-A", ":!junk.txt")
+run("git", "commit", "-qm", task + ": work")
 print(json.dumps({"session_id": sid, "total_cost_usd": 0.25, "modelUsage": {"fake-model": {}}}))
 '''
+FAKE_VERIFY = '''#!/bin/sh
+[ -e "$TRON_TEST_DIR/verify_fail" ] && exit 1
+exit 0
+'''
+TASK_MD = """---
+id: {id}
+title: t{id}
+status: To Do
+---
+
+<!-- AC:BEGIN -->
+- [ ] #1 it works
+<!-- AC:END -->
+
+<!-- SECTION:NOTES:BEGIN -->
+<!-- SECTION:NOTES:END -->
+"""
 
 
 def git(cwd, *a):
@@ -39,24 +82,37 @@ class Tron(unittest.TestCase):
         self.tmp = pathlib.Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
         self.proj = self.tmp / "proj"; self.proj.mkdir()
+        self.td = self.tmp / "td"; self.td.mkdir()  # fake agent log, behaviours and verify switch live outside the project
         self.bin = self.tmp / "bin"; self.bin.mkdir()
-        (self.bin / "backlog").write_text(FAKE_BACKLOG); (self.bin / "backlog").chmod(0o755)
-        (self.bin / "agent").write_text(FAKE_AGENT); (self.bin / "agent").chmod(0o755)
+        for name, body in (("backlog", FAKE_BACKLOG), ("agent", FAKE_AGENT), ("verify", FAKE_VERIFY)):
+            (self.bin / name).write_text(body); (self.bin / name).chmod(0o755)
+        self.behavior({})
         git(self.proj, "init", "-q", "-b", "main")
-        (self.proj / "README").write_text("x")
+        (self.proj / "scripts").mkdir()
+        (self.proj / "scripts/tron.py").write_text("# original\n")
         self.state([("TASK-1", []), ("TASK-2", []), ("TASK-3", ["TASK-1"])])
-        self.config({"worker_cmd": [str(self.bin / "agent"), "{task_id}", "{session_id}", "{prompt}"]})
+        self.config({})
         git(self.proj, "add", "-A"); git(self.proj, "commit", "-qm", "init")
+
+    def behavior(self, d):
+        (self.td / "behavior.json").write_text(json.dumps(d))
+
+    def calls(self):
+        return [json.loads(l) for l in (self.td / "calls.log").read_text().splitlines()]
 
     def state(self, tasks):
         (self.proj / "state.json").write_text(json.dumps({"tasks": [{"id": i, "title": "t" + i, "status": "To Do", "deps": d} for i, d in tasks]}))
+        (self.proj / "backlog/tasks").mkdir(parents=True, exist_ok=True)
+        for i, _ in tasks:
+            (self.proj / f"backlog/tasks/task-{i.split('-')[1]} - x.md").write_text(TASK_MD.format(id=i))
 
-    def config(self, tron):
+    def config(self, extra):
         (self.proj / "docs/agent").mkdir(parents=True, exist_ok=True)
-        (self.proj / "docs/agent/stem-config.json").write_text(json.dumps({"tron": tron}))
+        cfg = {"worker_cmd": [str(self.bin / "agent"), "{task_id}", "{session_id}", "{prompt}"], "verify_cmd": [str(self.bin / "verify")]}
+        (self.proj / "docs/agent/stem-config.json").write_text(json.dumps({"tron": dict(cfg, **extra)}))
 
     def tron(self, *args):
-        env = dict(os.environ, PATH=f"{self.bin}{os.pathsep}{os.environ['PATH']}", **GIT_ENV, HOME=str(self.tmp))
+        env = dict(os.environ, PATH=f"{self.bin}{os.pathsep}{os.environ['PATH']}", **GIT_ENV, HOME=str(self.tmp), TRON_TEST_DIR=str(self.td))
         return subprocess.run([sys.executable, str(TRON), *args, "--root", str(self.proj)], capture_output=True, text=True, env=env)
 
     def journal(self):
@@ -64,10 +120,13 @@ class Tron(unittest.TestCase):
         self.assertEqual(len(files), 1)
         return json.loads(files[0].read_text())
 
+    def gate_of(self, task):
+        return [s for s in self.journal()["sessions"] if s["task"] == task][0]["gate"]
+
     def test_two_tasks_in_order_on_run_branch_with_env(self):
         r = self.tron("run", "--milestone", "m-1", "--run-id", "r1")
         self.assertEqual(r.returncode, 0, r.stderr)
-        calls = [json.loads(l) for l in (self.proj / "calls.log").read_text().splitlines()]
+        calls = self.calls()
         self.assertEqual([c["task"] for c in calls], ["TASK-1", "TASK-2", "TASK-3"])  # TASK-3 became ready after TASK-1
         self.assertTrue(all(c["stem_tron"] == "1" for c in calls))
         self.assertEqual(git(self.proj, "branch", "--show-current").stdout.strip(), "tron/m-1")
@@ -81,8 +140,7 @@ class Tron(unittest.TestCase):
 
     def test_second_run_reuses_branch(self):
         self.tron("run", "--milestone", "m-1", "--max-tasks", "1", "--run-id", "a")
-        git(self.proj, "add", "-A"); git(self.proj, "commit", "-qm", "work"); git(self.proj, "checkout", "-q", "main")
-        self.state([("TASK-1", []), ("TASK-2", []), ("TASK-3", ["TASK-1"])])
+        git(self.proj, "checkout", "-q", "main")
         r = self.tron("run", "--milestone", "m-1", "--run-id", "b", "--max-tasks", "1")
         self.assertIn("reused", r.stdout)
 
@@ -105,14 +163,84 @@ class Tron(unittest.TestCase):
         r = self.tron("run", "--milestone", "m-1", "--dry-run")
         self.assertEqual(r.returncode, 0)
         self.assertIn("TASK-1, TASK-2", r.stdout); self.assertIn("STEM_TRON=1", r.stdout)
-        self.assertFalse((self.proj / "calls.log").exists())
+        self.assertFalse((self.td / "calls.log").exists())
         self.assertFalse((self.proj / "docs/agent/tron").exists())
         self.assertEqual(git(self.proj, "branch", "--show-current").stdout.strip(), "main")
 
     def test_dirty_tree_refused(self):
-        (self.proj / "README").write_text("changed")
+        (self.proj / "scripts/other.txt").write_text("changed")
         r = self.tron("run", "--milestone", "m-1")
         self.assertEqual(r.returncode, 2); self.assertIn("not clean", r.stderr)
+
+    def test_gate_pass(self):
+        r = self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        g = self.gate_of("TASK-1")
+        self.assertTrue(g["passed"], g)
+
+    def test_gate_fails_without_evidence_line(self):
+        self.behavior({"TASK-1": "no_evidence"})
+        self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
+        g = self.gate_of("TASK-1")
+        self.assertFalse(g["passed"]); self.assertEqual([f["check"] for f in g["failures"]], ["evidence"])
+
+    def test_gate_fails_when_session_did_not_finish(self):
+        self.behavior({"TASK-1": "noop"})
+        self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
+        self.assertIn("status", [f["check"] for f in self.gate_of("TASK-1")["failures"]])
+
+    def test_gate_fails_on_red_verification_run_by_the_runner(self):
+        self.behavior({"TASK-1": "verify_fail"})
+        self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
+        self.assertEqual([f["check"] for f in self.gate_of("TASK-1")["failures"]], ["verify"])
+
+    def test_gate_fails_on_dirty_tree(self):
+        self.behavior({"TASK-1": "dirty"})
+        self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
+        self.assertEqual([f["check"] for f in self.gate_of("TASK-1")["failures"]], ["tree"])
+
+    def test_gate_restores_changed_acs(self):
+        self.behavior({"TASK-1": "ac_change"})
+        self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
+        g = self.gate_of("TASK-1")
+        self.assertEqual([f["check"] for f in g["failures"]], ["ac_freeze"])
+        self.assertIn("TASK-1", g["failures"][0]["detail"])
+        text = (self.proj / "backlog/tasks/task-1 - x.md").read_text()
+        self.assertIn("it works\n", text); self.assertNotIn("differently", text)
+        self.assertEqual(git(self.proj, "status", "--porcelain", "--", ".", ":!docs/agent/tron").stdout.strip(), "")
+
+    def test_gate_fails_on_protected_file(self):
+        self.behavior({"TASK-1": "protected"})
+        self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
+        g = self.gate_of("TASK-1")
+        self.assertEqual([f["check"] for f in g["failures"]], ["protected"])
+        self.assertIn("scripts/tron.py", g["failures"][0]["reason"])
+
+    def test_red_baseline_gets_repair_session_before_next_task(self):
+        (self.td / "verify_fail").write_text("x")
+        self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
+        self.assertEqual([c["task"] for c in self.calls()], ["baseline", "TASK-1"])
+        self.assertTrue(self.gate_of("baseline")["passed"])
+
+    def test_red_baseline_that_stays_red_stops_the_run(self):
+        (self.td / "verify_fail").write_text("x"); self.behavior({"baseline": "stay_red"})
+        r = self.tron("run", "--milestone", "m-1")
+        self.assertEqual(r.returncode, 3)
+        self.assertEqual([c["task"] for c in self.calls()], ["baseline"])
+        self.assertIn("baseline", self.journal()["aborted"])
+
+    def test_placeholder_scan_lists_hits_in_journal(self):
+        self.behavior({"TASK-1": "placeholder"})
+        self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
+        kinds = {(h["file"], h["kind"]) for h in self.gate_of("TASK-1")["placeholders"]}
+        self.assertIn(("src/a.py", "marker"), kinds); self.assertIn(("src/a.py", "empty body"), kinds)
+
+    def test_missing_verify_cmd_is_an_error(self):
+        cfg = json.loads((self.proj / "docs/agent/stem-config.json").read_text()); del cfg["tron"]["verify_cmd"]
+        (self.proj / "docs/agent/stem-config.json").write_text(json.dumps(cfg))
+        git(self.proj, "add", "-A"); git(self.proj, "commit", "-qm", "cfg")
+        r = self.tron("run", "--milestone", "m-1")
+        self.assertEqual(r.returncode, 2); self.assertIn("verify_cmd", r.stderr)
 
     def test_role_commands_fall_back_to_worker(self):
         sys.path.insert(0, str(ROOT / "scripts"))
