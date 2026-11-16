@@ -10,6 +10,19 @@ GIT_ENV = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAM
 FAKE_BACKLOG = '''#!/usr/bin/env python3
 import json, sys
 st = json.load(open("state.json"))
+if sys.argv[1:3] == ["task", "edit"]:
+    import glob, re
+    n = sys.argv[3].split("-")[1]
+    status = sys.argv[sys.argv.index("-s") + 1]
+    note = sys.argv[sys.argv.index("--append-notes") + 1] if "--append-notes" in sys.argv else ""
+    f = glob.glob("backlog/tasks/task-%s - *.md" % n)[0]
+    s = re.sub(r"(?m)^status: .*$", "status: " + status, open(f).read())
+    s = s.replace("<!-- SECTION:NOTES:END -->", note + "\\n<!-- SECTION:NOTES:END -->")
+    open(f, "w").write(s)
+    for x in st["tasks"]:
+        if x["id"] == "TASK-" + n: x["status"] = status
+    json.dump(st, open("state.json", "w"))
+    sys.exit(0)
 if sys.argv[1:3] == ["task", "list"] and "--ready" in sys.argv:
     print("To Do:")
     for t in st["tasks"]:
@@ -23,6 +36,15 @@ task, sid = sys.argv[1], sys.argv[2]
 td = os.environ["TRON_TEST_DIR"]
 open(td + "/calls.log", "a").write(json.dumps({"task": task, "stem_tron": os.environ.get("STEM_TRON"), "sid": sid}) + "\\n")
 beh = json.load(open(td + "/behavior.json")).get(task, "ok")
+if isinstance(beh, list):
+    n = sum(1 for l in open(td + "/calls.log") if json.loads(l)["task"] == task)
+    beh = beh[min(n, len(beh)) - 1]
+if beh == "api_error":
+    print(json.dumps({"is_error": True, "api_error_status": 529, "session_id": sid})); sys.stderr.write("overloaded\\n"); sys.exit(1)
+if beh == "hang":
+    import time; time.sleep(10)
+if beh == "crash":
+    open("junk.txt", "w").write("half done"); os.kill(os.getppid(), 9); sys.exit(1)
 def run(*a): subprocess.run(a, check=True, capture_output=True)
 if task == "baseline":
     if os.path.exists(td + "/verify_fail") and beh != "stay_red": os.remove(td + "/verify_fail")
@@ -127,8 +149,10 @@ class Tron(unittest.TestCase):
 
     def config(self, extra):
         (self.proj / "docs/agent").mkdir(parents=True, exist_ok=True)
-        cfg = {"worker_cmd": [str(self.bin / "agent"), "{task_id}", "{session_id}", "{prompt}"], "verify_cmd": [str(self.bin / "verify")]}
+        cfg = {"worker_cmd": [str(self.bin / "agent"), "{task_id}", "{session_id}", "{prompt}"], "verify_cmd": [str(self.bin / "verify")],
+               "pause_after": "milestone", "backoff_base": 0}
         (self.proj / "docs/agent/stem-config.json").write_text(json.dumps({"tron": dict(cfg, **extra)}))
+        git(self.proj, "add", "-A"); git(self.proj, "commit", "-qm", "config")
 
     def tron(self, *args):
         env = dict(os.environ, PATH=f"{self.bin}{os.pathsep}{os.environ['PATH']}", **GIT_ENV, HOME=str(self.tmp), TRON_TEST_DIR=str(self.td))
@@ -315,6 +339,97 @@ class Tron(unittest.TestCase):
         self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
         self.assertEqual(self.gate_of("TASK-1")["deleted_files"], ["scripts/t.py"])
 
+    def test_cost_limit_ends_run_after_current_session(self):
+        self.config({"max_cost": 0.25})
+        self.tron("run", "--milestone", "m-1")
+        self.assertEqual([c["task"] for c in self.calls()], ["TASK-1"])
+        j = self.journal(); self.assertIn("max_cost", j["stop_reason"]); self.assertFalse(j["complete"])
+
+    def test_repair_then_pass(self):
+        self.behavior({"TASK-1": ["no_evidence", "ok"]})
+        self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
+        s = [x for x in self.journal()["sessions"] if x["task"] == "TASK-1"]
+        self.assertEqual([x["gate"]["passed"] for x in s], [False, True])
+        self.assertEqual(self.journal()["tasks"]["TASK-1"], {"state": "accepted", "repairs": 1})
+
+    def test_three_fails_then_blocked_and_run_continues(self):
+        self.config({"max_repairs": 2})
+        self.behavior({"TASK-1": ["no_evidence", "dirty", "no_evidence"]})
+        self.tron("run", "--milestone", "m-1")
+        j = self.journal()
+        self.assertEqual(j["tasks"]["TASK-1"]["state"], "blocked")
+        self.assertEqual(sum(1 for c in self.calls() if c["task"] == "TASK-1"), 3)
+        self.assertEqual(j["tasks"]["TASK-2"]["state"], "accepted")
+        self.assertNotIn("TASK-3", j["tasks"])  # depends on the blocked task
+        text = (self.proj / "backlog/tasks/task-1 - x.md").read_text()
+        self.assertIn("status: Blocked", text); self.assertIn("Blocked by the Tron runner", text)
+        self.assertNotIn("[x]", text)  # files reset to the state before the task
+        self.assertFalse((self.proj / "junk.txt").exists())
+        self.assertTrue(j["tasks"]["TASK-1"]["kept"])
+
+    def test_stop_file_ends_run(self):
+        (self.proj / "docs/agent/tron").mkdir(parents=True, exist_ok=True)
+        (self.proj / "docs/agent/tron/STOP").write_text("")
+        r = self.tron("run", "--milestone", "m-1")
+        self.assertEqual(r.returncode, 0)
+        self.assertFalse((self.td / "calls.log").exists())
+        self.assertIn("STOP", self.journal()["stop_reason"])
+
+    def test_pause_after_task_is_default_and_milestone_runs_on(self):
+        self.config({"pause_after": "task"})
+        self.tron("run", "--milestone", "m-1")
+        self.assertEqual([c["task"] for c in self.calls()], ["TASK-1"])
+        self.assertIn("pause_after", self.journal()["stop_reason"])
+        self.tron("run", "--milestone", "m-1")  # resume: next task, TASK-1 not repeated
+        self.assertEqual([c["task"] for c in self.calls()], ["TASK-1", "TASK-2"])
+
+    def test_resume_after_killed_runner(self):
+        self.behavior({"TASK-2": ["crash", "ok"]})
+        r = self.tron("run", "--milestone", "m-1")
+        self.assertNotEqual(r.returncode, 0)  # runner was killed
+        self.assertIn("in_progress", self.journal())
+        r = self.tron("run", "--milestone", "m-1")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual([c["task"] for c in self.calls()], ["TASK-1", "TASK-2", "TASK-2", "TASK-3"])
+        j = self.journal(); self.assertTrue(j["complete"]); self.assertIn("stash", j["recovered"][0])
+        self.assertTrue(all(v["state"] == "accepted" for v in j["tasks"].values()))
+
+    def test_session_timeout_kills_hanging_session(self):
+        self.config({"session_timeout": 1})
+        self.behavior({"TASK-1": "hang"})
+        self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
+        s = self.journal()["sessions"][0]
+        self.assertTrue(s["timeout"]); self.assertEqual(s["exit_code"], 124)
+        self.assertEqual(self.journal()["tasks"]["TASK-1"]["state"], "blocked")  # no diff
+
+    def test_same_failure_twice_blocks_without_using_all_repairs(self):
+        self.config({"max_repairs": 5})
+        self.behavior({"TASK-1": "no_evidence"})
+        self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
+        self.assertEqual(sum(1 for c in self.calls() if c["task"] == "TASK-1"), 2)
+        self.assertIn("same failure", self.journal()["tasks"]["TASK-1"]["reason"])
+
+    def test_session_without_diff_blocks_at_once(self):
+        self.behavior({"TASK-1": "noop"})
+        self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
+        self.assertEqual(sum(1 for c in self.calls() if c["task"] == "TASK-1"), 1)
+        self.assertIn("no diff", self.journal()["tasks"]["TASK-1"]["reason"])
+
+    def test_api_errors_are_retried_and_not_counted_as_repairs(self):
+        self.behavior({"TASK-1": ["api_error", "api_error", "ok"]})
+        self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
+        j = self.journal()
+        self.assertEqual(len([s for s in j["sessions"] if s.get("api_error")]), 2)
+        self.assertEqual(j["tasks"]["TASK-1"], {"state": "accepted", "repairs": 0})
+
+    def test_api_unavailable_after_retries_ends_run_resumable(self):
+        self.config({"api_retries": 1})
+        self.behavior({"TASK-1": "api_error"})
+        r = self.tron("run", "--milestone", "m-1")
+        self.assertEqual(r.returncode, 0)
+        j = self.journal(); self.assertIn("API unavailable", j["stop_reason"]); self.assertFalse(j["complete"])
+        self.assertNotIn("TASK-1", j["tasks"])
+
     def test_role_commands_fall_back_to_worker(self):
         sys.path.insert(0, str(ROOT / "scripts"))
         import tron
@@ -325,7 +440,8 @@ class Tron(unittest.TestCase):
 
     def test_runner_never_publishes(self):
         src = TRON.read_text()
-        self.assertIsNone(re.search(r"""["'](push|tag|merge)["']|git\s+(push|tag|merge)\b""", src))
+        # 'git stash push' keeps work safe and is the one allowed use of the word
+        self.assertIsNone(re.search(r"""(?<!"stash", )["'](push|tag|merge)["']|git\s+(push|tag|merge)\b""", src))
 
 
 if __name__ == "__main__":

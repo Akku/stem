@@ -14,7 +14,7 @@ Config example (spike TASK-265: inside the sandbox only; Bash is allowed in full
 Placeholders: {prompt} {session_id} {task_id} {run_id} {milestone}. Roles: worker, evaluator, doctor, planner, retro
 (key <role>_cmd; a missing one falls back to worker_cmd).
 Python standard library only (macOS and Linux)."""
-import argparse, datetime, hashlib, json, os, pathlib, re, subprocess, sys, uuid
+import argparse, datetime, hashlib, json, os, pathlib, re, subprocess, sys, time, uuid
 
 ROLES = ("worker", "evaluator", "doctor", "planner", "retro")
 DEFAULT_PROMPT = ("Work on backlog task {task_id} following AGENTS.md. This is an unattended Tron mode session "
@@ -26,6 +26,12 @@ PROTECTED = ("scripts/tron.py", "docs/agent/stem-config.json", "docs/agent/DECIS
 BASELINE_PROMPT = ("The verification command fails on the current branch before any task starts (unattended Tron mode session, "
                    "STEM_TRON=1; read R-TRON first). Find the cause and fix it with the smallest change. Do not change acceptance "
                    "criteria and do not start task work.")
+
+
+API_CODES = (429, 500, 502, 503, 504, 529)
+API_RE = re.compile(r"rate.?limit|overloaded|too many requests|\b(429|502|503|504|529)\b|temporarily unavailable|ECONNRESET", re.I)
+# files the runner writes itself (journal, report, stop file) do not count as changes
+STOP_FILE = "docs/agent/tron/STOP"
 
 
 class TronError(Exception):
@@ -125,6 +131,8 @@ def parse_output(text):
         out["cost_usd"] = d["total_cost_usd"]
     if isinstance(d.get("session_id"), str):
         out["session_id"] = d["session_id"]
+    if d.get("is_error") and isinstance(d.get("api_error_status"), int):
+        out["api_status"] = d["api_error_status"]
     mu = d.get("modelUsage")
     if isinstance(mu, dict) and mu:
         out["model"] = ", ".join(sorted(mu))
@@ -146,12 +154,20 @@ def run_session(root, tron, role, task_id, run_id, milestone, prompt=None):
                                          "run_id": run_id, "milestone": milestone})
     env = dict(os.environ, STEM_TRON="1", STEM_TRON_RUN=run_id, STEM_TRON_TASK=task_id)
     entry = {"task": task_id, "role": role, "start": now(), "command": cmd}
+    timeout = tron.get("session_timeout")
     try:
-        r = subprocess.run(cmd, cwd=root, env=env, capture_output=True, text=True)
+        r = subprocess.run(cmd, cwd=root, env=env, capture_output=True, text=True, timeout=timeout)
         entry["exit_code"] = r.returncode
         info = parse_output(r.stdout)
         if r.returncode:
             entry["stderr_tail"] = (r.stderr or "").strip()[-300:]
+            if info.get("api_status") in API_CODES or API_RE.search(r.stderr or ""):
+                entry["api_error"] = True
+    except subprocess.TimeoutExpired:
+        entry["exit_code"] = 124
+        entry["timeout"] = True
+        entry["stderr_tail"] = f"session killed after {timeout} s"
+        info = {}
     except OSError as e:
         entry["exit_code"] = 127
         entry["stderr_tail"] = str(e)[:300]
@@ -245,8 +261,8 @@ def restore_acs(root, task_id, path, start_commit):
 
 
 # run output the runner itself writes; every other path under docs/agent/tron/ counts as a change
-EXCLUDE = [":(exclude,glob)docs/agent/tron/run-*", ":(exclude,glob)docs/agent/tron/REPORT-*"]
-RUNNER_FILE = re.compile(r"^docs/agent/tron/(run-|REPORT-)")
+EXCLUDE = [":(exclude,glob)docs/agent/tron/run-*", ":(exclude,glob)docs/agent/tron/REPORT-*", ":(exclude)docs/agent/tron/STOP"]
+RUNNER_FILE = re.compile(r"^docs/agent/tron/(run-|REPORT-|STOP$)")
 
 
 def tree_dirty(root):
@@ -312,7 +328,7 @@ def verify(root, tron):
         r = subprocess.run(tron["verify_cmd"], cwd=root, capture_output=True, text=True)
     except OSError as e:
         return 127, f"verify_cmd could not start: {e}"
-    return r.returncode, ((r.stdout or "") + (r.stderr or "")).strip()[-300:]
+    return r.returncode, "\n".join(((r.stdout or "") + (r.stderr or "")).strip().splitlines()[-40:])[-4000:]
 
 
 def protected_paths(root, tron):
@@ -328,7 +344,7 @@ def protected_paths(root, tron):
     return prot
 
 
-STOPPING = {"tree", "ac_freeze", "protected", "branch", "refs", "git"}  # damage on the branch: the run stops (until TASK-269 adds Blocked)
+STOPPING = {"ac_freeze", "protected", "branch", "refs", "git"}  # damage the agent cannot repair: the run stops; a dirty tree is repaired or reset by the repair loop
 
 
 def gate(root, tron, task_id, base, acs_before, start_commit, branch, refs0):
@@ -381,78 +397,265 @@ def gate(root, tron, task_id, base, acs_before, start_commit, branch, refs0):
         return {"passed": False, "failures": fails, "placeholders": [], "deleted_files": []}
 
 
+def fingerprint(root):
+    """Hash of HEAD, status and diff: equal before and after a session means the session left no diff."""
+    return hashlib.sha256("\n".join([head(root), git_ok(root, "status", "--porcelain", "--", ".", *EXCLUDE),
+                                      git_ok(root, "diff", "HEAD", "--", ".", *EXCLUDE)]).encode()).hexdigest()
+
+
+def signature(gate_result):
+    return sorted((f["check"], f["reason"]) for f in gate_result["failures"])
+
+
+def elapsed_hours(journal):
+    secs = 0
+    for s in journal["sessions"]:
+        try:
+            f = "%Y-%m-%dT%H:%M:%SZ"
+            secs += (datetime.datetime.strptime(s["end"], f) - datetime.datetime.strptime(s["start"], f)).total_seconds()
+        except (KeyError, ValueError, TypeError):
+            pass
+    return secs / 3600
+
+
+def limit_hit(journal, tron, max_tasks):
+    cost = sum(s.get("cost_usd") or 0 for s in journal["sessions"])
+    if tron.get("max_cost") is not None and cost >= float(tron["max_cost"]):
+        return f"max_cost reached ({cost:.2f} of {tron['max_cost']})"
+    if tron.get("max_hours") is not None and elapsed_hours(journal) >= float(tron["max_hours"]):
+        return f"max_hours reached ({elapsed_hours(journal):.2f} of {tron['max_hours']})"
+    if max_tasks is not None and len(journal["tasks"]) >= max_tasks:
+        return f"max_tasks reached ({max_tasks})"
+    return None
+
+
+def repair_prompt(tron, task_id, gate_result, n, limit):
+    lines = [f"The runner's gate failed your previous session for {task_id} (repair {n} of {limit}). Fix exactly this and nothing else:"]
+    log = []
+    for f in gate_result["failures"]:
+        lines.append(f"- {f['reason']}")
+        if f.get("detail"):
+            log += f["detail"].splitlines()
+    if log:
+        lines += ["Last log lines:"] + log[-40:]
+    return tron.get("prompt", DEFAULT_PROMPT).replace("{task_id}", task_id) + "\n\n" + "\n".join(lines)
+
+
+def sessions_with_retry(root, tron, role, task_id, run_id, milestone, journal, jpath, prompt=None, sleep=time.sleep):
+    """Run a session; API and rate-limit errors are retried with backoff and are not repairs. Returns (entry, available)."""
+    retries, delay = int(tron.get("api_retries", 5)), float(tron.get("backoff_base", 30))
+    for k in range(retries + 1):
+        write_journal(jpath, journal)  # in_progress is on disk before the process starts (crash recovery)
+        entry = run_session(root, tron, role, task_id, run_id, milestone, prompt)
+        entry["attempt"] = k
+        journal["sessions"].append(entry)
+        write_journal(jpath, journal)
+        if not entry.get("api_error"):
+            return entry, True
+        if k < retries:
+            sleep(delay * 2 ** k)
+    return entry, False
+
+
+def set_blocked(root, tron, task_id, note):
+    """Mark the task Blocked with the diagnosis (falls back to In Progress plus label 'blocked' where the project has no such status)."""
+    status = tron.get("blocked_status", "Blocked")
+    r = sh(["backlog", "task", "edit", task_id, "-s", status, "--append-notes", note], root)
+    if r.returncode:
+        r = sh(["backlog", "task", "edit", task_id, "-s", "In Progress", "--add-label", "blocked", "--append-notes", note], root)
+    if r.returncode:
+        raise TronError(f"could not mark {task_id} Blocked: {(r.stderr or r.stdout).strip()[:200]}")
+    git_ok(root, "add", "-A", "--", "backlog")
+    if subprocess.run(["git", "diff", "--cached", "--quiet"], cwd=root).returncode:
+        git_ok(root, "commit", "-q", "-m", f"{task_id}: Tron run marked the task Blocked")
+
+
+def block_task(root, tron, task_id, base, reason, journal, refs0):
+    """Failed work is kept (backup branch for commits, named stash for loose files), then the task's files go back to the state before the task."""
+    kept = {}
+    if head(root) != base:
+        name = f"tron/blocked-{task_id.lower()}-{journal['run_id']}"
+        git_ok(root, "branch", name)
+        kept["branch"] = name
+    if tree_dirty(root):
+        git_ok(root, "stash", "push", "-u", "-q", "-m", f"tron {journal['run_id']} {task_id} blocked", "--", ".", *EXCLUDE)
+        kept["stash"] = f"tron {journal['run_id']} {task_id} blocked"
+    at_base = set(git_ok(root, "ls-tree", "-r", "--name-only", base).splitlines())
+    for f in changed_paths(root, base):
+        if f in at_base:
+            git_ok(root, "checkout", base, "--", f)
+        else:
+            git_ok(root, "rm", "-rf", "-q", "--ignore-unmatch", "--", f)
+    if subprocess.run(["git", "diff", "--cached", "--quiet"], cwd=root).returncode:
+        git_ok(root, "commit", "-q", "-m", f"{task_id}: Tron run reset the files of the blocked task")
+    note = f"Blocked by the Tron runner (run {journal['run_id']}): {reason}. Failed work kept: " + (", ".join(f"{k} {v}" for k, v in kept.items()) or "none")
+    set_blocked(root, tron, task_id, note)
+    refs0.clear(); refs0.update(branch_refs(root))
+    return kept
+
+
+def find_journal(root, milestone, run_id):
+    d = root / JOURNAL_DIR
+    if run_id:
+        p = d / f"run-{run_id}.json"
+        return p if p.is_file() else None
+    open_ = []
+    for p in sorted(d.glob("run-*.json")) if d.is_dir() else []:
+        try:
+            j = json.loads(p.read_text())
+        except ValueError:
+            continue
+        if j.get("milestone") == milestone and not j.get("complete"):
+            open_.append(p)
+    return open_[-1] if open_ else None
+
+
+def recover(root, journal, jpath):
+    """A killed runner leaves a session unfinished: loose files go into a named stash, the task is picked again."""
+    ip = journal.pop("in_progress", None)
+    if not ip:
+        return
+    note = {"task": ip["task"], "base": ip["base"]}
+    if tree_dirty(root):
+        name = f"tron {journal['run_id']} {ip['task']} interrupted"
+        git_ok(root, "stash", "push", "-u", "-q", "-m", name, "--", ".", *EXCLUDE)
+        note["stash"] = name
+    journal.setdefault("recovered", []).append(note)
+    write_journal(jpath, journal)
+    print(f"resume: session for {ip['task']} was interrupted" + (f"; loose files are in the stash '{note['stash']}'" if "stash" in note else ""))
+
+
+def finish(journal, jpath, reason=None, complete=False):
+    journal["ended"] = now()
+    journal["stop_reason"] = reason
+    journal["complete"] = complete
+    write_journal(jpath, journal)
+
+
 def cmd_run(args):
     root = pathlib.Path(args.root).resolve()
     tron = load_config(root, args.config)
     milestone = args.milestone
-    run_id = args.run_id or datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    max_tasks = args.max_tasks if args.max_tasks is not None else tron.get("max_tasks")
+    max_repairs = int(tron.get("max_repairs", 3))
+    pause_after = tron.get("pause_after", "task")
+    if pause_after not in ("task", "milestone"):
+        raise TronError("config tron.pause_after must be 'task' or 'milestone'")
+    stop_path = root / STOP_FILE
+    jpath = find_journal(root, milestone, args.run_id)
+    run_id = args.run_id or (jpath.stem[4:] if jpath else datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
     first = ready_tasks(root, milestone)
     if args.dry_run:
         if not first:
             print(f"dry run: no ready task in {milestone}")
             return 0
-        print(f"dry run: run {run_id}, branch tron/{milestone}, ready tasks in order: {', '.join(first)}")
+        print(f"dry run: run {run_id}{' (resumes a journal)' if jpath else ''}, branch tron/{milestone}, ready tasks in order: {', '.join(first)}")
         for t in first:
             cmd = fill(command_for(tron, "worker"), {"prompt": tron.get("prompt", DEFAULT_PROMPT).replace("{task_id}", t),
                                                     "session_id": "<new uuid>", "task_id": t, "run_id": run_id, "milestone": milestone})
             print(f"  {t}: STEM_TRON=1 {' '.join(cmd)}")
         print("dry run: nothing started (later tasks may become ready as earlier ones finish)")
         return 0
-    if not first:
+    if not jpath and not first:
         print(f"no ready task in {milestone}; nothing to do")
         return 0
-    branch, existed = prepare_branch(root, milestone, False)
-    jpath = root / JOURNAL_DIR / f"run-{run_id}.json"
-    start_commit = head(root)
-    journal = {"run_id": run_id, "milestone": milestone, "branch": branch, "started": now(), "ended": None,
-               "start_commit": start_commit, "ac_hashes": snapshot_acs(root), "sessions": []}
-    write_journal(jpath, journal)
-    print(f"run {run_id} on branch {branch} ({'reused' if existed else 'created'}); journal {jpath.relative_to(root)}")
-    acs0 = journal["ac_hashes"]
-    refs0 = branch_refs(root)
+    branch, existed = prepare_branch(root, milestone, False) if not jpath else (f"tron/{milestone}", True)
+    if jpath:
+        journal = json.loads(jpath.read_text())
+        if journal.get("complete"):
+            raise TronError(f"run {run_id} is already complete; start a new one without --run-id")
+        if git_ok(root, "branch", "--show-current").strip() != branch:
+            git_ok(root, "checkout", "-q", branch)
+        recover(root, journal, jpath)
+        if tree_dirty(root):
+            raise TronError("working tree is not clean; commit or stash first")
+        journal["ended"] = None; journal["stop_reason"] = None
+        print(f"resuming run {run_id} on branch {branch}; {len(journal['tasks'])} task(s) settled before")
+    else:
+        jpath = root / JOURNAL_DIR / f"run-{run_id}.json"
+        start_commit = head(root)
+        journal = {"run_id": run_id, "milestone": milestone, "branch": branch, "started": now(), "ended": None, "complete": False,
+                   "stop_reason": None, "start_commit": start_commit, "ac_hashes": snapshot_acs(root), "tasks": {}, "sessions": []}
+        print(f"run {run_id} on branch {branch} ({'reused' if existed else 'created'}); journal {jpath.relative_to(root)}")
+    start_commit, acs0 = journal["start_commit"], journal["ac_hashes"]
+    refs0 = branch_refs(root)  # the user's own work between sessions is legitimate: the reference is taken now
     journal["refs_start"] = refs0
-    attempted = []
+    write_journal(jpath, journal)
+
     while True:
-        if args.max_tasks is not None and len(attempted) >= args.max_tasks:
-            break
-        code, tail = verify(root, tron)  # baseline: a red branch gets a repair session before the next task
-        if code:
-            print(f"baseline verification failed (exit {code}); starting a repair session")
-            base = head(root); acs_before = snapshot_acs(root)
-            entry = run_session(root, tron, "worker", "baseline", run_id, milestone, tron.get("baseline_prompt", BASELINE_PROMPT))
+        why = ("stop file docs/agent/tron/STOP" if stop_path.is_file() else limit_hit(journal, tron, max_tasks))
+        if why:
+            finish(journal, jpath, why)
+            print(f"run ended: {why}; run again to continue")
+            return 0
+        if verify(root, tron)[0]:  # baseline: a red branch gets a repair session before the next task
+            print("baseline verification failed; starting a repair session")
+            base, acs_before = head(root), snapshot_acs(root)
+            journal["in_progress"] = {"task": "baseline", "base": base}
+            entry, up = sessions_with_retry(root, tron, "worker", "baseline", run_id, milestone, journal, jpath,
+                                            tron.get("baseline_prompt", BASELINE_PROMPT))
+            if not up:
+                finish(journal, jpath, "API unavailable after retries"); print("API unavailable; run again later", file=sys.stderr); return 0
             entry["gate"] = gate(root, tron, None, base, acs_before, start_commit, branch, refs0)
-            journal["sessions"].append(entry)
+            journal.pop("in_progress", None)
             write_journal(jpath, journal)
             if not entry["gate"]["passed"]:
-                journal["ended"] = now(); journal["aborted"] = "baseline red after repair"
-                write_journal(jpath, journal)
+                finish(journal, jpath, "baseline red after repair"); journal["aborted"] = "baseline red after repair"; write_journal(jpath, journal)
                 print("baseline still red after the repair session: run stopped (nothing is built on a red branch)", file=sys.stderr)
                 return 3
-        # only tasks that existed when the run was approved; tasks a session creates stay drafts for the report
-        todo = [t for t in ready_tasks(root, milestone) if t not in attempted and t in acs0]
+        todo = [t for t in ready_tasks(root, milestone) if t not in journal["tasks"] and t in acs0]
         if not todo:
-            break
+            finish(journal, jpath, "no ready task left", complete=True)
+            print(f"run {run_id} complete after {len(journal['tasks'])} task(s)")
+            return 0
         task_id = todo[0]
-        attempted.append(task_id)
-        print(f"{task_id}: starting worker session")
-        base = head(root); acs_before = snapshot_acs(root)
-        entry = run_session(root, tron, "worker", task_id, run_id, milestone)
-        entry["gate"] = gate(root, tron, task_id, base, acs_before, start_commit, branch, refs0)
-        journal["sessions"].append(entry)
-        write_journal(jpath, journal)
-        g = entry["gate"]
-        print(f"{task_id}: exit {entry['exit_code']}, gate " + ("passed" if g["passed"] else "FAILED: " + "; ".join(f["reason"] for f in g["failures"]))
-              + (f", cost {entry['cost_usd']}" if entry["cost_usd"] is not None else ""))
-        stop = sorted({f["check"] for f in g["failures"]} & STOPPING)
-        if stop:  # damage on the branch (dirty tree, protected or AC change, left branch): nothing is built on top of it
-            journal["ended"] = now(); journal["aborted"] = "gate damage: " + ", ".join(stop)
+        base, acs_before = head(root), snapshot_acs(root)
+        journal["in_progress"] = {"task": task_id, "base": base}
+        prompt, repairs, last_sig, outcome = None, 0, None, None
+        while True:
+            print(f"{task_id}: starting " + ("worker session" if repairs == 0 else f"repair session {repairs}"))
+            before = fingerprint(root)
+            entry, up = sessions_with_retry(root, tron, "worker", task_id, run_id, milestone, journal, jpath, prompt)
+            if not up:
+                finish(journal, jpath, "API unavailable after retries"); print("API unavailable; run again later", file=sys.stderr); return 0
+            entry["repair"] = repairs
+            g = entry["gate"] = gate(root, tron, task_id, base, acs_before, start_commit, branch, refs0)
             write_journal(jpath, journal)
-            print(f"run stopped after {task_id}: {', '.join(stop)} (see the journal); nothing was discarded", file=sys.stderr)
-            return 4
-    journal["ended"] = now()
-    write_journal(jpath, journal)
-    print(f"run {run_id} ended after {len(attempted)} task(s)")
-    return 0
+            print(f"{task_id}: exit {entry['exit_code']}, gate " + ("passed" if g["passed"] else "FAILED: " + "; ".join(f["reason"] for f in g["failures"]))
+                  + (f", cost {entry['cost_usd']}" if entry["cost_usd"] is not None else ""))
+            if g["passed"]:
+                outcome = ("accepted", None); break
+            stop = sorted({f["check"] for f in g["failures"]} & STOPPING)
+            if stop:
+                finish(journal, jpath, "gate damage: " + ", ".join(stop)); journal["aborted"] = journal["stop_reason"]; write_journal(jpath, journal)
+                print(f"run stopped after {task_id}: {', '.join(stop)} (see the journal); nothing was discarded", file=sys.stderr)
+                return 4
+            sig = signature(g)
+            if fingerprint(root) == before:
+                outcome = ("blocked", "the session left no diff"); break
+            if sig == last_sig:
+                outcome = ("blocked", "the same failure twice in a row: " + "; ".join(r for _, r in sig)); break
+            last_sig = sig
+            repairs += 1
+            if repairs > max_repairs:
+                outcome = ("blocked", f"still failing after {max_repairs} repair(s): " + "; ".join(r for _, r in sig)); break
+            why = "stop file docs/agent/tron/STOP" if stop_path.is_file() else limit_hit(journal, tron, None)
+            if why:
+                finish(journal, jpath, why); print(f"run ended: {why}; run again to continue"); return 0
+            prompt = repair_prompt(tron, task_id, g, repairs, max_repairs)
+        journal.pop("in_progress", None)
+        state, reason = outcome
+        if state == "blocked":
+            kept = block_task(root, tron, task_id, base, reason, journal, refs0)
+            journal["tasks"][task_id] = {"state": "blocked", "reason": reason, "repairs": repairs, "kept": kept}
+            print(f"{task_id}: BLOCKED ({reason})")
+        else:
+            journal["tasks"][task_id] = {"state": "accepted", "repairs": repairs}
+        write_journal(jpath, journal)
+        if state == "accepted" and pause_after == "task" and [t for t in ready_tasks(root, milestone) if t not in journal["tasks"] and t in acs0]:
+            finish(journal, jpath, "pause_after task")
+            print(f"paused after {task_id} (pause_after task); run again to continue")
+            return 0
 
 
 def main(argv=None):
