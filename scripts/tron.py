@@ -764,6 +764,130 @@ def pid_alive(pid):
         return True
 
 
+# ---- report (generated from journal and backlog only) ----
+
+def money(x, partial=False):
+    return "unknown" if x is None else (f"at least {x:.2f} USD" if partial else f"{x:.2f} USD")
+
+
+def cost_of(sessions):
+    """(sum of the known costs, whether some session has no cost data); None when no session reports a cost."""
+    known = [s["cost_usd"] for s in sessions if s.get("cost_usd") is not None]
+    return (sum(known) if known else None), len(known) < len(sessions)
+
+
+def duration(s):
+    try:
+        f = "%Y-%m-%dT%H:%M:%SZ"
+        return (datetime.datetime.strptime(s["end"], f) - datetime.datetime.strptime(s["start"], f)).total_seconds()
+    except (KeyError, ValueError, TypeError):
+        return None
+
+
+def build_report(root, journal, tron):
+    """Markdown report of a run: what is ready to look at, what failed, what the user must decide, what it cost."""
+    sess, tasks = journal["sessions"], journal["tasks"]
+    files, out = task_files(root), []
+    acc = [i for i, v in tasks.items() if v["state"] == "accepted"]
+    blk = [i for i, v in tasks.items() if v["state"] == "blocked"]
+    out += [f"# Tron mode report: run {journal['run_id']} ({journal['milestone']})", "",
+            f"Branch `{journal['branch']}`, run start commit `{journal['start_commit'][:10]}`. State: " +
+            ("complete" if journal.get("complete") else f"not complete ({journal.get('stop_reason') or 'running'})") +
+            f". Review with: `git log --oneline {journal['start_commit'][:10]}..{journal['branch']}`. The run did not push, tag or merge; merging is your decision.", ""]
+    out += ["## Look at this first", "",
+            f"- Preview start command: `{' '.join(tron['preview_cmd']) if isinstance(tron.get('preview_cmd'), list) else tron.get('preview_cmd', 'not configured')}`",
+            f"- Preview URL: {tron.get('preview_url', 'not configured')}",
+            "- The first core flows are tested by you: " + (", ".join(acc) or "(no accepted task)"), ""]
+    out += ["## Accepted tasks: acceptance criteria and evidence", ""]
+    for i in acc:
+        f = files.get(i)
+        if not f:
+            out.append(f"- {i}: task file not found"); continue
+        _, acs, notes = parse_task(f.read_text())
+        out.append(f"### {i}")
+        for ticked, n, text in acs:
+            ev = re.search(rf"^\s*AC#{n}: (E\d.*)$", notes, re.M)
+            out.append(f"- [{'x' if ticked else ' '}] AC#{n} {text}" + (f" (evidence: {ev.group(1)[:160]})" if ev else " (no evidence line)"))
+    if not acc:
+        out.append("(none)")
+    out += ["", "## Evaluator findings", ""]
+    vfiles = sorted((root / JOURNAL_DIR).glob(f"verdict-{journal['run_id']}-*.json"))
+    for vf in vfiles:
+        try:
+            v = json.loads(vf.read_text())
+        except ValueError:
+            continue
+        out.append(f"- {v.get('target')}: {v.get('verdict')} ({len(v.get('findings', []))} finding(s)) [{vf.name}]")
+        for fi in v.get("findings", []):
+            out.append(f"  - {fi.get('ac', '-')} at {fi.get('location', '?')}: {fi.get('scenario', '')}")
+        for a in v.get("assumption_flags", []):
+            out.append(f"  - assumption conflict: {a.get('assumption', '?')} ({a.get('conflict', '?')})")
+    if not vfiles:
+        out.append("(no evaluator verdict in this run)")
+    out += ["", "## Assumptions made", ""]
+    al = assumptions(root, list(tasks))
+    out += [f"- {a}" for a in al] or ["(none recorded)"]
+    out += ["", "## Blocked tasks", ""]
+    for i in blk:
+        v = tasks[i]
+        out.append(f"- {i}: {v['reason']}" + (f" (failed work kept: {', '.join(f'{k} {x}' for k, x in v.get('kept', {}).items())})" if v.get("kept") else ""))
+    out += ["(none)"] if not blk else []
+    out += ["", "## Open questions for you", ""]
+    q = []
+    d = root / "backlog/drafts"
+    if d.is_dir():
+        added = set(git_ok(root, "diff", "--name-only", "--diff-filter=A", journal["start_commit"], "HEAD", "--", "backlog/drafts").splitlines())
+        for rel in sorted(added):
+            p = root / rel
+            if p.is_file():
+                title = re.search(r"^title: *(.+?) *$", p.read_text(), re.M)
+                q.append(f"- {title.group(1).strip(chr(39) + chr(34)) if title else rel} ({rel})")
+    out += q or ["(no new draft task)"]
+    out += ["", "## Cost and time", ""]
+    tot, part = cost_of(sess)
+    wall = journal.get("wall_seconds")
+    out += [f"- Total cost: {money(tot, part)}; sessions: {len(sess)}; wall time: " + (f"{wall / 3600:.2f} h" if wall else "unknown"), "", "| Task | Sessions | Repairs | Cost |", "| --- | --- | --- | --- |"]
+    for i in list(tasks) + [x for x in dict.fromkeys(s["task"] for s in sess) if x not in tasks]:
+        ss = [s for s in sess if s["task"] == i and s["role"] != "evaluator"]
+        c, pt = cost_of(ss) if ss else (None, False)
+        out.append(f"| {i} | {len(ss)} | {tasks.get(i, {}).get('repairs', '-')} | {money(c, pt)} |")
+    out += ["", "| Role | Sessions | Cost | Models |", "| --- | --- | --- | --- |"]
+    for role in sorted({s["role"] for s in sess}):
+        ss = [s for s in sess if s["role"] == role]
+        c, pt = cost_of(ss)
+        out.append(f"| {role} | {len(ss)} | {money(c, pt)} | {', '.join(sorted({s.get('model') or 'unknown' for s in ss}))} |")
+    n_acc, n_blk = len(acc), len(blk)
+    repair_sessions = sum(1 for s in sess if s["role"] == "worker" and s.get("repair"))
+    worker_sessions = [s for s in sess if s["role"] == "worker"]
+    out += ["", "## Metrics", ""]
+    out.append("- Cost per accepted task: " + (money(tot / n_acc, part) if tot is not None and n_acc else "unknown"))
+    out.append("- Repair rate: " + (f"{repair_sessions} repair session(s) in {len(worker_sessions)} worker session(s) ({repair_sessions / len(worker_sessions):.0%})" if worker_sessions else "unknown"))
+    out.append("- Blocked rate: " + (f"{n_blk} of {n_acc + n_blk} settled task(s) ({n_blk / (n_acc + n_blk):.0%})" if n_acc + n_blk else "unknown"))
+    out.append("")
+    return "\n".join(out)
+
+
+def cmd_report(args):
+    root = pathlib.Path(args.root).resolve()
+    d = root / JOURNAL_DIR
+    if args.run_id:
+        jp = d / f"run-{args.run_id}.json"
+    else:
+        cand = sorted(d.glob("run-*.json"), key=lambda p: json.loads(p.read_text()).get("started", "")) if d.is_dir() else []
+        jp = cand[-1] if cand else None
+    if not jp or not jp.is_file():
+        raise TronError("no run journal found (docs/agent/tron/run-<id>.json)")
+    journal = json.loads(jp.read_text())
+    try:
+        tron = load_config(root, args.config)
+    except TronError:
+        tron = {}
+    out = d / f"REPORT-{journal['run_id']}.md"
+    out.write_text(build_report(root, journal, tron))
+    print(f"report written: {out.relative_to(root)}")
+    return 0
+
+
 def finish(journal, jpath, reason=None, complete=False):
     journal["ended"] = now()
     journal["stop_reason"] = reason
@@ -909,6 +1033,10 @@ def run_loop(root, tron, args, milestone, jpath, run_id):
     def fin(reason, complete=False):
         journal["wall_seconds"] = wall0 + time.time() - t0
         finish(journal, jpath, reason, complete)
+        try:  # one report per run, rewritten whenever the run stops
+            (root / JOURNAL_DIR / f"REPORT-{journal['run_id']}.md").write_text(build_report(root, journal, tron))
+        except (OSError, TronError, KeyError, ValueError):
+            pass
 
     def stop_reason(count_tasks=True):
         if stop_path.is_file():
@@ -1066,9 +1194,13 @@ def main(argv=None):
     r.add_argument("--config", help="config file (default: docs/agent/stem-config.json)")
     r.add_argument("--root", default=".", help="project root (default: current directory)")
     r.add_argument("--accept-damage", action="store_true", help="resume a run that stopped for gate damage (the damage stays on the run branch)")
+    rp = sub.add_parser("report", help="write docs/agent/tron/REPORT-<run>.md from the journal and the backlog")
+    rp.add_argument("--run-id", help="run id (default: the latest run)")
+    rp.add_argument("--config", help="config file (default: docs/agent/stem-config.json)")
+    rp.add_argument("--root", default=".", help="project root (default: current directory)")
     args = p.parse_args(argv)
     try:
-        return cmd_run(args)
+        return cmd_report(args) if args.cmd == "report" else cmd_run(args)
     except TronError as e:
         print(f"tron: {e}", file=sys.stderr)
         return 2

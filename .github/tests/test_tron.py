@@ -710,6 +710,47 @@ class Tron(unittest.TestCase):
         r = self.tron("run", "--milestone", "m-1")
         self.assertEqual(r.returncode, 3); self.assertIn("no diff", self.journal()["aborted"])
 
+    def sample_journal(self):
+        d = self.proj / "docs/agent/tron"; d.mkdir(parents=True, exist_ok=True)
+        sha = git(self.proj, "rev-parse", "HEAD").stdout.strip()
+        s = lambda task, role, cost, model, repair=0: {"task": task, "role": role, "start": "2026-11-17T10:00:00Z", "end": "2026-11-17T10:05:00Z",
+                                                          "exit_code": 0, "cost_usd": cost, "model": model, "repair": repair}
+        j = {"run_id": "s1", "milestone": "m-1", "branch": "tron/m-1", "started": "2026-11-17T10:00:00Z", "ended": None, "complete": True,
+             "stop_reason": "no ready task left", "start_commit": sha, "wall_seconds": 5400, "ac_hashes": {},
+             "tasks": {"TASK-1": {"state": "accepted", "repairs": 1}, "TASK-2": {"state": "blocked", "reason": "still failing", "repairs": 2, "kept": {"branch": "tron/blocked-task-2-s1"}}},
+             "sessions": [s("TASK-1", "worker", 0.4, "sonnet"), s("TASK-1", "worker", 0.3, "sonnet", 1), s("TASK-1", "evaluator", None, "opus"), s("TASK-2", "worker", 0.2, "sonnet")]}
+        (d / "run-s1.json").write_text(json.dumps(j))
+        (d / "verdict-s1-TASK-1-1.json").write_text(json.dumps({"target": "TASK-1", "verdict": "fail", "findings": [{"ac": "AC#1", "location": "a.py:1", "scenario": "x"}], "assumption_flags": []}))
+        f = self.proj / "backlog/tasks/task-1 - x.md"
+        f.write_text(f.read_text().replace("- [ ] #1", "- [x] #1").replace("<!-- SECTION:NOTES:BEGIN -->\n", "<!-- SECTION:NOTES:BEGIN -->\nAC#1: E2 test_a passes\nAssumption: CSV is fine\n"))
+        git(self.proj, "add", "-A"); git(self.proj, "commit", "-qm", "sample")
+
+    def test_report_from_a_sample_journal(self):
+        self.sample_journal()
+        r = self.tron("report", "--run-id", "s1")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        rep = (self.proj / "docs/agent/tron/REPORT-s1.md").read_text()
+        for section in ("Look at this first", "Accepted tasks", "Evaluator findings", "Assumptions made", "Blocked tasks", "Open questions", "Cost and time", "Metrics"):
+            self.assertIn(section, rep)
+        self.assertIn("AC#1 it works (evidence: E2 test_a passes)", rep)
+        self.assertIn("TASK-2: still failing", rep); self.assertIn("TASK-1: CSV is fine".replace("TASK-1: ", "TASK-1: Assumption: "), rep)
+        self.assertIn("a.py:1", rep)
+
+    def test_report_shows_unknown_cost_never_zero_and_cost_per_role_with_models(self):
+        self.sample_journal()
+        self.tron("report", "--run-id", "s1")
+        rep = (self.proj / "docs/agent/tron/REPORT-s1.md").read_text()
+        self.assertIn("| evaluator | 1 | unknown | opus |", rep)
+        self.assertIn("| worker | 3 | 0.90 USD | sonnet |", rep)
+        self.assertIn("Total cost: at least 0.90 USD", rep)
+        self.assertIn("Cost per accepted task: at least 0.90 USD", rep)
+        self.assertIn("Blocked rate: 1 of 2", rep); self.assertIn("Repair rate: 1 repair session(s) in 3 worker session(s)", rep)
+
+    def test_report_is_written_when_a_run_stops(self):
+        self.tron("run", "--milestone", "m-1", "--run-id", "auto")
+        self.assertTrue((self.proj / "docs/agent/tron/REPORT-auto.md").is_file())
+        self.assertEqual(git(self.proj, "status", "--porcelain", "--", ".", ":!docs/agent/tron").stdout.strip(), "")
+
     def test_role_commands_fall_back_to_worker(self):
         sys.path.insert(0, str(ROOT / "scripts"))
         import tron
