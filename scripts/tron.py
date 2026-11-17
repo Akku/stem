@@ -14,7 +14,7 @@ Config example (spike TASK-265: inside the sandbox only; Bash is allowed in full
 Placeholders: {prompt} {session_id} {task_id} {run_id} {milestone}. Roles: worker, evaluator, doctor, planner, retro
 (key <role>_cmd; a missing one falls back to worker_cmd).
 Python standard library only (macOS and Linux)."""
-import argparse, datetime, hashlib, json, os, pathlib, re, subprocess, sys, time, uuid
+import argparse, datetime, fnmatch, hashlib, json, os, pathlib, re, subprocess, sys, time, uuid
 
 ROLES = ("worker", "evaluator", "doctor", "planner", "retro")
 DEFAULT_PROMPT = ("Work on backlog task {task_id} following AGENTS.md. This is an unattended Tron mode session "
@@ -53,6 +53,8 @@ def load_config(root, path=None):
     tron = cfg.get("tron")
     if not isinstance(tron, dict) or not tron.get("worker_cmd"):
         raise TronError(f"config {cfg_path}: key 'tron.worker_cmd' missing (command template as a list of strings)")
+    if tron.get("evaluator", "milestone") not in ("off", "milestone", "task"):
+        raise TronError(f"config {cfg_path}: tron.evaluator must be 'off', 'milestone' or 'task'")
     v = tron.get("verify_cmd")
     if not (isinstance(v, list) and v and all(isinstance(a, str) for a in v)):
         raise TronError(f"config {cfg_path}: key 'tron.verify_cmd' missing (the project's verification command via scripts/run.sh, as a list)")
@@ -178,7 +180,7 @@ def run_session(root, tron, role, task_id, run_id, milestone, prompt=None):
     prompt = prompt or tron.get("prompt", DEFAULT_PROMPT).replace("{task_id}", task_id)
     cmd = fill(command_for(tron, role), {"prompt": prompt, "session_id": session_id, "task_id": task_id,
                                          "run_id": run_id, "milestone": milestone})
-    env = dict(os.environ, STEM_TRON="1", STEM_TRON_RUN=run_id, STEM_TRON_TASK=task_id)
+    env = dict(os.environ, STEM_TRON="1", STEM_TRON_RUN=run_id, STEM_TRON_TASK=task_id, STEM_TRON_ROLE=role)
     entry = {"task": task_id, "role": role, "start": now(), "command": cmd}
     timeout = tron.get("session_timeout")
     try:
@@ -368,7 +370,9 @@ def verify(root, tron):
 
 def protected_paths(root, tron):
     """Gate and config files plus the files that decide the verdict: run.sh and every repo file named in verify_cmd."""
-    prot = set(PROTECTED) | {"scripts/run.sh"} | set(tron.get("protected", []))
+    prot = set(PROTECTED) | {"scripts/run.sh", "docs/agent/tron/ACCEPTANCE-*"} | set(tron.get("protected", []))
+    if tron.get("acceptance_scenario"):
+        prot.add(tron["acceptance_scenario"])
     for arg in tron["verify_cmd"]:
         p = (root / arg)
         try:
@@ -422,7 +426,7 @@ def gate(root, tron, task_id, base, acs_before, start_commit, branch, refs0):
             fails.append({"check": "ac_freeze", "reason": "acceptance criteria changed in " + ", ".join(changed),
                           "detail": "restored from the run-start commit: " + (", ".join(restored) or "none")})
         prot = protected_paths(root, tron)
-        hit = [f for f in changed_paths(root, base) if f in prot]
+        hit = [f for f in changed_paths(root, base) if any(fnmatch.fnmatchcase(f, pat) for pat in prot)]
         if hit:
             fails.append({"check": "protected", "reason": "protected files changed: " + ", ".join(hit)})
         return {"passed": not fails, "failures": fails, "placeholders": scan_placeholders(root, base),
@@ -447,16 +451,34 @@ def eval_due(tron, task_text):
     return mode == "task" or bool({"size-l", "review"} & set(labels_of(task_text)))
 
 
-def parse_verdict(text):
-    """The last fenced json block that carries a verdict; None if there is none."""
-    for b in reversed(re.findall(r"```json\s*(\{.*?\})\s*```", text or "", re.S)):
+def parse_verdict(text, expected_acs=None):
+    """Verdict from the final message, fail-closed: any parseable fail block wins; a pass needs lists of objects, no findings and,
+    for a single task, a 'checked' entry for every AC. Returns None when there is no usable block."""
+    found = []
+    for b in re.findall(r"```(?:json|jsonc)?\s*(\{.*?\})\s*```", text or "", re.S | re.I):
         try:
             d = json.loads(b)
         except ValueError:
             continue
-        if isinstance(d, dict) and d.get("verdict") in ("pass", "fail"):
-            return {"verdict": d["verdict"], "findings": list(d.get("findings") or []), "assumption_flags": list(d.get("assumption_flags") or [])}
-    return None
+        if not isinstance(d, dict) or d.get("verdict") not in ("pass", "fail"):
+            continue
+        lists = {k: d.get(k) if d.get(k) is not None else [] for k in ("findings", "assumption_flags", "checked")}
+        if any(not isinstance(v, list) or not all(isinstance(x, dict) for x in v) for v in lists.values()):
+            continue
+        found.append(dict(verdict=d["verdict"], **lists))
+    if not found:
+        return None
+    v = next((x for x in found if x["verdict"] == "fail"), found[-1])
+    if v["verdict"] == "pass":
+        if v["findings"]:
+            v = dict(v, verdict="fail")
+        elif expected_acs:
+            seen = {re.sub(r"\s", "", str(c.get("ac", ""))).upper() for c in v["checked"]}
+            missing = [a for a in expected_acs if a.upper() not in seen]
+            if missing:
+                v = dict(v, verdict="fail", findings=[{"ac": a, "location": "evaluator output", "kind": "not_verifiable",
+                         "scenario": "the verdict lists no check for this AC; a pass must say how each AC was exercised"} for a in missing])
+    return v
 
 
 def assumptions(root, ids):
@@ -468,6 +490,13 @@ def assumptions(root, ids):
                 if re.match(r"\s*Assumption:", l):
                     out.append(f"{i}: {l.strip()}")
     return out
+
+
+def task_intent(text):
+    """Title and description only: the implementer's notes and evidence claims stay out of the evaluator's input."""
+    title = re.search(r"^title: *(.+?) *$", text, re.M)
+    desc = re.search(r"<!-- SECTION:DESCRIPTION:BEGIN -->(.*?)<!-- SECTION:DESCRIPTION:END -->", text, re.S)
+    return f"{(title.group(1).strip(chr(39) + chr(34)) if title else '?')}\n\n{(desc.group(1).strip() if desc else '')}"[:4000]
 
 
 def read_rel(root, rel):
@@ -487,8 +516,13 @@ def write_brief(root, tron, journal, target, base, g, task_ids, intent):
         scen = tron.get("acceptance_scenario", f"docs/agent/tron/ACCEPTANCE-{journal['milestone']}.md")
         parts += ["", "## Milestone acceptance scenario", read_rel(root, scen)]
     code, tail = verify(root, tron)
-    diff = git_ok(root, "diff", "--no-renames", base, "--", ".", *EXCLUDE)
-    parts += ["", "## Verification by the runner", f"exit code {code}", tail, "", "## Diff", diff[:60000] + ("\n(diff truncated)" if len(diff) > 60000 else "")]
+    ex = EXCLUDE + [":(exclude)backlog"]  # task files carry the implementer's notes and evidence claims
+    diff = git_ok(root, "diff", "--no-renames", base, "--", ".", *ex)
+    stat = git_ok(root, "diff", "--no-renames", "--stat", base, "--", ".", *ex)
+    if g is None:
+        g = {"placeholders": scan_placeholders(root, base), "deleted_files": [f for f in deleted_paths(root, base) if not f.startswith("backlog/")]}
+    parts += ["", "## Verification by the runner", f"exit code {code}", tail, "", f"## Diff since {base[:12]}",
+              f"Full diff: git diff {base} -- . ':(exclude)backlog' (the text below is cut at 60000 characters; task files are left out)", "```", stat.strip(), "```", diff[:60000] + ("\n(diff truncated)" if len(diff) > 60000 else "")]
     if tron.get("smoke_cmd"):
         parts += ["", "## Start or smoke command", " ".join(tron["smoke_cmd"]) if isinstance(tron["smoke_cmd"], list) else str(tron["smoke_cmd"])]
     parts += ["", "## Invariants", read_rel(root, "docs/agent/INVARIANTS.md"), "", "## Decision frame", read_rel(root, "docs/agent/DECISION_FRAME.md"),
@@ -502,26 +536,49 @@ def write_brief(root, tron, journal, target, base, g, task_ids, intent):
     return path
 
 
+def tree_state(root):
+    """What an evaluator must not change: HEAD, branches, tracked content, hidden-edit flags."""
+    return (head(root), sorted(branch_refs(root).items()), git_ok(root, "diff", "HEAD", "--", ".", *EXCLUDE),
+            [l for l in git_ok(root, "ls-files", "-v").splitlines() if l[:1].islower() or l[:1] == "S"])
+
+
+def stash_artifacts(root, journal, target):
+    """Files the evaluator created by running the product (data, caches) are kept in a named stash, so the next gate sees a clean tree."""
+    if not [l for l in git_ok(root, "status", "--porcelain", "--", ".", *EXCLUDE).splitlines() if l.strip()]:
+        return None
+    name = f"tron {journal['run_id']} evaluator artifacts {target}"
+    n0 = len(git_ok(root, "stash", "list").splitlines())
+    git_ok(root, "stash", "push", "-u", "-q", "-m", name, "--", ".", *EXCLUDE)
+    return name if len(git_ok(root, "stash", "list").splitlines()) > n0 else None
+
+
 def evaluate(root, tron, journal, jpath, target, base, g, task_ids, intent, abort_check):
     """One evaluator session. Returns {'verdict','findings','assumption_flags','file'} or {'damage': reason} or {'unavailable': reason}."""
     brief = write_brief(root, tron, journal, target, base, g, task_ids, intent)
     prompt = (f"You are the independent evaluator of an unattended Tron mode run. Read .claude/agents/evaluator.md and follow it exactly. "
               f"Your brief is {brief.relative_to(root)}. Do not change any file in the project.")
-    before = fingerprint(root)
+    if not tron.get("evaluator_cmd"):
+        print("tron: no evaluator_cmd configured: the evaluator runs with the worker command (Edit and Write allowed); "
+              "read-only is only enforced by the tree check afterwards", file=sys.stderr)
+    before = tree_state(root)
     verdict = None
     for attempt in (1, 2):  # a missing verdict gets one retry, then counts as a fail
         entry, up = sessions_with_retry(root, tron, "evaluator", target, journal["run_id"], journal["milestone"], journal, jpath, prompt, abort_check=abort_check)
         text = entry.pop("_out", "")
         if not up:
             return {"unavailable": entry.get("retry_aborted") or "API unavailable after retries"}
-        if fingerprint(root) != before:
-            return {"damage": f"evaluator session for {target} changed the working tree"}
-        verdict = parse_verdict(text)
+        if tree_state(root) != before:
+            return {"damage": f"evaluator session for {target} changed HEAD, branches or tracked files"}
+        stash = stash_artifacts(root, journal, target)
+        expected = [f"AC#{n}" for i in task_ids[:1] for _, n, _ in parse_task(task_files(root)[i].read_text())[1]] if target != "milestone" else None
+        verdict = parse_verdict(text, expected)
         entry["evaluator"] = {"target": target, "verdict": verdict["verdict"] if verdict else None}
+        if stash:
+            entry["evaluator"]["artifacts_stash"] = stash
         if verdict:
             break
     if not verdict:
-        verdict = {"verdict": "fail", "assumption_flags": [], "findings": [{"ac": "-", "location": "evaluator output", "kind": "defect",
+        verdict = {"verdict": "fail", "assumption_flags": [], "checked": [], "findings": [{"ac": "-", "location": "evaluator output", "kind": "defect",
                    "scenario": "the evaluator gave no parseable verdict (final json block missing); treated as fail"}]}
     n = sum(1 for f in (root / JOURNAL_DIR).glob(f"verdict-{journal['run_id']}-{target}-*.json")) + 1
     vpath = root / JOURNAL_DIR / f"verdict-{journal['run_id']}-{target}-{n}.json"
@@ -532,13 +589,20 @@ def evaluate(root, tron, journal, jpath, target, base, g, task_ids, intent, abor
 
 
 def verdict_failure(ev):
-    lines = []
+    lines = [f"verdict file: {ev['file']}"]
     for f in ev["findings"]:
         lines.append(f"{f.get('ac', '-')} at {f.get('location', '?')}: {f.get('scenario', '')}")
     for a in ev["assumption_flags"]:
         lines.append(f"assumption conflicts: {a.get('assumption', '?')} ({a.get('conflict', '?')})")
+    sig = {(str(f.get("ac", "-")), str(f.get("kind", "defect"))) for f in ev["findings"]}
+    if ev["assumption_flags"]:
+        sig.add(("assumption", "conflict"))
+    sig = sorted(sig)
+    # findings a worker cannot repair (environment, assumptions): block at once instead of spending repair sessions
+    unrepairable = bool(ev["assumption_flags"] or ev["findings"]) and all(f.get("kind") == "not_verifiable" for f in ev["findings"])
     return {"passed": False, "placeholders": [], "deleted_files": [],
-            "failures": [{"check": "evaluator", "reason": f"evaluator verdict fail: {len(ev['findings'])} finding(s), see {ev['file']}", "detail": "\n".join(lines)[:4000]}]}
+            "failures": [{"check": "evaluator", "reason": f"evaluator verdict fail: {len(ev['findings'])} finding(s)", "detail": "\n".join(lines)[:4000],
+                          "sig": sig, "unrepairable": unrepairable}]}
 
 
 def fingerprint(root):
@@ -551,7 +615,7 @@ def fingerprint(root):
 
 
 def signature(gate_result):
-    return sorted((f["check"], f["reason"], hashlib.sha256(re.sub(r"\d+", "#", f.get("detail", "")).encode()).hexdigest()[:12])
+    return sorted((f["check"], f["reason"], hashlib.sha256((json.dumps(f["sig"]) if "sig" in f else re.sub(r"\d+", "#", f.get("detail", ""))).encode()).hexdigest()[:12])
                   for f in gate_result["failures"])
 
 
@@ -594,6 +658,7 @@ def sessions_with_retry(root, tron, role, task_id, run_id, milestone, journal, j
         write_journal(jpath, journal)
         if not entry.get("api_error"):
             return entry, True
+        entry.pop("_out", None)
         why = abort_check() if abort_check else None
         if why:
             entry["retry_aborted"] = why
@@ -748,43 +813,54 @@ def cmd_run(args):
             pass
 
 
-def milestone_evaluation(root, tron, journal, jpath, accepted, start_commit, max_repairs, stop_reason, fin, branch, refs0, run_id, milestone):
-    """Evaluator at milestone end; a fail gets repair sessions like a gate fail. Returns an exit code to end the run, None to complete it."""
-    repairs, ev = 0, None
+def milestone_evaluation(root, tron, journal, jpath, accepted, start_commit, max_repairs, no_count, fin, branch, refs0, run_id, milestone):
+    """Evaluator at milestone end; a fail gets repair sessions like a gate fail (bounded by max_repairs, cost, time and the stop file).
+    Returns an exit code to end the run, None to complete it."""
+    files = task_files(root)
+    titles = "; ".join(f"{i}: {task_intent(files[i].read_text()).splitlines()[0]}" for i in accepted if i in files)
     while True:
+        why = no_count()
+        if why:
+            fin(why); print(f"run ended: {why}; run again to continue"); return 0
         print(f"milestone {milestone}: evaluator session")
         ev = evaluate(root, tron, journal, jpath, "milestone", start_commit, None, accepted,
-                      f"Milestone {milestone}: all accepted tasks of this run ({', '.join(accepted)}) work together as intended.", stop_reason)
+                      f"Milestone {milestone}: the accepted tasks of this run work together as intended. Tasks: {titles}", no_count)
         if "unavailable" in ev:
             fin(ev["unavailable"]); print("run ended early; run again to continue", file=sys.stderr); return 0
         if "damage" in ev:
             journal["aborted"] = "gate damage: " + ev["damage"]; journal["damage"] = True; fin(journal["aborted"])
             print(f"run stopped: {ev['damage']}", file=sys.stderr); return 4
         if ev["verdict"] == "pass" and not ev["assumption_flags"]:
-            journal["milestone_verdict"] = "pass"; write_journal(jpath, journal)
+            journal["milestone_verdict"] = "pass"; journal["milestone_repairs"] = 0; write_journal(jpath, journal)
             print(f"milestone {milestone}: evaluator says pass; {ev['file']}")
             return None
-        if repairs >= max_repairs:
-            fin(f"milestone evaluation failed after {repairs} repair(s): {ev['file']}")
-            print(f"milestone {milestone}: evaluator still says fail; see {ev['file']}", file=sys.stderr)
-            return 0
-        repairs += 1
+        repairs = journal.get("milestone_repairs", 0)  # kept in the journal: a resume does not get a fresh budget
         g = verdict_failure(ev)
+        if repairs >= max_repairs or g["failures"][0]["unrepairable"]:
+            fin(f"milestone evaluation failed ({'not repairable by a session' if g['failures'][0]['unrepairable'] else f'after {repairs} repair(s)'}): {ev['file']}")
+            print(f"milestone {milestone}: evaluator says fail; read {ev['file']}", file=sys.stderr)
+            return 0
+        journal["milestone_repairs"] = repairs + 1
+        why = no_count()
+        if why:
+            fin(why); print(f"run ended: {why}; run again to continue"); return 0
         base, acs_before = head(root), snapshot_acs(root)
         journal["in_progress"] = {"task": "baseline", "base": base, "acs_before": acs_before}
-        prompt = repair_prompt(tron, "the milestone", g, repairs, max_repairs).replace("Work on backlog task the milestone", "Work on the findings of the milestone evaluation")
-        entry, up = sessions_with_retry(root, tron, "worker", "milestone", run_id, milestone, journal, jpath, prompt, abort_check=stop_reason)
+        prompt = ("The independent evaluation of the milestone found problems (unattended Tron mode session, STEM_TRON=1; read R-TRON first). "
+                  f"Fix exactly these findings and nothing else (repair {repairs + 1} of {max_repairs}):\n" + g["failures"][0]["detail"])
+        before = fingerprint(root)
+        entry, up = sessions_with_retry(root, tron, "worker", "milestone", run_id, milestone, journal, jpath, prompt, abort_check=no_count)
         if not up:
             fin(entry.get("retry_aborted") or "API unavailable after retries"); return 0
         entry["gate"] = gate(root, tron, None, base, acs_before, start_commit, branch, refs0)
         journal.pop("in_progress", None)
         write_journal(jpath, journal)
-        if not entry["gate"]["passed"]:
+        if not entry["gate"]["passed"] or fingerprint(root) == before:
             stop = sorted({f["check"] for f in entry["gate"]["failures"]} & STOPPING)
-            journal["aborted"] = "gate damage: " + ", ".join(stop) if stop else "milestone repair failed the gate"
+            journal["aborted"] = ("gate damage: " + ", ".join(stop)) if stop else ("milestone repair failed the gate" if not entry["gate"]["passed"] else "milestone repair left no diff")
             journal["damage"] = bool(stop)
             fin(journal["aborted"])
-            print(f"milestone repair failed the gate: {journal['aborted']}", file=sys.stderr)
+            print(f"milestone repair stopped: {journal['aborted']}", file=sys.stderr)
             return 4 if stop else 3
 
 
@@ -851,13 +927,27 @@ def run_loop(root, tron, args, milestone, jpath, run_id):
         settle(bl["task"], bl["base"], bl["reason"], bl.get("repairs", 0))
         resume_ip = None
 
+    no_count = lambda: stop_reason(count_tasks=False)  # limits that end a session in flight (not the task count)
     while True:
+        task_resumed = resume_ip is not None and resume_ip.get("task") != "baseline" and resume_ip.get("task") not in journal["tasks"]
+        todo = [] if task_resumed else [t for t in ready_tasks(root, milestone, blocked_status) if t not in journal["tasks"] and t in acs0]
+        if not task_resumed and not todo:  # milestone end: the task count must not keep the evaluation from running
+            why = no_count()
+            if why:
+                fin(why); print(f"run ended: {why}; run again to continue"); return 0
+            accepted = [i for i, v in journal["tasks"].items() if v["state"] == "accepted"]
+            if accepted and tron.get("evaluator", "milestone") != "off" and journal.get("milestone_verdict") != "pass":
+                res = milestone_evaluation(root, tron, journal, jpath, accepted, start_commit, max_repairs, no_count, fin, branch, refs0, run_id, milestone)
+                if res is not None:
+                    return res
+            fin("no ready task left", complete=True)
+            print(f"run {run_id} complete after {len(journal['tasks'])} task(s)")
+            return 0
         why = stop_reason()
         if why:
             fin(why)
             print(f"run ended: {why}; run again to continue")
             return 0
-        task_resumed = resume_ip is not None and resume_ip.get("task") != "baseline"
         if not task_resumed and verify(root, tron)[0]:  # baseline: a red branch gets a repair session before the next task
             print("baseline verification failed; starting a repair session")
             base, acs_before = head(root), snapshot_acs(root)
@@ -884,16 +974,6 @@ def run_loop(root, tron, args, milestone, jpath, run_id):
             repairs, last_sig = resume_ip_task.get("repairs", 0), resume_ip_task.get("last_sig")
             last_sig = [tuple(x) for x in last_sig] if last_sig else None
         else:
-            todo = [t for t in ready_tasks(root, milestone, blocked_status) if t not in journal["tasks"] and t in acs0]
-            if not todo:
-                accepted = [i for i, v in journal["tasks"].items() if v["state"] == "accepted"]
-                if accepted and tron.get("evaluator", "milestone") != "off" and journal.get("milestone_verdict") != "pass":
-                    res = milestone_evaluation(root, tron, journal, jpath, accepted, start_commit, max_repairs, stop_reason, fin, branch, refs0, run_id, milestone)
-                    if res is not None:
-                        return res
-                fin("no ready task left", complete=True)
-                print(f"run {run_id} complete after {len(journal['tasks'])} task(s)")
-                return 0
             task_id = todo[0]
             base, acs_before = head(root), snapshot_acs(root)
             repairs, last_sig = 0, None
@@ -913,10 +993,11 @@ def run_loop(root, tron, args, milestone, jpath, run_id):
                   + (f", cost {entry['cost_usd']}" if entry["cost_usd"] is not None else ""))
             if g["passed"] and tron.get("evaluator", "milestone") != "off":
                 tf = task_files(root).get(task_id)
-                if tf and eval_due(tron, tf.read_text()):
+                # labels are read from the run-start commit: a session cannot switch the evaluation off by editing them
+                text0 = start_text(root, task_id, start_commit) or (tf.read_text() if tf else "")
+                if tf and eval_due(tron, text0):
                     print(f"{task_id}: evaluator session")
-                    intent = tf.read_text()[:4000]
-                    ev = evaluate(root, tron, journal, jpath, task_id, base, g, [task_id], intent, stop_reason)
+                    ev = evaluate(root, tron, journal, jpath, task_id, base, g, [task_id], task_intent(tf.read_text()), no_count)
                     if "unavailable" in ev:
                         fin(ev["unavailable"]); print("run ended early; run again to continue", file=sys.stderr); return 0
                     if "damage" in ev:
@@ -936,6 +1017,8 @@ def run_loop(root, tron, args, milestone, jpath, run_id):
                 print(f"run stopped after {task_id}: {', '.join(stop)} (see the journal); nothing was discarded", file=sys.stderr)
                 return 4
             sig = signature(g)
+            if any(f.get("unrepairable") for f in g["failures"]):
+                outcome = ("blocked", "the evaluator could not verify or flagged assumptions; a repair session cannot fix that: " + g["failures"][0]["detail"][:200].replace("\n", " ")); break
             if fingerprint(root) == before:
                 if entry["exit_code"] == 127:  # the agent command does not start: blocking every task would not help
                     fin("worker command could not start (exit 127): fix the config, then run again"); print("worker command could not start", file=sys.stderr); return 0

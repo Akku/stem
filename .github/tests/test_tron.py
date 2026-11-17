@@ -59,6 +59,11 @@ def run(*a): subprocess.run(a, check=True, capture_output=True)
 if task == "baseline":
     if os.path.exists(td + "/verify_fail") and beh != "stay_red": os.remove(td + "/verify_fail")
     print(json.dumps({"session_id": sid, "total_cost_usd": 0.1})); sys.exit(0)
+if task == "milestone":
+    if beh != "noop":
+        n = sum(1 for l in open(td + "/calls.log") if json.loads(l)["task"] == "milestone")
+        open("m_%d.txt" % n, "w").write("fix"); run("git", "add", "-A"); run("git", "commit", "-qm", "milestone fix")
+    print(json.dumps({"session_id": sid, "total_cost_usd": 0.1})); sys.exit(0)
 if beh == "noop":
     sys.exit(0)
 st = json.load(open("state.json"))
@@ -80,6 +85,10 @@ if beh == "verify_fail":
 if beh == "placeholder":
     os.makedirs("src", exist_ok=True)
     open("src/a.py", "w").write("def f():\\n    pass\\n# TODO later\\n")
+if beh == "unlabel":
+    s2 = open(f).read(); open(f, "w").write(s2.replace("  - review\\n", ""))
+if beh == "edit_scenario":
+    open("docs/agent/tron/ACCEPTANCE-m-1.md", "a").write("weakened")
 if beh == "rename_protected":
     run("git", "mv", "scripts/tron.py", "scripts/t2.py")
 if beh == "edit_runsh":
@@ -98,7 +107,7 @@ if beh == "hide":
 if beh == "delete_test":
     os.remove("scripts/t.py")
 if beh == "ac_crash":
-    open(f, "w").write(open(f).read().replace("works", "works differently"))
+    s2 = open(f).read(); open(f, "w").write(s2.replace("works", "works differently"))
     run("git", "add", "-A"); run("git", "commit", "-qm", "sneaky"); os.kill(os.getppid(), 9); sys.exit(1)
 if beh == "dirty":
     open("junk.txt", "w").write("x")
@@ -118,14 +127,18 @@ brief = re.search(r"brief is (\\S+)\\.", prompt).group(1)
 open(td + "/brief_copy.txt", "a").write(open(brief).read())
 if v == "write":
     open("evaluator_wrote.txt", "w").write("x")
+if v == "write_tracked":
+    open("scripts/t.py", "a").write("# tampered\\n")
 if v == "none":
     print("I looked at it and it seems fine."); sys.exit(0)
 if v == "flag":
-    j = {"verdict": "pass", "findings": [], "assumption_flags": [{"assumption": "uses cloud", "conflict": "invariant: no external data"}]}
+    j = {"verdict": "pass", "findings": [], "checked": [{"ac": "AC#1"}], "assumption_flags": [{"assumption": "uses cloud", "conflict": "invariant: no external data"}]}
+elif v == "unverifiable":
+    j = {"verdict": "fail", "findings": [{"ac": "AC#1", "location": "x", "scenario": "no start command", "kind": "not_verifiable"}], "assumption_flags": []}
 elif v == "fail":
     j = {"verdict": "fail", "findings": [{"ac": "AC#1", "location": "src/a.py:1", "scenario": "run x, expected 1, got 2", "kind": "defect"}], "assumption_flags": []}
 else:
-    j = {"verdict": "pass", "findings": [], "assumption_flags": []}
+    j = {"verdict": "pass", "findings": [], "assumption_flags": [], "checked": [{"ac": "AC#1", "how": "ran it", "observed": "ok"}]}
 print(json.dumps({"session_id": sid, "total_cost_usd": 0.05, "result": "ran it\\n```json\\n" + json.dumps(j) + "\\n```"}))
 '''
 FAKE_VERIFY = '''#!/bin/sh
@@ -608,11 +621,80 @@ class Tron(unittest.TestCase):
         self.assertEqual(self.journal()["tasks"]["TASK-1"]["state"], "blocked")
         self.assertEqual(self.eval_calls(), ["TASK-1", "TASK-1"])  # one retry
 
-    def test_evaluator_that_writes_into_the_project_stops_the_run(self):
+    def test_evaluator_artifacts_are_set_aside_in_a_stash_and_the_run_goes_on(self):
         self.with_evaluator("task")
         self.evaluator_plan({"TASK-1": ["write"]})
+        r = self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        ev = [s for s in self.journal()["sessions"] if s["role"] == "evaluator"][0]["evaluator"]
+        self.assertIn("artifacts_stash", ev)
+        self.assertFalse((self.proj / "evaluator_wrote.txt").exists())
+        self.assertEqual(self.journal()["tasks"]["TASK-1"]["state"], "accepted")
+
+    def test_evaluator_that_changes_tracked_files_stops_the_run(self):
+        self.with_evaluator("task")
+        self.evaluator_plan({"TASK-1": ["write_tracked"]})
         r = self.tron("run", "--milestone", "m-1")
         self.assertEqual(r.returncode, 4); self.assertIn("evaluator", self.journal()["aborted"])
+
+    def test_review_parse_verdict_is_fail_closed(self):
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import tron
+        blk = lambda d: "```json\n" + json.dumps(d) + "\n```\n"
+        ok = {"verdict": "pass", "findings": [], "assumption_flags": [], "checked": [{"ac": "AC#1"}]}
+        self.assertEqual(tron.parse_verdict(blk(ok), ["AC#1"])["verdict"], "pass")
+        self.assertEqual(tron.parse_verdict(blk(dict(ok, findings=[{"ac": "AC#1"}])))["verdict"], "fail")  # pass with findings
+        self.assertIsNone(tron.parse_verdict(blk(dict(ok, findings="none"))))  # sloppy shape is no verdict
+        self.assertEqual(tron.parse_verdict(blk(dict(ok, verdict="fail")) + blk(ok))["verdict"], "fail")  # a later quoted pass does not win
+        self.assertEqual(tron.parse_verdict(blk(dict(ok, checked=[])), ["AC#1"])["verdict"], "fail")  # AC not checked
+        self.assertEqual(tron.parse_verdict("```JSON\n" + json.dumps(ok) + "\n```")["verdict"], "pass")  # tag is optional and case-insensitive
+
+    def test_review_label_cannot_be_removed_by_the_session_to_skip_the_evaluator(self):
+        self.with_evaluator("milestone")
+        f = self.proj / "backlog/tasks/task-1 - x.md"
+        f.write_text(f.read_text().replace("  - size-S", "  - size-S\n  - review"))
+        git(self.proj, "add", "-A"); git(self.proj, "commit", "-qm", "label")
+        self.behavior({"TASK-1": "unlabel"})
+        self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
+        self.assertIn("TASK-1", self.eval_calls())
+
+    def test_review_milestone_evaluation_runs_even_when_max_tasks_is_reached(self):
+        self.with_evaluator("milestone")
+        self.state([("TASK-1", [])]); git(self.proj, "add", "-A"); git(self.proj, "commit", "-qm", "one task")
+        self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
+        self.assertEqual(self.eval_calls(), ["milestone"]); self.assertTrue(self.journal()["complete"])
+
+    def test_review_acceptance_scenario_is_protected(self):
+        self.with_evaluator("milestone")
+        (self.proj / "docs/agent/tron").mkdir(parents=True, exist_ok=True)
+        (self.proj / "docs/agent/tron/ACCEPTANCE-m-1.md").write_text("scenario")
+        git(self.proj, "add", "-A"); git(self.proj, "commit", "-qm", "scenario")
+        self.behavior({"TASK-1": "edit_scenario"})
+        self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
+        self.assertIn("protected", self.checks())
+
+    def test_review_not_verifiable_blocks_at_once_without_repairs(self):
+        self.with_evaluator("task")
+        self.evaluator_plan({"TASK-1": ["unverifiable"]})
+        self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
+        self.assertEqual(self.journal()["tasks"]["TASK-1"]["state"], "blocked")
+        self.assertEqual(self.eval_calls(), ["TASK-1"])
+        self.assertEqual(sum(1 for c in self.calls() if c["task"] == "TASK-1"), 1)
+
+    def test_review_brief_leaves_out_implementer_notes(self):
+        self.with_evaluator("task")
+        self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
+        self.assertNotIn("fake evidence", (self.td / "brief_copy.txt").read_text())
+
+    def test_review_evaluator_role_line_at_session_start(self):
+        r = subprocess.run(["bash", str(ROOT / "scripts/session-start.sh")], cwd=self.tmp, capture_output=True, text=True,
+                           env=dict(os.environ, STEM_OFFLINE="1", STEM_TRON="1", STEM_TRON_ROLE="evaluator"))
+        self.assertIn("TRON MODE evaluator", r.stdout); self.assertNotIn("one task per session", r.stdout)
+
+    def test_review_invalid_evaluator_config_is_rejected(self):
+        self.config({"evaluator": "Task"})
+        r = self.tron("run", "--milestone", "m-1")
+        self.assertEqual(r.returncode, 2); self.assertIn("evaluator", r.stderr)
 
     def test_milestone_evaluator_fail_gets_repair_sessions(self):
         self.with_evaluator("milestone", max_repairs=1)
@@ -621,6 +703,12 @@ class Tron(unittest.TestCase):
         j = self.journal()
         self.assertFalse(j["complete"]); self.assertIn("milestone evaluation failed", j["stop_reason"])
         self.assertEqual(self.eval_calls(), ["milestone", "milestone"])
+
+    def test_review_milestone_repair_that_changes_nothing_ends_the_run(self):
+        self.with_evaluator("milestone", max_repairs=2)
+        self.evaluator_plan({"milestone": ["fail"]}); self.behavior({"milestone": "noop"})
+        r = self.tron("run", "--milestone", "m-1")
+        self.assertEqual(r.returncode, 3); self.assertIn("no diff", self.journal()["aborted"])
 
     def test_role_commands_fall_back_to_worker(self):
         sys.path.insert(0, str(ROOT / "scripts"))
