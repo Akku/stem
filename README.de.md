@@ -126,7 +126,7 @@ Stand laut eigener Dokumentation der Projekte, November 2026; diese Projekte än
 | Datei | Zweck |
 | --- | --- |
 | `STARTE_HIER.md` / `START_HERE.md` | Anleitung für Menschen (DE/EN) |
-| `.claude/skills/` | Skills: `retro`, `alignment`, `handoff`, `promote-learning`, `stem-update`, `port-check`; optionales Modul (Auswahl beim Setup): `market-analysis` |
+| `.claude/skills/` | Skills: `retro`, `alignment`, `handoff`, `promote-learning`, `stem-update`, `port-check`; optionale Module (Auswahl beim Setup): `market-analysis`, `tron` |
 | `.agents/skills` | Verweis auf `.claude/skills/` für gemeinsame Codex-Skill-Quellen; Codex listet diese Skills nativ (automatisierter Testlauf) |
 | `dgpt.md`, `.deutschlandgpt/skills` | Adapter für DeutschlandGPT Code: Verweis auf `AGENTS.md` und auf `.claude/skills/` (ein echter Durchlauf) |
 | `.claude/agents/` | Agenten: `evaluator` (lesender Prüf-Agent für Tron-Läufe), `ux-designer` (optionales Modul, für Projekte mit Oberfläche) |

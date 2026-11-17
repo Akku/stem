@@ -765,5 +765,90 @@ class Tron(unittest.TestCase):
         self.assertIsNone(re.search(r"""(?<!"stash", )["'](push|tag|merge)["']|git\s+(push|tag|merge)\b""", src))
 
 
+class Check(unittest.TestCase):
+    """Readiness check: each failure on its own, plus the ready case."""
+    def setUp(self):
+        self.tmp = pathlib.Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.proj = self.tmp / "proj"; self.proj.mkdir()
+        (self.proj / "docs/agent/tron").mkdir(parents=True)
+        (self.proj / "backlog/tasks").mkdir(parents=True)
+        (self.proj / "docs/agent/DECISION_FRAME.md").write_text("frame\n")
+        (self.proj / "docs/agent/INVARIANTS.md").write_text("inv\n")
+        (self.proj / "docs/agent/tron/ACCEPTANCE-m-9.md").write_text("scenario\n")
+        self.task("TASK-1")
+        self.cfg()
+        git(self.proj, "init", "-q", "-b", "main")
+        git(self.proj, "add", "-A"); git(self.proj, "commit", "-qm", "init")
+
+    def task(self, tid, labels="  - size-S\n", acs="- [ ] #1 it works\n"):
+        n = tid.split("-")[1]
+        (self.proj / f"backlog/tasks/task-{n} - x.md").write_text(
+            f"---\nid: {tid}\ntitle: t\nstatus: To Do\nlabels:\n{labels}milestone: m-9\n---\n\n<!-- AC:BEGIN -->\n{acs}<!-- AC:END -->\n")
+
+    def cfg(self, **over):
+        c = {"worker_cmd": ["claude", "--allowedTools", "Bash"], "verify_cmd": ["scripts/run.sh", "v"], "smoke_cmd": ["true"],
+             "max_cost": 5, "evaluator": "off"}
+        c.update(over)
+        c = {k: v for k, v in c.items() if v is not None}
+        (self.proj / "docs/agent/stem-config.json").write_text(json.dumps({"tron": c}))
+
+    def check(self, env=None):
+        e = {k: v for k, v in os.environ.items() if k not in ("IS_SANDBOX", "STEM_SANDBOX", "CLAUDE_CODE_EFFORT_LEVEL")}
+        e.update(env or {})
+        return subprocess.run([sys.executable, str(TRON), "check", "--milestone", "m-9", "--root", str(self.proj)], capture_output=True, text=True, env=e)
+
+    def commit(self):
+        git(self.proj, "add", "-A"); git(self.proj, "commit", "-qm", "x")
+
+    def fails_with(self, needle, **kw):
+        r = self.check(**kw)
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn(needle, r.stdout)
+
+    def test_ready(self):
+        r = self.check()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("READY", r.stdout); self.assertIn("start: scripts/tron.py run --milestone m-9", r.stdout)
+
+    def test_task_without_acs(self):
+        self.task("TASK-2", acs=""); self.commit(); self.fails_with("TASK-2: no acceptance criteria")
+
+    def test_task_without_size(self):
+        self.task("TASK-2", labels="  - x\n"); self.commit(); self.fails_with("TASK-2: no size label")
+
+    def test_verify_unset(self):
+        self.cfg(verify_cmd=None); self.commit(); self.fails_with("verify_cmd")
+
+    def test_frame_and_invariants_missing(self):
+        (self.proj / "docs/agent/DECISION_FRAME.md").unlink(); (self.proj / "docs/agent/INVARIANTS.md").write_text("")
+        self.commit(); r = self.check()
+        self.assertIn("DECISION_FRAME.md is missing", r.stdout); self.assertIn("INVARIANTS.md is missing", r.stdout)
+
+    def test_no_limit(self):
+        self.cfg(max_cost=None); self.commit(); self.fails_with("no limit configured")
+
+    def test_no_scenario(self):
+        (self.proj / "docs/agent/tron/ACCEPTANCE-m-9.md").unlink(); self.commit(); self.fails_with("acceptance scenario missing")
+
+    def test_dirty_tree(self):
+        (self.proj / "junk.txt").write_text("x"); self.fails_with("working tree is not clean")
+
+    def test_no_sandbox_no_allowlist(self):
+        if os.path.exists("/.dockerenv"):
+            self.skipTest("host is a container")
+        self.cfg(worker_cmd=["claude"]); self.commit(); self.fails_with("neither a sandbox nor a permission allowlist")
+        r = self.check(env={"IS_SANDBOX": "1"}); self.assertEqual(r.returncode, 0, r.stdout)
+
+    def test_no_smoke_command(self):
+        self.cfg(smoke_cmd=None); self.commit(); self.fails_with("start-and-smoke")
+
+    def test_warnings(self):
+        self.cfg(evaluator="milestone"); self.commit()
+        r = self.check(env={"CLAUDE_CODE_EFFORT_LEVEL": "high"})
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("CLAUDE_CODE_EFFORT_LEVEL", r.stdout); self.assertIn("evaluator_cmd is missing", r.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -129,7 +129,7 @@ Based on each project's own documentation as of November 2026; these projects ch
 | `SETUP.md` | One-time setup procedure for the agent (deleted after setup) |
 | `AGENTS.md` | Shared core rules (Codex and compatible tools) |
 | `CLAUDE.md` | Thin adapter pointing to `AGENTS.md` |
-| `.claude/skills/` | Skills: `retro`, `alignment`, `handoff`, `promote-learning`, `stem-update`, `port-check`; optional module (chosen in setup): `market-analysis` |
+| `.claude/skills/` | Skills: `retro`, `alignment`, `handoff`, `promote-learning`, `stem-update`, `port-check`; optional modules (chosen in setup): `market-analysis`, `tron` |
 | `.agents/skills` | Link to `.claude/skills/` for shared Codex skill sources; Codex lists these skills natively (automated probe) |
 | `dgpt.md`, `.deutschlandgpt/skills` | Adapter for DeutschlandGPT Code: pointer to `AGENTS.md` and link to `.claude/skills/` (one real run) |
 | `.claude/agents/` | Agents: `evaluator` (read-only judge of Tron mode runs), `ux-designer` (optional module, for projects with a UI) |

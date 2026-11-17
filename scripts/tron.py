@@ -1183,6 +1183,87 @@ def run_loop(root, tron, args, milestone, jpath, run_id):
             return 0
 
 
+def check_milestone(root, milestone, cfg_path=None):
+    """Readiness check (doc-12 3.1): returns (failures, warnings, tron config or None). Deterministic, starts nothing."""
+    fails, warns = [], []
+    cp = pathlib.Path(cfg_path) if cfg_path else root / "docs/agent/stem-config.json"
+    tron = {}
+    try:
+        tron = json.loads(cp.read_text()).get("tron") or {}
+        if not isinstance(tron, dict):
+            tron = {}
+    except (OSError, ValueError):
+        fails.append(f"config missing or unreadable: {cp} (needs key 'tron')")
+    def cmdok(c):
+        return isinstance(c, list) and bool(c) and all(isinstance(a, str) for a in c)
+    if not cmdok(tron.get("worker_cmd")):
+        fails.append("tron.worker_cmd is unset (command template as a list of strings)")
+    if not cmdok(tron.get("verify_cmd")):
+        fails.append("tron.verify_cmd is unset (the verification command via scripts/run.sh, as a list)")
+    if not (tron.get("smoke_cmd") or tron.get("preview_cmd")):
+        fails.append("no start-and-smoke command for the product (tron.smoke_cmd or tron.preview_cmd)")
+    if all(tron.get(k) is None for k in ("max_cost", "max_hours", "max_tasks")):
+        fails.append("no limit configured (tron.max_cost, max_hours or max_tasks)")
+    for rel in ("docs/agent/DECISION_FRAME.md", "docs/agent/INVARIANTS.md"):
+        f = root / rel
+        if not f.is_file() or not f.read_text().strip():
+            fails.append(f"{rel} is missing or empty")
+    scen = tron.get("acceptance_scenario") or f"docs/agent/tron/ACCEPTANCE-{milestone}.md"
+    sf = root / scen
+    if not sf.is_file() or not sf.read_text().strip():
+        fails.append(f"acceptance scenario missing or empty: {scen}")
+    files = task_files(root)
+    ids = []
+    for tid, f in files.items():
+        text = f.read_text()
+        m = re.search(r"^milestone: *(.+?) *$", text, re.M)
+        if m and m.group(1).strip("'\"") == milestone:
+            ids.append(tid)
+    if not ids:
+        fails.append(f"no task found in milestone {milestone}")
+    for tid in ids:
+        text = files[tid].read_text()
+        st, acs, _ = parse_task(text)
+        if st and st.lower() == "done":
+            continue
+        if not acs:
+            fails.append(f"{tid}: no acceptance criteria")
+        if not any(re.fullmatch(r"size-[sml]", l) for l in labels_of(text)):
+            fails.append(f"{tid}: no size label (size-S, size-M or size-L)")
+    dirty = tree_dirty(root)
+    if dirty:
+        fails.append(f"working tree is not clean ({len(dirty)} change(s), first: {dirty[0].strip()[:80]})")
+    wc = tron.get("worker_cmd") if cmdok(tron.get("worker_cmd")) else []
+    sandbox = os.path.exists("/.dockerenv") or os.environ.get("IS_SANDBOX") == "1" or bool(os.environ.get("STEM_SANDBOX"))
+    allow = any(a in ("--allowedTools", "--allowed-tools") for a in wc)
+    if not (sandbox or allow):
+        fails.append("neither a sandbox nor a permission allowlist is detected (run inside the STEM sandbox, or put --allowedTools in tron.worker_cmd)")
+    if os.environ.get("CLAUDE_CODE_EFFORT_LEVEL"):
+        warns.append("CLAUDE_CODE_EFFORT_LEVEL is set and beats --effort in the role commands")
+    if not cmdok(tron.get("evaluator_cmd")) and tron.get("evaluator", "milestone") != "off":
+        warns.append("tron.evaluator_cmd is missing: the evaluator falls back to worker_cmd, which may edit files")
+    return fails, warns, tron
+
+
+def cmd_check(args):
+    root = pathlib.Path(args.root).resolve()
+    fails, warns, tron = check_milestone(root, args.milestone, args.config)
+    for w in warns:
+        print(f"warning: {w}")
+    if fails:
+        print(f"NOT READY: {len(fails)} problem(s) for {args.milestone}")
+        for f in fails:
+            print(f"  - {f}")
+        return 1
+    print(f"READY: {args.milestone}")
+    for role in ROLES:
+        c = tron.get(f"{role}_cmd")
+        print(f"  {role}: {' '.join(c) if c else '(falls back to worker_cmd)'}")
+    print(f"  verify: {' '.join(tron['verify_cmd'])}")
+    print(f"start: scripts/tron.py run --milestone {args.milestone}")
+    return 0
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="tron.py", description="Tron mode runner (R-TRON)")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -1194,13 +1275,17 @@ def main(argv=None):
     r.add_argument("--config", help="config file (default: docs/agent/stem-config.json)")
     r.add_argument("--root", default=".", help="project root (default: current directory)")
     r.add_argument("--accept-damage", action="store_true", help="resume a run that stopped for gate damage (the damage stays on the run branch)")
+    c = sub.add_parser("check", help="readiness check for a milestone: lists what blocks an unattended run, starts nothing")
+    c.add_argument("--milestone", required=True, help="milestone id, e.g. m-4")
+    c.add_argument("--config", help="config file (default: docs/agent/stem-config.json)")
+    c.add_argument("--root", default=".", help="project root (default: current directory)")
     rp = sub.add_parser("report", help="write docs/agent/tron/REPORT-<run>.md from the journal and the backlog")
     rp.add_argument("--run-id", help="run id (default: the latest run)")
     rp.add_argument("--config", help="config file (default: docs/agent/stem-config.json)")
     rp.add_argument("--root", default=".", help="project root (default: current directory)")
     args = p.parse_args(argv)
     try:
-        return cmd_report(args) if args.cmd == "report" else cmd_run(args)
+        return {"report": cmd_report, "check": cmd_check}.get(args.cmd, cmd_run)(args)
     except TronError as e:
         print(f"tron: {e}", file=sys.stderr)
         return 2
