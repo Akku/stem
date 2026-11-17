@@ -106,6 +106,28 @@ run("git", "add", "-A", ":!junk.txt")
 run("git", "commit", "-qm", task + ": work")
 print(json.dumps({"session_id": sid, "total_cost_usd": 0.25, "modelUsage": {"fake-model": {}}}))
 '''
+FAKE_EVALUATOR = '''#!/usr/bin/env python3
+import json, os, re, sys
+target, sid, prompt = sys.argv[1], sys.argv[2], sys.argv[3]
+td = os.environ["TRON_TEST_DIR"]
+open(td + "/eval_calls.log", "a").write(target + "\\n")
+n = sum(1 for l in open(td + "/eval_calls.log") if l.strip() == target)
+plan = json.load(open(td + "/evaluator.json")).get(target, ["pass"])
+v = plan[min(n, len(plan)) - 1]
+brief = re.search(r"brief is (\\S+)\\.", prompt).group(1)
+open(td + "/brief_copy.txt", "a").write(open(brief).read())
+if v == "write":
+    open("evaluator_wrote.txt", "w").write("x")
+if v == "none":
+    print("I looked at it and it seems fine."); sys.exit(0)
+if v == "flag":
+    j = {"verdict": "pass", "findings": [], "assumption_flags": [{"assumption": "uses cloud", "conflict": "invariant: no external data"}]}
+elif v == "fail":
+    j = {"verdict": "fail", "findings": [{"ac": "AC#1", "location": "src/a.py:1", "scenario": "run x, expected 1, got 2", "kind": "defect"}], "assumption_flags": []}
+else:
+    j = {"verdict": "pass", "findings": [], "assumption_flags": []}
+print(json.dumps({"session_id": sid, "total_cost_usd": 0.05, "result": "ran it\\n```json\\n" + json.dumps(j) + "\\n```"}))
+'''
 FAKE_VERIFY = '''#!/bin/sh
 [ -e "$TRON_TEST_DIR/verify_fail" ] && exit 1
 exit 0
@@ -138,9 +160,10 @@ class Tron(unittest.TestCase):
         self.proj = self.tmp / "proj"; self.proj.mkdir()
         self.td = self.tmp / "td"; self.td.mkdir()  # fake agent log, behaviours and verify switch live outside the project
         self.bin = self.tmp / "bin"; self.bin.mkdir()
-        for name, body in (("backlog", FAKE_BACKLOG), ("agent", FAKE_AGENT), ("verify", FAKE_VERIFY)):
+        for name, body in (("backlog", FAKE_BACKLOG), ("agent", FAKE_AGENT), ("verify", FAKE_VERIFY), ("evaluator", FAKE_EVALUATOR)):
             (self.bin / name).write_text(body); (self.bin / name).chmod(0o755)
         self.behavior({})
+        self.evaluator_plan({})
         git(self.proj, "init", "-q", "-b", "main")
         (self.proj / "scripts").mkdir()
         (self.proj / "scripts/tron.py").write_text("# original\n")
@@ -152,6 +175,16 @@ class Tron(unittest.TestCase):
 
     def behavior(self, d):
         (self.td / "behavior.json").write_text(json.dumps(d))
+
+    def evaluator_plan(self, d):
+        (self.td / "evaluator.json").write_text(json.dumps(d))
+
+    def eval_calls(self):
+        f = self.td / "eval_calls.log"
+        return f.read_text().split() if f.exists() else []
+
+    def with_evaluator(self, mode, **extra):
+        self.config(dict({"evaluator": mode, "evaluator_cmd": [str(self.bin / "evaluator"), "{task_id}", "{session_id}", "{prompt}"]}, **extra))
 
     def calls(self):
         return [json.loads(l) for l in (self.td / "calls.log").read_text().splitlines()]
@@ -165,7 +198,7 @@ class Tron(unittest.TestCase):
     def config(self, extra):
         (self.proj / "docs/agent").mkdir(parents=True, exist_ok=True)
         cfg = {"worker_cmd": [str(self.bin / "agent"), "{task_id}", "{session_id}", "{prompt}"], "verify_cmd": [str(self.bin / "verify")],
-               "pause_after": "milestone", "backoff_base": 0}
+               "pause_after": "milestone", "backoff_base": 0, "evaluator": "off"}
         (self.proj / "docs/agent/stem-config.json").write_text(json.dumps({"tron": dict(cfg, **extra)}))
         git(self.proj, "add", "-A"); git(self.proj, "commit", "-qm", "config")
 
@@ -513,6 +546,81 @@ class Tron(unittest.TestCase):
         (self.proj / "docs/agent/tron/LOCK").write_text(str(os.getpid()))
         r = self.tron("run", "--milestone", "m-1")
         self.assertEqual(r.returncode, 2); self.assertIn("another run", r.stderr)
+
+    def test_evaluator_pass_at_milestone_end_only_by_default(self):
+        self.with_evaluator("milestone")
+        self.tron("run", "--milestone", "m-1")
+        self.assertEqual(self.eval_calls(), ["milestone"])
+        j = self.journal(); self.assertEqual(j["milestone_verdict"], "pass"); self.assertTrue(j["complete"])
+        self.assertTrue(list((self.proj / "docs/agent/tron").glob("verdict-*-milestone-1.json")))
+
+    def test_evaluator_off_never_runs(self):
+        self.with_evaluator("off")
+        self.tron("run", "--milestone", "m-1")
+        self.assertEqual(self.eval_calls(), []); self.assertTrue(self.journal()["complete"])
+
+    def test_evaluator_runs_per_task_on_review_label(self):
+        self.with_evaluator("milestone")
+        f = self.proj / "backlog/tasks/task-2 - x.md"
+        f.write_text(f.read_text().replace("  - size-S", "  - size-S\n  - review"))
+        git(self.proj, "add", "-A"); git(self.proj, "commit", "-qm", "label")
+        self.tron("run", "--milestone", "m-1")
+        self.assertEqual(self.eval_calls(), ["TASK-2", "milestone"])
+
+    def test_evaluator_task_mode_runs_for_every_task(self):
+        self.with_evaluator("task")
+        self.tron("run", "--milestone", "m-1")
+        self.assertEqual(self.eval_calls(), ["TASK-1", "TASK-2", "TASK-3", "milestone"])
+
+    def test_evaluator_fail_is_handled_like_a_gate_fail_then_repair_then_pass(self):
+        self.with_evaluator("task")
+        self.evaluator_plan({"TASK-1": ["fail", "pass"]})
+        self.behavior({"TASK-1": ["ok", "placeholder"]})  # repair changes something, so it is no stall
+        self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
+        j = self.journal()
+        self.assertEqual(j["tasks"]["TASK-1"], {"state": "accepted", "repairs": 1})
+        self.assertEqual(self.eval_calls(), ["TASK-1", "TASK-1"])
+        self.assertEqual(len(list((self.proj / "docs/agent/tron").glob("verdict-*-TASK-1-*.json"))), 2)
+        brief = (self.td / "brief_copy.txt").read_text()
+        self.assertIn("## Acceptance criteria", brief); self.assertIn("## Invariants", brief); self.assertIn("## Diff", brief)
+
+    def test_evaluator_brief_holds_assumptions_and_hints(self):
+        self.with_evaluator("task")
+        self.behavior({"TASK-1": "placeholder"})
+        f = self.proj / "backlog/tasks/task-1 - x.md"
+        self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
+        brief = (self.td / "brief_copy.txt").read_text()
+        self.assertIn("Placeholder hits", brief); self.assertIn("src/a.py", brief)
+        self.assertIn("Assumption list", brief)
+
+    def test_evaluator_assumption_conflict_fails_even_with_pass(self):
+        self.with_evaluator("task")
+        self.evaluator_plan({"TASK-1": ["flag"]})
+        self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
+        s = [x for x in self.journal()["sessions"] if x["role"] == "evaluator"][0]
+        self.assertEqual(s["evaluator"]["verdict"], "pass")
+        self.assertIn("evaluator", [f["check"] for f in [x for x in self.journal()["sessions"] if x["role"] == "worker"][0]["gate_after_evaluator"]["failures"]])
+
+    def test_evaluator_without_verdict_counts_as_fail(self):
+        self.with_evaluator("task", max_repairs=0)
+        self.evaluator_plan({"TASK-1": ["none"]})
+        self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
+        self.assertEqual(self.journal()["tasks"]["TASK-1"]["state"], "blocked")
+        self.assertEqual(self.eval_calls(), ["TASK-1", "TASK-1"])  # one retry
+
+    def test_evaluator_that_writes_into_the_project_stops_the_run(self):
+        self.with_evaluator("task")
+        self.evaluator_plan({"TASK-1": ["write"]})
+        r = self.tron("run", "--milestone", "m-1")
+        self.assertEqual(r.returncode, 4); self.assertIn("evaluator", self.journal()["aborted"])
+
+    def test_milestone_evaluator_fail_gets_repair_sessions(self):
+        self.with_evaluator("milestone", max_repairs=1)
+        self.evaluator_plan({"milestone": ["fail", "fail"]})
+        r = self.tron("run", "--milestone", "m-1")
+        j = self.journal()
+        self.assertFalse(j["complete"]); self.assertIn("milestone evaluation failed", j["stop_reason"])
+        self.assertEqual(self.eval_calls(), ["milestone", "milestone"])
 
     def test_role_commands_fall_back_to_worker(self):
         sys.path.insert(0, str(ROOT / "scripts"))

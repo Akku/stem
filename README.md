@@ -132,7 +132,7 @@ Based on each project's own documentation as of November 2026; these projects ch
 | `.claude/skills/` | Skills: `retro`, `alignment`, `handoff`, `promote-learning`, `stem-update`, `port-check`; optional module (chosen in setup): `market-analysis` |
 | `.agents/skills` | Link to `.claude/skills/` for shared Codex skill sources; Codex lists these skills natively (automated probe) |
 | `dgpt.md`, `.deutschlandgpt/skills` | Adapter for DeutschlandGPT Code: pointer to `AGENTS.md` and link to `.claude/skills/` (one real run) |
-| `.claude/agents/` | Agents: `ux-designer` (optional module, for projects with a UI) |
+| `.claude/agents/` | Agents: `evaluator` (read-only judge of Tron mode runs), `ux-designer` (optional module, for projects with a UI) |
 | `scripts/githooks/pre-commit`, `pre-push` | Guards for every agent: no confidential source documents or common secrets in a commit; no force push or remote branch deletion (activated during setup) |
 | `STEM_VERSION`, `CHANGELOG.md` | STEM version this project is based on; what changed per version |
 | `.claude/settings.json` | Claude Code: safe commands pre-approved, session-start hook |
