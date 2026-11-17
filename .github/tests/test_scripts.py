@@ -263,6 +263,38 @@ class TronMode(Sandbox):
         for f in ("DECISION_FRAME.md", "INVARIANTS.md"):
             self.assertLess(len((ROOT / "docs/agent" / f).read_text().splitlines()), 25)
 
+    def test_module_off_leaves_no_reference(self):
+        """TASK-273: follow the SETUP.md removal list for Tron mode off on a copy; no remaining file names a deleted one."""
+        setup = (ROOT / "SETUP.md").read_text()
+        sent = re.search(r"Tron mode off: delete exactly (.*?), remove the `R-TRON` section", setup, re.S).group(1)
+        gone = re.findall(r"`([^`]+)`", sent)
+        self.assertEqual(len(gone), 5)
+        copy = self.tmp / "copy"
+        shutil.copytree(ROOT, copy, symlinks=True, ignore=shutil.ignore_patterns(".git", "__pycache__", "local", ".agent-logs"))
+        for rel in gone:
+            p = copy / rel
+            shutil.rmtree(p) if p.is_dir() else p.unlink()
+        adv = copy / "docs/agent/ADVANCED.md"
+        t = re.sub(r"<!-- RULE:R-TRON:START -->.*?<!-- RULE:R-TRON:END -->\n?", "", adv.read_text(), flags=re.S)
+        adv.write_text(re.sub(r"^\| `R-TRON` \|.*\n", "", t, flags=re.M))
+        ag = copy / "AGENTS.md"
+        ag.write_text(ag.read_text().replace("`tron` (Tron mode), ", ""))
+        skip = ("CHANGELOG.md", "SETUP.md", "README.md", "README.de.md", "scripts/session-start.sh")
+        needles = list(gone) + ["R-TRON"]
+        hits = []
+        for f in copy.rglob("*"):
+            rel = str(f.relative_to(copy))
+            if not f.is_file() or rel in skip or rel.startswith((".github/", "docs/assets/")):
+                continue
+            try:
+                text = f.read_text()
+            except UnicodeDecodeError:
+                continue
+            for n in needles:
+                if n in text:
+                    hits.append(f"{rel}: {n}")
+        self.assertEqual(hits, [])
+
 
 class SandboxRepo(Sandbox):
     """A project folder with STEM scripts, a git repository and a few backlog tasks."""

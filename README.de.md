@@ -89,6 +89,10 @@ scripts/sandbox.sh start meinprojekt    # später fortsetzen; außerdem: stop, e
 - **Image:** neueste Ubuntu-LTS beim ersten Start (`--ubuntu TAG` überschreibt; wird mit der Sandbox gespeichert).
 - **Grenzen:** Projekte, die selbst Docker brauchen, laufen darin nicht (bewusst kein Docker-Socket); Windows nur mit WSL2; der erste Start baut das Image (einige Minuten).
 
+## Optional: Tron-Modus (ein Meilenstein, unbeaufsichtigt gebaut)
+
+Für einen freigegebenen Meilenstein lässt du Agenten-Sitzungen ohne dich arbeiten, in drei Phasen. **Davor:** der Skill `tron` bereitet den Lauf mit dir vor (Entscheidungsrahmen, Invarianten, Abnahmeszenario, Budget); `python3 scripts/tron.py check --milestone <id>` listet, was noch fehlt. **Währenddessen:** `scripts/tron.py run` arbeitet Aufgabe für Aufgabe auf einem eigenen Branch, prüft jedes Ergebnis mit einem Gate und einem unabhängigen Evaluator, hält deine Limits ein und pusht, taggt oder mergt nie. **Danach:** du liest den Bericht in `docs/agent/tron/`, beantwortest die Fragen blockierter Aufgaben und mergst selbst. Ein Lauf kostet echtes Geld; im Sandbox-Container ausführen. Auswahl beim Setup (Modultabelle), für kleine Projekte standardmäßig aus.
+
 ## Aktuell bleiben
 
 Zu Beginn jeder Sitzung prüft der Agent (einmal pro Tag), ob es eine neuere STEM-Version gibt, und sagt dir Bescheid. Mit deiner Zustimmung liest der Skill `stem-update` das [Changelog](CHANGELOG.md), wählt aus, was deinem Projekt nützt, und übernimmt es, ohne projektspezifische Inhalte zu überschreiben. Auch der Skill `retro` prüft STEM.
