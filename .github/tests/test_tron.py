@@ -14,10 +14,15 @@ if sys.argv[1:3] == ["task", "edit"]:
     import glob, re
     n = sys.argv[3].split("-")[1]
     status = sys.argv[sys.argv.index("-s") + 1]
+    import os
+    if status == "Blocked" and os.path.exists(os.environ["TRON_TEST_DIR"] + "/no_blocked_status"):
+        sys.stderr.write("Invalid status: Blocked\\n"); sys.exit(1)
     note = sys.argv[sys.argv.index("--append-notes") + 1] if "--append-notes" in sys.argv else ""
     f = glob.glob("backlog/tasks/task-%s - *.md" % n)[0]
     s = re.sub(r"(?m)^status: .*$", "status: " + status, open(f).read())
     s = s.replace("<!-- SECTION:NOTES:END -->", note + "\\n<!-- SECTION:NOTES:END -->")
+    if "--add-label" in sys.argv:
+        s = s.replace("labels:\\n", "labels:\\n  - blocked\\n", 1)
     open(f, "w").write(s)
     for x in st["tasks"]:
         if x["id"] == "TASK-" + n: x["status"] = status
@@ -27,7 +32,7 @@ if sys.argv[1:3] == ["task", "list"] and "--ready" in sys.argv:
     print("To Do:")
     for t in st["tasks"]:
         done = {x["id"] for x in st["tasks"] if x["status"] == "Done"}
-        if t["status"] == "To Do" and all(d in done for d in t.get("deps", [])):
+        if t["status"] in ("To Do", "In Progress") and all(d in done for d in t.get("deps", [])):
             print("  [feature] %s - %s (ac: 0/1)" % (t["id"], t["title"]))
 '''
 FAKE_AGENT = '''#!/usr/bin/env python3
@@ -41,6 +46,11 @@ if isinstance(beh, list):
     beh = beh[min(n, len(beh)) - 1]
 if beh == "api_error":
     print(json.dumps({"is_error": True, "api_error_status": 529, "session_id": sid})); sys.stderr.write("overloaded\\n"); sys.exit(1)
+if beh == "api_error0":
+    print(json.dumps({"is_error": True, "api_error_status": 429, "session_id": sid})); sys.exit(0)
+if beh == "hang_child":
+    import subprocess as sp
+    sp.Popen(["sh", "-c", "sleep 3; touch " + td + "/orphan"]); import time; time.sleep(10)
 if beh == "hang":
     import time; time.sleep(10)
 if beh == "crash":
@@ -87,6 +97,9 @@ if beh == "hide":
     run("git", "update-index", "--skip-worktree", "scripts/run.sh"); open("scripts/run.sh", "a").write("# hidden\\n")
 if beh == "delete_test":
     os.remove("scripts/t.py")
+if beh == "ac_crash":
+    open(f, "w").write(open(f).read().replace("works", "works differently"))
+    run("git", "add", "-A"); run("git", "commit", "-qm", "sneaky"); os.kill(os.getppid(), 9); sys.exit(1)
 if beh == "dirty":
     open("junk.txt", "w").write("x")
 run("git", "add", "-A", ":!junk.txt")
@@ -101,6 +114,8 @@ TASK_MD = """---
 id: {id}
 title: t{id}
 status: To Do
+labels:
+  - size-S
 ---
 
 <!-- AC:BEGIN -->
@@ -429,6 +444,75 @@ class Tron(unittest.TestCase):
         self.assertEqual(r.returncode, 0)
         j = self.journal(); self.assertIn("API unavailable", j["stop_reason"]); self.assertFalse(j["complete"])
         self.assertNotIn("TASK-1", j["tasks"])
+
+    def test_review_damage_stops_resume_unless_accepted(self):
+        self.behavior({"TASK-1": "edit_runsh"})
+        self.assertEqual(self.tron("run", "--milestone", "m-1").returncode, 4)
+        r = self.tron("run", "--milestone", "m-1")
+        self.assertEqual(r.returncode, 2); self.assertIn("--accept-damage", r.stderr)
+        self.behavior({})
+        r = self.tron("run", "--milestone", "m-1", "--accept-damage")
+        self.assertNotEqual(r.returncode, 2, r.stderr)
+        self.assertTrue(self.journal()["damage_history"])
+
+    def test_review_commits_of_a_killed_session_stay_under_the_gate(self):
+        self.behavior({"TASK-1": "ac_crash"})
+        self.tron("run", "--milestone", "m-1")  # runner killed after a sneaky AC commit
+        self.behavior({})
+        r = self.tron("run", "--milestone", "m-1")
+        self.assertEqual(r.returncode, 4, r.stdout + r.stderr)
+        self.assertIn("ac_freeze", self.journal()["aborted"])
+
+    def test_review_blocked_task_is_not_offered_again_in_a_new_run(self):
+        (self.td / "no_blocked_status").write_text("x")
+        self.behavior({"TASK-1": "noop"})
+        self.tron("run", "--milestone", "m-1", "--run-id", "one")
+        self.assertIn("blocked", (self.proj / "backlog/tasks/task-1 - x.md").read_text())
+        calls = len(self.calls())
+        r = self.tron("run", "--milestone", "m-1", "--run-id", "two")
+        self.assertEqual(len(self.calls()), calls, r.stdout)
+
+    def test_review_fingerprint_sees_content_of_untracked_files(self):
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import tron
+        (self.proj / "new.py").write_text("a"); a = tron.fingerprint(self.proj)
+        (self.proj / "new.py").write_text("b"); self.assertNotEqual(a, tron.fingerprint(self.proj))
+
+    def test_review_signature_tells_progress_from_repetition(self):
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import tron
+        g = lambda d: {"failures": [{"check": "verify", "reason": "verification exited 1", "detail": d}]}
+        self.assertNotEqual(tron.signature(g("FAIL test_a\nFAIL test_b")), tron.signature(g("FAIL test_b")))
+        self.assertEqual(tron.signature(g("FAIL test_b 12s")), tron.signature(g("FAIL test_b 15s")))
+
+    def test_review_worker_that_cannot_start_ends_run_without_blocking(self):
+        self.config({"worker_cmd": [str(self.tmp / "nowhere"), "{task_id}"]})
+        r = self.tron("run", "--milestone", "m-1")
+        j = self.journal()
+        self.assertIn("could not start", j["stop_reason"]); self.assertEqual(j["tasks"], {})
+
+    def test_review_two_dead_sessions_in_a_row_end_the_run(self):
+        self.behavior({"TASK-1": "noop", "TASK-2": "noop"})
+        self.tron("run", "--milestone", "m-1")
+        self.assertIn("two sessions in a row", self.journal()["stop_reason"])
+
+    def test_review_timeout_kills_children_of_the_session(self):
+        self.config({"session_timeout": 1})
+        self.behavior({"TASK-1": "hang_child"})
+        self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
+        import time; time.sleep(4)
+        self.assertFalse((self.td / "orphan").exists())
+
+    def test_review_api_error_with_exit_zero_is_retried(self):
+        self.behavior({"TASK-1": ["api_error0", "ok"]})
+        self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
+        self.assertEqual(self.journal()["tasks"]["TASK-1"], {"state": "accepted", "repairs": 0})
+
+    def test_review_second_runner_is_refused_while_one_is_active(self):
+        (self.proj / "docs/agent/tron").mkdir(parents=True, exist_ok=True)
+        (self.proj / "docs/agent/tron/LOCK").write_text(str(os.getpid()))
+        r = self.tron("run", "--milestone", "m-1")
+        self.assertEqual(r.returncode, 2); self.assertIn("another run", r.stderr)
 
     def test_role_commands_fall_back_to_worker(self):
         sys.path.insert(0, str(ROOT / "scripts"))

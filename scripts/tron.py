@@ -84,15 +84,26 @@ def sh(cmd, cwd, check=False):
     return r
 
 
-def ready_tasks(root, milestone):
-    """Ready tasks of the milestone in backlog order (unblocked, dependencies done)."""
+def is_blocked(text, blocked_status="Blocked"):
+    """A task the runner (or the user) marked Blocked: status Blocked, or label 'blocked' where the project has no such status."""
+    st = re.search(r"^status: *(.+?) *$", text, re.M)
+    lab = re.search(r"^labels:(.*?)(?=^\S)", text, re.M | re.S)
+    labels = re.findall(r"[\w-]+", lab.group(1)) if lab else []
+    return (st and st.group(1).strip("'\"").lower() == blocked_status.lower()) or "blocked" in [l.lower() for l in labels]
+
+
+def ready_tasks(root, milestone, blocked_status="Blocked"):
+    """Ready tasks of the milestone in backlog order (unblocked, dependencies done; Blocked tasks are never offered again)."""
     r = sh(["backlog", "task", "list", "-m", milestone, "--ready", "--plain"], root)
     if r.returncode:
         raise TronError(f"backlog task list failed: {(r.stderr or r.stdout).strip()[:300]}")
-    ids = []
+    ids, files = [], task_files(root)
     for line in r.stdout.splitlines():
         m = re.search(r"\b(TASK-\d+) - ", line)
         if m and m.group(1) not in ids:
+            f = files.get(m.group(1))
+            if f and is_blocked(f.read_text(), blocked_status):
+                continue
             ids.append(m.group(1))
     return ids
 
@@ -146,6 +157,19 @@ def write_journal(path, journal):
     os.replace(tmp, path)
 
 
+def kill_group(proc):
+    import signal
+    try:
+        os.killpg(proc.pid, signal.SIGTERM)
+        try:
+            proc.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            os.killpg(proc.pid, signal.SIGKILL)
+        proc.communicate()
+    except (ProcessLookupError, PermissionError):
+        proc.communicate()
+
+
 def run_session(root, tron, role, task_id, run_id, milestone, prompt=None):
     """Start one agent process for one task and return its journal entry."""
     session_id = str(uuid.uuid4())
@@ -156,13 +180,19 @@ def run_session(root, tron, role, task_id, run_id, milestone, prompt=None):
     entry = {"task": task_id, "role": role, "start": now(), "command": cmd}
     timeout = tron.get("session_timeout")
     try:
-        r = subprocess.run(cmd, cwd=root, env=env, capture_output=True, text=True, timeout=timeout)
-        entry["exit_code"] = r.returncode
-        info = parse_output(r.stdout)
-        if r.returncode:
-            entry["stderr_tail"] = (r.stderr or "").strip()[-300:]
-            if info.get("api_status") in API_CODES or API_RE.search(r.stderr or ""):
-                entry["api_error"] = True
+        # own process group: a timeout must also end the tools the agent started, or they keep writing into the tree
+        proc = subprocess.Popen(cmd, cwd=root, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
+        try:
+            out, err = proc.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            kill_group(proc)
+            raise
+        entry["exit_code"] = proc.returncode
+        info = parse_output(out)
+        if proc.returncode:
+            entry["stderr_tail"] = (err or "").strip()[-300:]
+        if info.get("api_status") in API_CODES or (proc.returncode and API_RE.search((err or "")[-2000:])):
+            entry["api_error"] = True
     except subprocess.TimeoutExpired:
         entry["exit_code"] = 124
         entry["timeout"] = True
@@ -261,8 +291,8 @@ def restore_acs(root, task_id, path, start_commit):
 
 
 # run output the runner itself writes; every other path under docs/agent/tron/ counts as a change
-EXCLUDE = [":(exclude,glob)docs/agent/tron/run-*", ":(exclude,glob)docs/agent/tron/REPORT-*", ":(exclude)docs/agent/tron/STOP"]
-RUNNER_FILE = re.compile(r"^docs/agent/tron/(run-|REPORT-|STOP$)")
+EXCLUDE = [":(exclude,glob)docs/agent/tron/run-*", ":(exclude,glob)docs/agent/tron/REPORT-*", ":(exclude)docs/agent/tron/STOP", ":(exclude)docs/agent/tron/LOCK"]
+RUNNER_FILE = re.compile(r"^docs/agent/tron/(run-|REPORT-|STOP$|LOCK$)")
 
 
 def tree_dirty(root):
@@ -399,33 +429,31 @@ def gate(root, tron, task_id, base, acs_before, start_commit, branch, refs0):
 
 def fingerprint(root):
     """Hash of HEAD, status and diff: equal before and after a session means the session left no diff."""
-    return hashlib.sha256("\n".join([head(root), git_ok(root, "status", "--porcelain", "--", ".", *EXCLUDE),
-                                      git_ok(root, "diff", "HEAD", "--", ".", *EXCLUDE)]).encode()).hexdigest()
+    parts = [head(root), git_ok(root, "status", "--porcelain", "--", ".", *EXCLUDE), git_ok(root, "diff", "HEAD", "--", ".", *EXCLUDE)]
+    for f in git_ok(root, "ls-files", "--others", "--exclude-standard").splitlines():
+        if not RUNNER_FILE.match(f) and (root / f).is_file():
+            parts.append(f + ":" + hashlib.sha256((root / f).read_bytes()).hexdigest())
+    return hashlib.sha256("\n".join(parts).encode()).hexdigest()
 
 
 def signature(gate_result):
-    return sorted((f["check"], f["reason"]) for f in gate_result["failures"])
+    return sorted((f["check"], f["reason"], hashlib.sha256(re.sub(r"\d+", "#", f.get("detail", "")).encode()).hexdigest()[:12])
+                  for f in gate_result["failures"])
 
 
-def elapsed_hours(journal):
-    secs = 0
-    for s in journal["sessions"]:
-        try:
-            f = "%Y-%m-%dT%H:%M:%SZ"
-            secs += (datetime.datetime.strptime(s["end"], f) - datetime.datetime.strptime(s["start"], f)).total_seconds()
-        except (KeyError, ValueError, TypeError):
-            pass
-    return secs / 3600
+def wall_hours(journal, t0):
+    """Wall-clock hours of the run: earlier invocations plus this one (gate runs and backoff included, pauses between runs not)."""
+    return (journal.get("wall_seconds", 0) + time.time() - t0) / 3600
 
 
-def limit_hit(journal, tron, max_tasks):
+def limit_hit(journal, tron, max_tasks, t0=None):
     cost = sum(s.get("cost_usd") or 0 for s in journal["sessions"])
     if tron.get("max_cost") is not None and cost >= float(tron["max_cost"]):
         return f"max_cost reached ({cost:.2f} of {tron['max_cost']})"
-    if tron.get("max_hours") is not None and elapsed_hours(journal) >= float(tron["max_hours"]):
-        return f"max_hours reached ({elapsed_hours(journal):.2f} of {tron['max_hours']})"
+    if tron.get("max_hours") is not None and t0 is not None and wall_hours(journal, t0) >= float(tron["max_hours"]):
+        return f"max_hours reached ({wall_hours(journal, t0):.2f} of {tron['max_hours']})"
     if max_tasks is not None and len(journal["tasks"]) >= max_tasks:
-        return f"max_tasks reached ({max_tasks})"
+        return f"max_tasks reached ({max_tasks}; counts all tasks of the run, blocked ones included)"
     return None
 
 
@@ -441,8 +469,8 @@ def repair_prompt(tron, task_id, gate_result, n, limit):
     return tron.get("prompt", DEFAULT_PROMPT).replace("{task_id}", task_id) + "\n\n" + "\n".join(lines)
 
 
-def sessions_with_retry(root, tron, role, task_id, run_id, milestone, journal, jpath, prompt=None, sleep=time.sleep):
-    """Run a session; API and rate-limit errors are retried with backoff and are not repairs. Returns (entry, available)."""
+def sessions_with_retry(root, tron, role, task_id, run_id, milestone, journal, jpath, prompt=None, sleep=time.sleep, abort_check=None):
+    """Run a session; API and rate-limit errors are retried with backoff (capped, interruptible) and are not repairs. Returns (entry, available)."""
     retries, delay = int(tron.get("api_retries", 5)), float(tron.get("backoff_base", 30))
     for k in range(retries + 1):
         write_journal(jpath, journal)  # in_progress is on disk before the process starts (crash recovery)
@@ -452,8 +480,12 @@ def sessions_with_retry(root, tron, role, task_id, run_id, milestone, journal, j
         write_journal(jpath, journal)
         if not entry.get("api_error"):
             return entry, True
+        why = abort_check() if abort_check else None
+        if why:
+            entry["retry_aborted"] = why
+            return entry, False
         if k < retries:
-            sleep(delay * 2 ** k)
+            sleep(min(delay * 2 ** k, 900))
     return entry, False
 
 
@@ -470,16 +502,30 @@ def set_blocked(root, tron, task_id, note):
         git_ok(root, "commit", "-q", "-m", f"{task_id}: Tron run marked the task Blocked")
 
 
+def unhide(root):
+    """Clear assume-unchanged / skip-worktree flags so that stash and reset see every edit."""
+    for l in git_ok(root, "ls-files", "-v").splitlines():
+        if l[:1].islower() or l[:1] == "S":
+            git_ok(root, "update-index", "--no-assume-unchanged", "--no-skip-worktree", "--", l[2:])
+
+
 def block_task(root, tron, task_id, base, reason, journal, refs0):
     """Failed work is kept (backup branch for commits, named stash for loose files), then the task's files go back to the state before the task."""
     kept = {}
     if head(root) != base:
         name = f"tron/blocked-{task_id.lower()}-{journal['run_id']}"
+        existing = set(branch_refs(root))
+        k = 1
+        while name in existing:
+            k += 1; name = f"tron/blocked-{task_id.lower()}-{journal['run_id']}-{k}"
         git_ok(root, "branch", name)
         kept["branch"] = name
+    unhide(root)
     if tree_dirty(root):
+        n0 = len(git_ok(root, "stash", "list").splitlines())
         git_ok(root, "stash", "push", "-u", "-q", "-m", f"tron {journal['run_id']} {task_id} blocked", "--", ".", *EXCLUDE)
-        kept["stash"] = f"tron {journal['run_id']} {task_id} blocked"
+        if len(git_ok(root, "stash", "list").splitlines()) > n0:
+            kept["stash"] = f"tron {journal['run_id']} {task_id} blocked"
     at_base = set(git_ok(root, "ls-tree", "-r", "--name-only", base).splitlines())
     for f in changed_paths(root, base):
         if f in at_base:
@@ -506,23 +552,37 @@ def find_journal(root, milestone, run_id):
         except ValueError:
             continue
         if j.get("milestone") == milestone and not j.get("complete"):
-            open_.append(p)
-    return open_[-1] if open_ else None
+            open_.append((j.get("started", ""), p))
+    return max(open_)[1] if open_ else None
 
 
 def recover(root, journal, jpath):
-    """A killed runner leaves a session unfinished: loose files go into a named stash, the task is picked again."""
-    ip = journal.pop("in_progress", None)
+    """A killed runner leaves a session unfinished: loose files go into a named stash; the task goes on from its recorded base."""
+    ip = journal.get("in_progress")
     if not ip:
-        return
+        return None
     note = {"task": ip["task"], "base": ip["base"]}
+    unhide(root)
     if tree_dirty(root):
         name = f"tron {journal['run_id']} {ip['task']} interrupted"
+        n0 = len(git_ok(root, "stash", "list").splitlines())
         git_ok(root, "stash", "push", "-u", "-q", "-m", name, "--", ".", *EXCLUDE)
-        note["stash"] = name
+        if len(git_ok(root, "stash", "list").splitlines()) > n0:
+            note["stash"] = name
     journal.setdefault("recovered", []).append(note)
     write_journal(jpath, journal)
     print(f"resume: session for {ip['task']} was interrupted" + (f"; loose files are in the stash '{note['stash']}'" if "stash" in note else ""))
+    return ip
+
+
+def pid_alive(pid):
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
 
 
 def finish(journal, jpath, reason=None, complete=False):
@@ -536,15 +596,11 @@ def cmd_run(args):
     root = pathlib.Path(args.root).resolve()
     tron = load_config(root, args.config)
     milestone = args.milestone
-    max_tasks = args.max_tasks if args.max_tasks is not None else tron.get("max_tasks")
-    max_repairs = int(tron.get("max_repairs", 3))
-    pause_after = tron.get("pause_after", "task")
-    if pause_after not in ("task", "milestone"):
+    if tron.get("pause_after", "task") not in ("task", "milestone"):
         raise TronError("config tron.pause_after must be 'task' or 'milestone'")
-    stop_path = root / STOP_FILE
     jpath = find_journal(root, milestone, args.run_id)
     run_id = args.run_id or (jpath.stem[4:] if jpath else datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
-    first = ready_tasks(root, milestone)
+    first = ready_tasks(root, milestone, tron.get("blocked_status", "Blocked"))
     if args.dry_run:
         if not first:
             print(f"dry run: no ready task in {milestone}")
@@ -559,65 +615,138 @@ def cmd_run(args):
     if not jpath and not first:
         print(f"no ready task in {milestone}; nothing to do")
         return 0
-    branch, existed = prepare_branch(root, milestone, False) if not jpath else (f"tron/{milestone}", True)
+    lock = root / JOURNAL_DIR / "LOCK"  # two runners on one checkout would corrupt each other
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    if lock.is_file():
+        try:
+            pid = int(lock.read_text().strip())
+        except ValueError:
+            pid = 0
+        if pid and pid_alive(pid):
+            raise TronError(f"another run is active (pid {pid}, {lock.relative_to(root)})")
+    lock.write_text(str(os.getpid()))
+    try:
+        return run_loop(root, tron, args, milestone, jpath, run_id)
+    finally:
+        try:
+            lock.unlink()
+        except OSError:
+            pass
+
+
+def run_loop(root, tron, args, milestone, jpath, run_id):
+    t0 = time.time()
+    max_tasks = args.max_tasks if args.max_tasks is not None else tron.get("max_tasks")
+    max_repairs = int(tron.get("max_repairs", 3))
+    pause_after = tron.get("pause_after", "task")
+    blocked_status = tron.get("blocked_status", "Blocked")
+    stop_path = root / STOP_FILE
+    resume_ip = None
     if jpath:
         journal = json.loads(jpath.read_text())
         if journal.get("complete"):
             raise TronError(f"run {run_id} is already complete; start a new one without --run-id")
+        if journal.get("damage"):
+            if not args.accept_damage:
+                raise TronError(f"run {run_id} stopped for gate damage ({journal.get('aborted')}). Inspect the branch first; "
+                                "to go on anyway run again with --accept-damage (the damage then becomes part of the run branch)")
+            journal.setdefault("damage_history", []).append(journal.pop("aborted", None)); journal["damage"] = False
+        branch = journal["branch"]
         if git_ok(root, "branch", "--show-current").strip() != branch:
+            if tree_dirty(root):
+                raise TronError("working tree is not clean; commit or stash first (the run continues on its own branch)")
             git_ok(root, "checkout", "-q", branch)
-        recover(root, journal, jpath)
+        resume_ip = recover(root, journal, jpath)
         if tree_dirty(root):
             raise TronError("working tree is not clean; commit or stash first")
         journal["ended"] = None; journal["stop_reason"] = None
         print(f"resuming run {run_id} on branch {branch}; {len(journal['tasks'])} task(s) settled before")
     else:
+        branch, existed = prepare_branch(root, milestone, False)
         jpath = root / JOURNAL_DIR / f"run-{run_id}.json"
-        start_commit = head(root)
         journal = {"run_id": run_id, "milestone": milestone, "branch": branch, "started": now(), "ended": None, "complete": False,
-                   "stop_reason": None, "start_commit": start_commit, "ac_hashes": snapshot_acs(root), "tasks": {}, "sessions": []}
+                   "stop_reason": None, "start_commit": head(root), "ac_hashes": snapshot_acs(root), "tasks": {}, "sessions": []}
         print(f"run {run_id} on branch {branch} ({'reused' if existed else 'created'}); journal {jpath.relative_to(root)}")
     start_commit, acs0 = journal["start_commit"], journal["ac_hashes"]
     refs0 = branch_refs(root)  # the user's own work between sessions is legitimate: the reference is taken now
-    journal["refs_start"] = refs0
+    journal.setdefault("refs_start", refs0)
+    if journal["sessions"]:
+        journal.setdefault("refs_resumes", []).append({"at": now(), "refs": refs0})
+    wall0 = journal.get("wall_seconds", 0)
+    journal["no_diff_blocks"] = journal.get("no_diff_blocks", 0)
     write_journal(jpath, journal)
 
+    def fin(reason, complete=False):
+        journal["wall_seconds"] = wall0 + time.time() - t0
+        finish(journal, jpath, reason, complete)
+
+    def stop_reason(count_tasks=True):
+        if stop_path.is_file():
+            return "stop file docs/agent/tron/STOP"
+        return limit_hit(journal, tron, max_tasks if count_tasks else None, t0)
+
+    def settle(task_id, base, reason, repairs):
+        kept = block_task(root, tron, task_id, base, reason, journal, refs0)
+        journal["tasks"][task_id] = {"state": "blocked", "reason": reason, "repairs": repairs, "kept": kept}
+        journal.pop("blocking", None); journal.pop("in_progress", None)
+        write_journal(jpath, journal)
+        print(f"{task_id}: BLOCKED ({reason})")
+
+    if journal.get("blocking"):  # the runner was killed while blocking a task: finish that step first
+        bl = journal["blocking"]
+        settle(bl["task"], bl["base"], bl["reason"], bl.get("repairs", 0))
+        resume_ip = None
+
     while True:
-        why = ("stop file docs/agent/tron/STOP" if stop_path.is_file() else limit_hit(journal, tron, max_tasks))
+        why = stop_reason()
         if why:
-            finish(journal, jpath, why)
+            fin(why)
             print(f"run ended: {why}; run again to continue")
             return 0
-        if verify(root, tron)[0]:  # baseline: a red branch gets a repair session before the next task
+        task_resumed = resume_ip is not None and resume_ip.get("task") != "baseline"
+        if not task_resumed and verify(root, tron)[0]:  # baseline: a red branch gets a repair session before the next task
             print("baseline verification failed; starting a repair session")
             base, acs_before = head(root), snapshot_acs(root)
-            journal["in_progress"] = {"task": "baseline", "base": base}
+            journal["in_progress"] = {"task": "baseline", "base": base, "acs_before": acs_before}
             entry, up = sessions_with_retry(root, tron, "worker", "baseline", run_id, milestone, journal, jpath,
-                                            tron.get("baseline_prompt", BASELINE_PROMPT))
+                                            tron.get("baseline_prompt", BASELINE_PROMPT), abort_check=stop_reason)
             if not up:
-                finish(journal, jpath, "API unavailable after retries"); print("API unavailable; run again later", file=sys.stderr); return 0
+                fin(entry.get("retry_aborted") or "API unavailable after retries"); print("run ended early; run again to continue", file=sys.stderr); return 0
             entry["gate"] = gate(root, tron, None, base, acs_before, start_commit, branch, refs0)
             journal.pop("in_progress", None)
             write_journal(jpath, journal)
             if not entry["gate"]["passed"]:
-                finish(journal, jpath, "baseline red after repair"); journal["aborted"] = "baseline red after repair"; write_journal(jpath, journal)
+                stop = sorted({f["check"] for f in entry["gate"]["failures"]} & STOPPING)
+                journal["aborted"] = "baseline red after repair" if not stop else "gate damage: " + ", ".join(stop)
+                journal["damage"] = bool(stop)
+                fin(journal["aborted"])
                 print("baseline still red after the repair session: run stopped (nothing is built on a red branch)", file=sys.stderr)
-                return 3
-        todo = [t for t in ready_tasks(root, milestone) if t not in journal["tasks"] and t in acs0]
-        if not todo:
-            finish(journal, jpath, "no ready task left", complete=True)
-            print(f"run {run_id} complete after {len(journal['tasks'])} task(s)")
-            return 0
-        task_id = todo[0]
-        base, acs_before = head(root), snapshot_acs(root)
-        journal["in_progress"] = {"task": task_id, "base": base}
-        prompt, repairs, last_sig, outcome = None, 0, None, None
+                return 4 if stop else 3
+        resume_ip_task = resume_ip if task_resumed else None
+        resume_ip = None
+        if resume_ip_task and resume_ip_task["task"] not in journal["tasks"]:
+            task_id = resume_ip_task["task"]
+            base, acs_before = resume_ip_task["base"], resume_ip_task["acs_before"]  # commits of the interrupted session stay under the gate
+            repairs, last_sig = resume_ip_task.get("repairs", 0), resume_ip_task.get("last_sig")
+            last_sig = [tuple(x) for x in last_sig] if last_sig else None
+        else:
+            todo = [t for t in ready_tasks(root, milestone, blocked_status) if t not in journal["tasks"] and t in acs0]
+            if not todo:
+                fin("no ready task left", complete=True)
+                print(f"run {run_id} complete after {len(journal['tasks'])} task(s)")
+                return 0
+            task_id = todo[0]
+            base, acs_before = head(root), snapshot_acs(root)
+            repairs, last_sig = 0, None
+        journal["in_progress"] = {"task": task_id, "base": base, "acs_before": acs_before, "repairs": repairs, "last_sig": last_sig}
+        prompt = None
+        outcome = None
         while True:
             print(f"{task_id}: starting " + ("worker session" if repairs == 0 else f"repair session {repairs}"))
             before = fingerprint(root)
-            entry, up = sessions_with_retry(root, tron, "worker", task_id, run_id, milestone, journal, jpath, prompt)
+            entry, up = sessions_with_retry(root, tron, "worker", task_id, run_id, milestone, journal, jpath, prompt, abort_check=stop_reason)
             if not up:
-                finish(journal, jpath, "API unavailable after retries"); print("API unavailable; run again later", file=sys.stderr); return 0
+                fin(entry.get("retry_aborted") or "API unavailable after retries"); print("run ended early; run again to continue", file=sys.stderr); return 0
             entry["repair"] = repairs
             g = entry["gate"] = gate(root, tron, task_id, base, acs_before, start_commit, branch, refs0)
             write_journal(jpath, journal)
@@ -627,34 +756,44 @@ def cmd_run(args):
                 outcome = ("accepted", None); break
             stop = sorted({f["check"] for f in g["failures"]} & STOPPING)
             if stop:
-                finish(journal, jpath, "gate damage: " + ", ".join(stop)); journal["aborted"] = journal["stop_reason"]; write_journal(jpath, journal)
+                journal["aborted"] = "gate damage: " + ", ".join(stop); journal["damage"] = True
+                fin(journal["aborted"])
                 print(f"run stopped after {task_id}: {', '.join(stop)} (see the journal); nothing was discarded", file=sys.stderr)
                 return 4
             sig = signature(g)
             if fingerprint(root) == before:
+                if entry["exit_code"] == 127:  # the agent command does not start: blocking every task would not help
+                    fin("worker command could not start (exit 127): fix the config, then run again"); print("worker command could not start", file=sys.stderr); return 0
                 outcome = ("blocked", "the session left no diff"); break
             if sig == last_sig:
-                outcome = ("blocked", "the same failure twice in a row: " + "; ".join(r for _, r in sig)); break
+                outcome = ("blocked", "the same failure twice in a row: " + "; ".join(r for _, r, _ in sig)); break
             last_sig = sig
             repairs += 1
             if repairs > max_repairs:
-                outcome = ("blocked", f"still failing after {max_repairs} repair(s): " + "; ".join(r for _, r in sig)); break
-            why = "stop file docs/agent/tron/STOP" if stop_path.is_file() else limit_hit(journal, tron, None)
+                outcome = ("blocked", f"still failing after {max_repairs} repair(s): " + "; ".join(r for _, r, _ in sig)); break
+            why = stop_reason(count_tasks=False)
+            journal["in_progress"].update(repairs=repairs, last_sig=last_sig)
             if why:
-                finish(journal, jpath, why); print(f"run ended: {why}; run again to continue"); return 0
+                fin(why); print(f"run ended: {why}; run again to continue"); return 0
             prompt = repair_prompt(tron, task_id, g, repairs, max_repairs)
-        journal.pop("in_progress", None)
         state, reason = outcome
         if state == "blocked":
-            kept = block_task(root, tron, task_id, base, reason, journal, refs0)
-            journal["tasks"][task_id] = {"state": "blocked", "reason": reason, "repairs": repairs, "kept": kept}
-            print(f"{task_id}: BLOCKED ({reason})")
+            journal["blocking"] = {"task": task_id, "base": base, "reason": reason, "repairs": repairs}
+            write_journal(jpath, journal)
+            settle(task_id, base, reason, repairs)
+            journal["no_diff_blocks"] = journal["no_diff_blocks"] + 1 if "no diff" in reason else 0
+            if journal["no_diff_blocks"] >= 2:
+                fin("two sessions in a row left no diff: check the agent setup (login, command, permissions), then run again")
+                print("two sessions in a row left no diff: run ended", file=sys.stderr)
+                return 0
         else:
+            journal["no_diff_blocks"] = 0
+            journal.pop("in_progress", None)
             journal["tasks"][task_id] = {"state": "accepted", "repairs": repairs}
         write_journal(jpath, journal)
-        if state == "accepted" and pause_after == "task" and [t for t in ready_tasks(root, milestone) if t not in journal["tasks"] and t in acs0]:
-            finish(journal, jpath, "pause_after task")
-            print(f"paused after {task_id} (pause_after task); run again to continue")
+        if state == "accepted" and pause_after == "task" and [t for t in ready_tasks(root, milestone, blocked_status) if t not in journal["tasks"] and t in acs0]:
+            fin("pause_after task")
+            print(f"paused after {task_id} (pause_after task); review: git log --oneline {start_commit[:8]}..HEAD; run again to continue")
             return 0
 
 
@@ -668,6 +807,7 @@ def main(argv=None):
     r.add_argument("--max-tasks", type=int, help="stop after this many tasks")
     r.add_argument("--config", help="config file (default: docs/agent/stem-config.json)")
     r.add_argument("--root", default=".", help="project root (default: current directory)")
+    r.add_argument("--accept-damage", action="store_true", help="resume a run that stopped for gate damage (the damage stays on the run branch)")
     args = p.parse_args(argv)
     try:
         return cmd_run(args)
