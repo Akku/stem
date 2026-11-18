@@ -51,7 +51,7 @@ FAKE_AGENT = '''#!/usr/bin/env python3
 import glob, json, os, re, subprocess, sys
 task, sid = sys.argv[1], sys.argv[2]
 td = os.environ["TRON_TEST_DIR"]
-open(td + "/calls.log", "a").write(json.dumps({"task": task, "stem_tron": os.environ.get("STEM_TRON"), "sid": sid}) + "\\n")
+open(td + "/calls.log", "a").write(json.dumps({"task": task, "stem_tron": os.environ.get("STEM_TRON"), "sid": sid, "prompt": sys.argv[3] if len(sys.argv) > 3 else ""}) + "\\n")
 beh = json.load(open(td + "/behavior.json")).get(task, "ok")
 if isinstance(beh, list):
     n = sum(1 for l in open(td + "/calls.log") if json.loads(l)["task"] == task)
@@ -669,6 +669,7 @@ class Tron(unittest.TestCase):
         self.assertEqual([x["result"] for x in t["ladder"] if x["step"] == "doctor"], ["retry_with_hint"])
         self.assertEqual(self.doctor_calls(), ["TASK-1"])
         self.assertIn("## Attempts", (self.td / "doctor_brief.txt").read_text())
+        self.assertIn("evidence line missing", [c for c in self.calls() if c["task"] == "TASK-1"][-1]["prompt"])  # the hint reaches the repair
 
     def test_doctor_runs_once_then_the_task_blocks(self):
         self.with_doctor({"TASK-1": [{"verdict": "retry_with_hint", "diagnosis": "x", "hint": "y"}]})
@@ -683,8 +684,9 @@ class Tron(unittest.TestCase):
         self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
         t = self.journal()["tasks"]["TASK-1"]
         self.assertEqual(t["state"], "accepted", t)
-        self.assertEqual([(x["step"], x["result"]) for x in t["ladder"]][:2], [("doctor", "environment_problem"), ("baseline repair", "passed")])
+        self.assertEqual([(x["step"], x["result"]) for x in t["ladder"]][:2], [("doctor", "environment_problem"), ("baseline repair", "ran")])
         self.assertEqual([c["task"] for c in self.calls()].count("baseline"), 1)
+        self.assertIn("verify tool missing", [c for c in self.calls() if c["task"] == "baseline"][0]["prompt"])
 
     def test_doctor_needs_user_writes_a_draft_and_blocks(self):
         self.with_doctor({"TASK-1": [{"verdict": "needs_user", "diagnosis": "conflict", "question": "csv or json?"}]})
@@ -713,7 +715,8 @@ class Tron(unittest.TestCase):
         self.assertIn("status: Done", (self.proj / "backlog/tasks/task-1 - x.md").read_text())
         self.assertIn("TASK-3", j["tasks"])  # the dependent became ready when the parent closed
         sub = (self.proj / "backlog/tasks/task-4 - sub.md").read_text()
-        self.assertIn("- #1 it works".replace("- #1", "#1"), sub); self.assertIn("milestone: m-1", sub)
+        self.assertIn("it works", sub); self.assertIn("milestone: m-1", sub)
+        self.assertIn("it also works", (self.proj / "backlog/tasks/task-5 - sub.md").read_text())
         self.assertIn("split", [x["step"] for x in t["ladder"]])
 
     def test_doctor_split_that_drops_an_ac_is_refused(self):
@@ -724,6 +727,18 @@ class Tron(unittest.TestCase):
         t = self.journal()["tasks"]["TASK-1"]
         self.assertEqual(t["state"], "blocked"); self.assertIn("invalid", t["reason"])
         self.assertFalse(list((self.proj / "backlog/tasks").glob("task-4*")))
+
+    def test_doctor_parse_rejects_ambiguous_and_placeholder_blocks(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("tron_mod", str(pathlib.Path(__file__).resolve().parents[2] / "scripts/tron.py"))
+        m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+        blk = lambda d: "```json\n" + json.dumps(d) + "\n```\n"
+        a = {"verdict": "needs_user", "diagnosis": "d", "question": "q?"}
+        b = {"verdict": "retry_with_hint", "diagnosis": "d", "hint": "h"}
+        self.assertEqual(m.parse_doctor(blk(a))["verdict"], "needs_user")
+        self.assertEqual(m.parse_doctor(blk(a) + blk(a))["verdict"], "needs_user")
+        self.assertIsNone(m.parse_doctor(blk(a) + "quoted:" + blk(b)))
+        self.assertIsNone(m.parse_doctor(blk(dict(a, diagnosis="<cause, 2-5 sentences>"))))
 
     def test_doctor_session_that_writes_a_file_stops_the_run(self):
         self.with_doctor({"TASK-1": ["write"]})
@@ -738,6 +753,7 @@ class Tron(unittest.TestCase):
         self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
         t = self.journal()["tasks"]["TASK-1"]
         self.assertEqual(t["state"], "blocked"); self.assertEqual(t["ladder"][0]["result"], "no verdict")
+        self.assertEqual(self.doctor_calls(), ["TASK-1", "TASK-1"])  # a missing verdict gets exactly one retry
 
     def test_evaluator_runs_per_task_on_review_label(self):
         self.with_evaluator("milestone")

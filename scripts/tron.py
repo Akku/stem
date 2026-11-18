@@ -573,7 +573,8 @@ def write_brief(root, tron, journal, target, base, g, task_ids, intent):
 def tree_state(root):
     """What an evaluator must not change: HEAD, branches, tracked content, hidden-edit flags."""
     return (head(root), sorted(branch_refs(root).items()), git_ok(root, "diff", "HEAD", "--", ".", *EXCLUDE),
-            [l for l in git_ok(root, "ls-files", "-v").splitlines() if l[:1].islower() or l[:1] == "S"])
+            [l for l in git_ok(root, "ls-files", "-v").splitlines() if l[:1].islower() or l[:1] == "S"],
+            git_ok(root, "config", "--local", "--list"), sorted(str(p.relative_to(root)) + str(p.stat().st_mtime_ns) for p in (root / ".git/hooks").glob("*") if p.is_file()) if (root / ".git/hooks").is_dir() else [])
 
 
 def stash_artifacts(root, journal, target):
@@ -650,8 +651,8 @@ DOCTOR_VERDICTS = ("retry_with_hint", "split_task", "environment_problem", "need
 
 
 def parse_doctor(text):
-    """The Doctor's last valid json block: one verdict of DOCTOR_VERDICTS, a diagnosis and the field that verdict needs; None otherwise."""
-    found = None
+    """The Doctor's valid json block: one verdict of DOCTOR_VERDICTS, a diagnosis and the field that verdict needs. None when there is none or when valid blocks disagree on the verdict (quoted data must not win)."""
+    found, seen = None, set()
     for b in re.findall(r"```(?:json|jsonc)?\s*(\{.*?\})\s*```", text or "", re.S | re.I):
         try:
             d = json.loads(b)
@@ -659,6 +660,8 @@ def parse_doctor(text):
             continue
         if not isinstance(d, dict) or d.get("verdict") not in DOCTOR_VERDICTS or not str(d.get("diagnosis") or "").strip():
             continue
+        if any(re.fullmatch(r"<.*>", str(d.get(k) or "").strip(), re.S) for k in ("diagnosis", "hint", "question")):
+            continue  # the unfilled template placeholder
         v = d["verdict"]
         subs = d.get("subtasks")
         if v == "retry_with_hint" and not str(d.get("hint") or "").strip():
@@ -669,7 +672,8 @@ def parse_doctor(text):
                                                                              and isinstance(x.get("acs"), list) and x["acs"] and all(isinstance(a, str) for a in x["acs"]) for x in subs)):
             continue
         found = d
-    return found
+        seen.add(v)
+    return found if len(seen) == 1 else None
 
 
 def check_split(parent_acs, subtasks):
@@ -765,9 +769,21 @@ def create_subtasks(root, tron, journal, parent, parent_text, subtasks):
     milestone = journal["milestone"]
     labels = ",".join(l for l in labels_of(parent_text) if l not in ("blocked",)) or "size-S"
     before = set(task_files(root))
+    try:
+        return _create_subtasks(root, journal, parent, parent_text, subtasks, milestone, labels, before)
+    except TronError:
+        for i in set(task_files(root)) - before:  # a half-made split must not stay in the tree
+            try:
+                task_files(root)[i].unlink()
+            except (OSError, KeyError):
+                pass
+        raise
+
+
+def _create_subtasks(root, journal, parent, parent_text, subtasks, milestone, labels, before):
     made = []
     for x in subtasks:
-        cmd = ["backlog", "task", "create", x["title"].strip(), "-m", milestone, "-l", labels,
+        cmd = ["backlog", "task", "create", x["title"].strip().lstrip("-").strip() or "split part", "-m", milestone, "-l", labels,
                "-d", f"Split off {parent} by the Doctor of run {journal['run_id']}; the parent closes when all its subtasks pass."]
         for a in x["acs"]:
             cmd += ["--ac", a.strip()]
@@ -784,7 +800,8 @@ def create_subtasks(root, tron, journal, parent, parent_text, subtasks):
     if got != {t.strip() for t in parent_acs}:
         raise TronError(f"the subtasks of {parent} do not carry exactly the parent's ACs; check {', '.join(made)}")
     git_ok(root, "add", "-A", "--", "backlog")
-    git_ok(root, "commit", "-q", "-m", f"{parent}: Tron Doctor split the task into {', '.join(made)}")
+    if subprocess.run(["git", "diff", "--cached", "--quiet"], cwd=root).returncode:
+        git_ok(root, "commit", "-q", "-m", f"{parent}: Tron Doctor split the task into {', '.join(made)}")
     for i in made:
         journal["ac_hashes"][i] = ac_hash(files[i].read_text())  # created by the runner, so inside the AC freeze
     return made
@@ -1054,6 +1071,7 @@ def build_report(root, journal, tron):
             out.append(f"- {i}: task file not found"); continue
         _, acs, notes = parse_task(f.read_text())
         out.append(f"### {i}")
+        out += [f"- ladder: {steps(journal['tasks'][i])}"] if journal["tasks"].get(i, {}).get("ladder") else []
         for ticked, n, text in acs:
             ev = re.search(rf"^\s*AC#{n}: (E\d.*)$", notes, re.M)
             out.append(f"- [{'x' if ticked else ' '}] AC#{n} {text}" + (f" (evidence: {ev.group(1)[:160]})" if ev else " (no evidence line)"))
@@ -1089,7 +1107,7 @@ def build_report(root, journal, tron):
         out += [f"  - ladder: {steps(v)}"] if v.get("ladder") else []
     for i, v in tasks.items():
         if v["state"] == "split":
-            out.append(f"- {i}: split by the Doctor into {', '.join(v.get('subtasks', []))}; closes when all of them pass (not closed yet)")
+            out.append(f"- {i}: split by the Doctor into {', '.join(v.get('subtasks', []))}; closes when all of them pass (not closed yet" + "".join(f"; {x} is {tasks.get(x, {}).get('state', 'not run')}" for x in v.get("subtasks", []) if tasks.get(x, {}).get("state") != "accepted") + ")")
             out.append(f"  - ladder: {steps(v)}")
     out += ["(none)"] if not blk and not any(v["state"] == "split" for v in tasks.values()) else []
     out += ["", "## Open questions for you", ""]
@@ -1310,9 +1328,29 @@ def run_loop(root, tron, args, milestone, jpath, run_id):
         write_journal(jpath, journal)
         print(f"{task_id}: BLOCKED ({reason})")
 
+    def do_split(task_id, plan, ladder):
+        """Subtasks of the Doctor's split; a failure becomes a draft question, never a half-made split."""
+        try:
+            made = create_subtasks(root, tron, journal, task_id, start_text(root, task_id, start_commit) or "", plan)
+        except TronError as e:
+            dn = write_question_draft(root, journal, f"Split of {task_id} proposed by the Doctor could not be created",
+                                      f"Run {journal['run_id']}: creating the subtasks failed ({e}). {task_id} stays Blocked.", "tron-doctor")
+            ladder.append({"step": "split", "result": "failed: " + str(e)[:150], "draft": dn})
+            print(f"{task_id}: split failed ({e}); see {dn}")
+            return
+        journal["tasks"][task_id].update(state="split", subtasks=made)
+        ladder.append({"step": "split", "result": "created " + ", ".join(made)})
+        print(f"{task_id}: split into {', '.join(made)}")
+
     if journal.get("blocking"):  # the runner was killed while blocking a task: finish that step first
         bl = journal["blocking"]
         settle(bl["task"], bl["base"], bl["reason"], bl.get("repairs", 0))
+        lad = bl.get("ladder") or []
+        if bl.get("split_plan") and journal["tasks"][bl["task"]].get("state") != "split":
+            do_split(bl["task"], bl["split_plan"], lad)
+        if lad:
+            journal["tasks"][bl["task"]]["ladder"] = lad
+        write_journal(jpath, journal)
         resume_ip = None
 
     no_count = lambda: stop_reason(count_tasks=False)  # limits that end a session in flight (not the task count)
@@ -1372,6 +1410,15 @@ def run_loop(root, tron, args, milestone, jpath, run_id):
         prompt = None
         outcome = None
         limit, ladder, doctored, hint, split_plan = max_repairs, [], False, None, None
+        rip = resume_ip_task if resume_ip_task and resume_ip_task["task"] == task_id else None
+        if rip and rip.get("ladder") is not None:  # the ladder state survives a stop: the Doctor runs once per task
+            limit, ladder, doctored, hint = rip.get("limit", limit), rip["ladder"], rip.get("doctored", False), rip.get("hint")
+
+        def persist():
+            journal["in_progress"].update(limit=limit, ladder=ladder, doctored=doctored, hint=hint)
+            write_journal(jpath, journal)
+        if rip and rip.get("ladder") is not None:
+            persist()
         while True:
             print(f"{task_id}: starting " + ("worker session" if repairs == 0 else f"repair session {repairs}"))
             before = fingerprint(root)
@@ -1421,10 +1468,12 @@ def run_loop(root, tron, args, milestone, jpath, run_id):
             fail_reason = stall or f"still failing after {limit} repair(s): " + "; ".join(r for _, r, _ in sig)
             if tron.get("doctor_cmd") and not doctored and (stall or repairs >= limit - 1):
                 doctored = True
+                persist()
                 tf = task_files(root).get(task_id)
                 print(f"{task_id}: Doctor session ({stall or str(repairs) + ' failed repair(s)'})")
-                dv = consult_doctor(root, tron, journal, jpath, task_id, base, task_intent(tf.read_text()) if tf else task_id,
-                                    parse_task(tf.read_text())[1] if tf else [], stop_reason)
+                t0txt = start_text(root, task_id, start_commit) or (tf.read_text() if tf else "")  # the ACs the split is checked against
+                dv = consult_doctor(root, tron, journal, jpath, task_id, base, task_intent(t0txt) if t0txt else task_id,
+                                    parse_task(t0txt)[1] if t0txt else [], stop_reason)
                 if "unavailable" in dv:
                     fin(dv["unavailable"]); print("run ended early; run again to continue", file=sys.stderr); return 0
                 if "damage" in dv:
@@ -1437,6 +1486,9 @@ def run_loop(root, tron, args, milestone, jpath, run_id):
                 ladder.append({"step": "doctor", "result": v, "diagnosis": dv["diagnosis"][:300]})
                 if v == "retry_with_hint":
                     hint, limit, stall = dv["hint"], max(limit, repairs + 1), None
+                    persist()
+                if v == "retry_with_hint":
+                    pass
                 elif v == "environment_problem":
                     print(f"{task_id}: Doctor says environment problem; baseline repair session")
                     b2, a2 = head(root), snapshot_acs(root)
@@ -1450,14 +1502,14 @@ def run_loop(root, tron, args, milestone, jpath, run_id):
                     if stop2:
                         journal["aborted"] = "gate damage: " + ", ".join(stop2); journal["damage"] = True; fin(journal["aborted"])
                         print(f"run stopped after the baseline repair: {', '.join(stop2)}", file=sys.stderr); return 4
-                    ladder.append({"step": "baseline repair", "result": "passed" if be["gate"]["passed"] else "failed"})
-                    if not be["gate"]["passed"]:
-                        outcome = ("blocked", "environment problem (Doctor: " + dv["diagnosis"][:200] + "); the baseline repair did not fix it"); break
-                    hint, limit, stall = "environment fixed by a baseline repair session: " + dv["diagnosis"], max(limit, repairs + 1), None
+                    # the task's own work is still in the tree, so a red gate here proves nothing: the next repair session's gate decides
+                    ladder.append({"step": "baseline repair", "result": "ran"})
+                    hint, limit, stall = "a baseline repair session ran for this environment problem: " + dv["diagnosis"], max(limit, repairs + 1), None
+                    persist()
                 elif v == "needs_user":
                     dn = write_question_draft(root, journal, f"Question from the Doctor about {task_id}: " + dv["question"][:60],
                                               f"Run {journal['run_id']}, {task_id} kept failing.\n\nDiagnosis: {dv['diagnosis']}\n\nQuestion: {dv['question']}", "tron-doctor")
-                    ladder.append({"step": "draft question", "result": dn})
+                    ladder.append({"step": "draft question", "result": dn}); persist()
                     outcome = ("blocked", f"the Doctor needs the user: see {dn} ({dv['question'][:150]})"); break
                 else:  # split_task
                     parent_acs = [t for _, _, t in parse_task(start_text(root, task_id, start_commit) or "")[1]]
@@ -1468,6 +1520,7 @@ def run_loop(root, tron, args, milestone, jpath, run_id):
                         ladder.append({"step": "split", "result": "invalid: " + bad[:150], "draft": dn})
                         outcome = ("blocked", f"the Doctor's split is invalid ({bad[:120]}): see {dn}"); break
                     split_plan = dv["subtasks"]
+                    journal["in_progress"]["split_plan"] = split_plan; persist()
                     outcome = ("blocked", "split by the Doctor: " + dv["diagnosis"][:200]); break
             if stall:
                 outcome = ("blocked", stall); break
@@ -1477,6 +1530,7 @@ def run_loop(root, tron, args, milestone, jpath, run_id):
                 outcome = ("blocked", fail_reason); break
             why = stop_reason(count_tasks=False)
             journal["in_progress"].update(repairs=repairs, last_sig=last_sig)
+            persist()
             if why:
                 fin(why); print(f"run ended: {why}; run again to continue"); return 0
             prompt = repair_prompt(tron, task_id, g, repairs, limit)
@@ -1489,15 +1543,11 @@ def run_loop(root, tron, args, milestone, jpath, run_id):
             wn = worker_notes(root, task_id)
             if re.search(r"\bblock(ed)?\b", wn, re.I):  # the worker blocked on purpose: its reason is the reason
                 reason = "the worker blocked the task on purpose: " + wn[:300].replace("\n", " ")
-            journal["blocking"] = {"task": task_id, "base": base, "reason": reason, "repairs": repairs}
+            journal["blocking"] = {"task": task_id, "base": base, "reason": reason, "repairs": repairs, "split_plan": split_plan, "ladder": ladder}
             write_journal(jpath, journal)
             settle(task_id, base, reason, repairs)
             if split_plan:
-                tf_text = start_text(root, task_id, start_commit) or ""
-                made = create_subtasks(root, tron, journal, task_id, tf_text, split_plan)
-                journal["tasks"][task_id].update(state="split", subtasks=made)
-                ladder.append({"step": "split", "result": "created " + ", ".join(made)})
-                print(f"{task_id}: split into {', '.join(made)}")
+                do_split(task_id, split_plan, ladder)
             if ladder:
                 journal["tasks"][task_id]["ladder"] = ladder
             write_journal(jpath, journal)
@@ -1663,6 +1713,8 @@ def check_milestone(root, milestone, cfg_path=None):
         warns.append("CLAUDE_CODE_EFFORT_LEVEL is set and beats --effort in the role commands")
     if not cmdok(tron.get("doctor_cmd")):
         warns.append("tron.doctor_cmd is missing: no Doctor step; a stalled task goes straight to Blocked (set a read-only command, ideally on a stronger model, R-ROUTING)")
+    elif not any(x in ("--allowedTools", "--allowed-tools", "--disallowedTools", "--permission-mode") for x in tron["doctor_cmd"]):
+        warns.append("tron.doctor_cmd has no tool restriction (--allowedTools or --permission-mode): read-only is then only enforced by the tree check afterwards")
     if not cmdok(tron.get("evaluator_cmd")) and tron.get("evaluator", "milestone") != "off":
         warns.append("tron.evaluator_cmd is missing: the evaluator falls back to worker_cmd, which may edit files")
     return fails, warns, tron
