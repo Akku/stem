@@ -193,7 +193,7 @@ def run_session(root, tron, role, task_id, run_id, milestone, prompt=None):
             raise
         entry["exit_code"] = proc.returncode
         info = parse_output(out)
-        if role == "evaluator":  # the verdict text goes to the verdict file, not into the journal
+        if role in ("evaluator", "planner"):  # the verdict or sweep text goes to its own file, not into the journal
             entry["_out"] = info.get("result_text") or (out or "")[-30000:]
         if proc.returncode:
             entry["stderr_tail"] = (err or "").strip()[-300:]
@@ -1254,6 +1254,56 @@ def run_loop(root, tron, args, milestone, jpath, run_id):
             return 0
 
 
+SWEEP_OPEN = re.compile(r"^\s*-\s*\[ \]\s*Q\d+", re.M)
+
+
+def sweep_brief(root, milestone):
+    """Input of the planner: vision, frame, invariants, precedents and every open task of the milestone (intent, ACs, labels)."""
+    def read(rel, cap=6000):
+        f = root / rel
+        return f.read_text()[:cap] if f.is_file() else "(none)"
+    vision = next((r for r in ("VISION.md", "docs/VISION.md", "README.md") if (root / r).is_file()), None)
+    parts = [f"# Planner brief: milestone {milestone}", "", f"## Vision ({vision})", read(vision) if vision else "(none)", "",
+             "## Decision frame", read("docs/agent/DECISION_FRAME.md"), "", "## Invariants", read("docs/agent/INVARIANTS.md"), "",
+             "## Precedents", read("docs/agent/PRECEDENTS.md"), "", "## Tasks"]
+    for tid, f in task_files(root).items():
+        text = f.read_text()
+        m = re.search(r"^milestone: *(.+?) *$", text, re.M)
+        if not m or m.group(1).strip("'\"") != milestone:
+            continue
+        st, acs, _ = parse_task(text)
+        if st and st.lower() == "done":
+            continue
+        parts += ["", f"### {tid}", task_intent(text), f"Labels: {', '.join(labels_of(text))}"] + [f"- AC#{n}: {t}" for _, n, t in acs]
+    return "\n".join(parts) + "\n"
+
+
+def cmd_sweep(args):
+    """Question sweep (doc-12 11.3 A2-1): a fresh planner session lists what a run would have to ask; writes docs/agent/tron/SWEEP-<milestone>.md."""
+    root = pathlib.Path(args.root).resolve()
+    tron = load_config(root, args.config)
+    d = root / "docs/agent/tron"
+    d.mkdir(parents=True, exist_ok=True)
+    brief = d / f"brief-sweep-{args.milestone}.md"
+    brief.write_text(sweep_brief(root, args.milestone))
+    prompt = (f"You are the planner of an unattended Tron mode run. Read .claude/agents/planner.md and follow it exactly. "
+              f"Your brief is {brief.relative_to(root)}. Change no file in the project; answer with the sweep in your final message.")
+    before = tree_state(root)
+    entry = run_session(root, tron, "planner", "sweep", f"sweep-{args.milestone}", args.milestone, prompt)
+    if tree_state(root) != before:
+        raise TronError("the planner session changed HEAD, branches or tracked files; nothing written")
+    text = entry.pop("_out", "") or ""
+    if entry.get("exit_code") or "## Questions" not in text:
+        raise TronError(f"planner session gave no usable sweep (exit {entry.get('exit_code')}); tail: {text[-200:]!r}")
+    out = d / f"SWEEP-{args.milestone}.md"
+    out.write_text(text[text.index("# ") if "# " in text else 0:].rstrip() + "\n")
+    n = len(SWEEP_OPEN.findall(out.read_text()))
+    cost = entry.get("cost_usd")
+    print(f"sweep written: {out.relative_to(root)} ({n} open question(s); cost {cost if cost is not None else 'unknown'} USD)")
+    print("next: answer the questions with the user (skill tron), tick them '[x]' with 'Answer: ...', commit the file, then run the check")
+    return 0
+
+
 def check_milestone(root, milestone, cfg_path=None):
     """Readiness check (doc-12 3.1): returns (failures, warnings, tron config or None). Deterministic, starts nothing."""
     fails, warns = [], []
@@ -1301,6 +1351,14 @@ def check_milestone(root, milestone, cfg_path=None):
             fails.append(f"{tid}: no acceptance criteria")
         if not any(re.fullmatch(r"size-[sml]", l) for l in labels_of(text)):
             fails.append(f"{tid}: no size label (size-S, size-M or size-L)")
+    if tron.get("sweep", True) is not False:
+        sw = root / f"docs/agent/tron/SWEEP-{milestone}.md"
+        if not sw.is_file():
+            fails.append(f"question sweep missing: run 'python3 scripts/tron.py sweep --milestone {milestone}' and answer its questions (or set tron.sweep to false)")
+        else:
+            n = len(SWEEP_OPEN.findall(sw.read_text()))
+            if n:
+                fails.append(f"{sw.relative_to(root)} holds {n} unanswered question(s): answer them with the user, tick them '[x]' and add 'Answer: ...'")
     dirty = tree_dirty(root)
     if dirty:
         fails.append(f"working tree is not clean ({len(dirty)} change(s), first: {dirty[0].strip()[:80]})")
@@ -1350,13 +1408,17 @@ def main(argv=None):
     c.add_argument("--milestone", required=True, help="milestone id, e.g. m-4")
     c.add_argument("--config", help="config file (default: docs/agent/stem-config.json)")
     c.add_argument("--root", default=".", help="project root (default: current directory)")
+    sw = sub.add_parser("sweep", help="start the planner in a fresh session; writes docs/agent/tron/SWEEP-<milestone>.md with the questions a run would hit")
+    sw.add_argument("--milestone", required=True, help="milestone id, e.g. m-5")
+    sw.add_argument("--config", help="config file (default: docs/agent/stem-config.json)")
+    sw.add_argument("--root", default=".", help="project root (default: current directory)")
     rp = sub.add_parser("report", help="write docs/agent/tron/REPORT-<run>.md from the journal and the backlog")
     rp.add_argument("--run-id", help="run id (default: the latest run)")
     rp.add_argument("--config", help="config file (default: docs/agent/stem-config.json)")
     rp.add_argument("--root", default=".", help="project root (default: current directory)")
     args = p.parse_args(argv)
     try:
-        return {"report": cmd_report, "check": cmd_check}.get(args.cmd, cmd_run)(args)
+        return {"report": cmd_report, "check": cmd_check, "sweep": cmd_sweep}.get(args.cmd, cmd_run)(args)
     except TronError as e:
         print(f"tron: {e}", file=sys.stderr)
         return 2

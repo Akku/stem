@@ -15,6 +15,8 @@ Rules: `R-TRON` (session duties, role tiers), `R-BATCHING` (approval of a batch)
 5. Budget and limits: `max_cost`, `max_hours`, `max_tasks`; evaluator mode (`off|milestone|task`); `pause_after`.
 6. Start-and-smoke command: `smoke_cmd` or `preview_cmd`/`preview_url` for the product.
 
+7. Question sweep: run `python3 scripts/tron.py sweep --milestone <id>` (a fresh planner session; cost shown), read `docs/agent/tron/SWEEP-<id>.md`, ask its questions one per message with the planner's recommendation, and record each answer in the file (tick `[x]`, add `Answer: ...`). Answers that change a task or an AC go through the `backlog` CLI now, before the run, so the AC freeze covers them; use the draft acceptance scenario as the base of step 4. Commit the file. The check fails while the sweep is missing or has open questions (`tron.sweep: false` opts out).
+
 ## 2. Commands and models
 - Show the configured commands of every role (`worker_cmd`, `evaluator_cmd`, ...; a missing one falls back to `worker_cmd`) and `verify_cmd`. The user confirms them.
 - Propose a model per role from the `R-TRON` tier table; model names live in the config. Warn if `CLAUDE_CODE_EFFORT_LEVEL` is set (it beats `--effort`).

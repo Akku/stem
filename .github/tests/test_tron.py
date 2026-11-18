@@ -226,7 +226,7 @@ class Tron(unittest.TestCase):
     def config(self, extra):
         (self.proj / "docs/agent").mkdir(parents=True, exist_ok=True)
         cfg = {"worker_cmd": [str(self.bin / "agent"), "{task_id}", "{session_id}", "{prompt}"], "verify_cmd": [str(self.bin / "verify")],
-               "pause_after": "milestone", "backoff_base": 0, "evaluator": "off"}
+               "pause_after": "milestone", "backoff_base": 0, "evaluator": "off", "sweep": False}
         (self.proj / "docs/agent/stem-config.json").write_text(json.dumps({"tron": dict(cfg, **extra)}))
         git(self.proj, "add", "-A"); git(self.proj, "commit", "-qm", "config")
 
@@ -893,7 +893,7 @@ class Check(unittest.TestCase):
 
     def cfg(self, **over):
         c = {"worker_cmd": ["claude", "--allowedTools", "Bash"], "verify_cmd": ["scripts/run.sh", "v"], "smoke_cmd": ["true"],
-             "max_cost": 5, "evaluator": "off"}
+             "max_cost": 5, "evaluator": "off", "sweep": False}
         c.update(over)
         c = {k: v for k, v in c.items() if v is not None}
         (self.proj / "docs/agent/stem-config.json").write_text(json.dumps({"tron": c}))
@@ -947,6 +947,31 @@ class Check(unittest.TestCase):
 
     def test_no_smoke_command(self):
         self.cfg(smoke_cmd=None); self.commit(); self.fails_with("start-and-smoke")
+
+    def sweep(self, text):
+        planner = self.tmp / "planner.py"
+        planner.write_text("import json, sys\nprint(json.dumps({'session_id': sys.argv[1], 'total_cost_usd': 0.2, 'result': " + json.dumps(text) + "}))\n")
+        self.cfg(sweep=True, planner_cmd=[sys.executable, str(planner), "{session_id}", "{prompt}"]); self.commit()
+        return subprocess.run([sys.executable, str(TRON), "sweep", "--milestone", "m-9", "--root", str(self.proj)], capture_output=True, text=True)
+
+    def test_check_fails_while_sweep_is_missing(self):
+        self.cfg(sweep=True); self.commit(); self.fails_with("question sweep missing")
+
+    def test_sweep_writes_file_and_check_follows_open_questions(self):
+        r = self.sweep("# Sweep: m-9\n## Questions\n- [ ] Q1 (TASK-1) Which format? a) csv b) json Recommendation: a because simple\n## Draft acceptance scenario\nrun it\n## Too large or not testable\n- none\n")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        f = self.proj / "docs/agent/tron/SWEEP-m-9.md"
+        self.assertIn("Q1 (TASK-1)", f.read_text())
+        self.assertIn("brief-sweep-m-9.md", "".join(p.name for p in (self.proj / "docs/agent/tron").iterdir()))
+        brief = (self.proj / "docs/agent/tron/brief-sweep-m-9.md").read_text()
+        self.assertIn("### TASK-1", brief); self.assertIn("AC#1: it works", brief)
+        self.commit(); self.fails_with("1 unanswered question")
+        f.write_text(f.read_text().replace("- [ ] Q1", "- [x] Q1") + "Answer: a\n"); self.commit()
+        r = self.check(); self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
+    def test_sweep_without_questions_section_is_rejected(self):
+        r = self.sweep("I looked and all is fine")
+        self.assertEqual(r.returncode, 2); self.assertFalse((self.proj / "docs/agent/tron/SWEEP-m-9.md").exists())
 
     def test_warnings(self):
         self.cfg(evaluator="milestone"); self.commit()
