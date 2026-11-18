@@ -22,7 +22,7 @@ DEFAULT_PROMPT = ("Work on backlog task {task_id} following AGENTS.md. This is a
 JOURNAL_DIR = pathlib.Path("docs/agent/tron")
 # files a session must not change: the gate itself, the config, the decision frame, the invariants, the evaluator (R-TRON)
 PROTECTED = ("scripts/tron.py", "docs/agent/stem-config.json", "docs/agent/DECISION_FRAME.md", "docs/agent/INVARIANTS.md",
-             ".claude/agents/evaluator.md", ".claude/agents/doctor.md")
+             ".claude/agents/evaluator.md", ".claude/agents/doctor.md", ".claude/agents/retro-analyst.md")
 BASELINE_PROMPT = ("The verification command fails on the current branch before any task starts (unattended Tron mode session, "
                    "STEM_TRON=1; read R-TRON first). Find the cause and fix it with the smallest change. Do not change acceptance "
                    "criteria and do not start task work.")
@@ -193,7 +193,7 @@ def run_session(root, tron, role, task_id, run_id, milestone, prompt=None):
             raise
         entry["exit_code"] = proc.returncode
         info = parse_output(out)
-        if role in ("evaluator", "planner", "doctor"):  # the verdict or sweep text goes to its own file, not into the journal
+        if role in ("evaluator", "planner", "doctor", "retro"):  # the verdict or sweep text goes to its own file, not into the journal
             entry["_out"] = info.get("result_text") or (out or "")[-30000:]
         if proc.returncode:
             entry["stderr_tail"] = (err or "").strip()[-300:]
@@ -1063,7 +1063,10 @@ def build_report(root, journal, tron):
     out += ["## Look at this first", "",
             f"- Preview start command: `{start_cmd}`",
             f"- Preview URL: {tron.get('preview_url', 'not configured')}",
-            "- The first core flows are tested by you: " + (", ".join(acc) or "(no accepted task)"), ""]
+            "- The first core flows are tested by you: " + (", ".join(acc) or "(no accepted task)")]
+    out += [f"- Unattended retro (analysis): {journal['retro']}"] if journal.get("retro") else []
+    out += [f"- Unattended retro failed: {journal['retro_error']}"] if journal.get("retro_error") else []
+    out += [""]
     out += ["## Accepted tasks: acceptance criteria and evidence", ""]
     for i in acc:
         f = files.get(i)
@@ -1311,6 +1314,11 @@ def run_loop(root, tron, args, milestone, jpath, run_id):
     def fin(reason, complete=False):
         journal["wall_seconds"] = wall0 + time.time() - t0
         finish(journal, jpath, reason, complete)
+        if complete and tron.get("retro") == "on" and not journal.get("retro"):  # unattended retro analysis at run end; a failure never fails the run
+            try:
+                retro_for_run(root, tron, journal, jpath)
+            except (TronError, OSError, ValueError) as e:
+                journal["retro_error"] = str(e)[:300]; write_journal(jpath, journal)
         try:  # one report per run, rewritten whenever the run stops
             (root / JOURNAL_DIR / f"REPORT-{journal['run_id']}.md").write_text(build_report(root, journal, tron))
         except (OSError, TronError, KeyError, ValueError):
@@ -1646,6 +1654,149 @@ def cmd_sweep(args):
     return 0
 
 
+RETRO_LAYERS = ("task_quality", "rule", "environment", "model", "evaluator_miss")
+RETRO_METRICS = ("blocked_tasks", "repairs_per_task", "cost_per_accepted_task", "doctor_calls", "evaluator_fails", "sessions_per_task")
+
+
+def run_metrics(journal):
+    """Numbers of one run for the retro: the names are the fixed list RETRO_METRICS."""
+    tasks, sess = journal.get("tasks", {}), journal.get("sessions", [])
+    acc = [v for v in tasks.values() if v.get("state") == "accepted"]
+    cost = sum(s.get("cost_usd") or 0 for s in sess)
+    n = max(len(tasks), 1)
+    return {"blocked_tasks": sum(1 for v in tasks.values() if v.get("state") == "blocked"),
+            "repairs_per_task": round(sum(v.get("repairs", 0) for v in tasks.values()) / n, 2),
+            "cost_per_accepted_task": round(cost / len(acc), 2) if acc else None,
+            "doctor_calls": sum(1 for s in sess if s.get("role") == "doctor"),
+            "evaluator_fails": sum(1 for s in sess if s.get("role") == "evaluator" and (s.get("evaluator") or {}).get("verdict") == "fail"),
+            "sessions_per_task": round(sum(1 for s in sess if s.get("role") == "worker") / n, 2)}
+
+
+def retro_brief(root, tron, journal):
+    """Input of the retro analyst: journal summary, gate failures, pointers to verdicts and diagnoses, assumptions, metrics, the previous retro."""
+    rid = journal["run_id"]
+    d = root / JOURNAL_DIR
+    parts = [f"# Retro brief: run {rid} (milestone {journal['milestone']})", "", f"Ended: {journal.get('ended')}; reason: {journal.get('stop_reason')}; complete: {journal.get('complete')}", "", "## Tasks"]
+    for tid, v in journal.get("tasks", {}).items():
+        parts.append(f"- {tid}: {v.get('state')}, repairs {v.get('repairs', 0)}" + (f", reason: {v['reason'][:300]}" if v.get("reason") else ""))
+        for x in v.get("ladder", []):
+            parts.append(f"  - ladder {x.get('step')}: {x.get('result')}")
+    parts += ["", "## Gate failures per session"]
+    for e in journal.get("sessions", []):
+        g = e.get("gate_after_evaluator") or e.get("gate") or {}
+        for f in g.get("failures", []):
+            parts.append(f"- {e.get('task')} ({e.get('role')}, transcript {e.get('transcript')}): {f.get('reason')}")
+    parts += ["", "## Evaluator verdicts and Doctor diagnoses (read them where a failure needs it)"]
+    for pat in (f"verdict-{rid}-*.json", f"doctor-{rid}-*.json"):
+        parts += [f"- {p.relative_to(root)}" for p in sorted(d.glob(pat))]
+    parts += ["", "## Assumptions"]
+    parts += [f"- {a[:200]}" for a in assumptions(root, list(journal.get("tasks", {})))] or ["(none)"]
+    m = run_metrics(journal)
+    parts += ["", "## Metrics of this run (names are the only allowed metrics)", "", "| Metric | Value |", "| --- | --- |"] + [f"| {k} | {v} |" for k, v in m.items()]
+    prev = [p for p in sorted(d.glob("RETRO-*.md")) if p.stem != f"RETRO-{rid}"]
+    parts += ["", "## Previous retro"]
+    if prev:
+        pj = d / f"run-{prev[-1].stem[6:]}.json"
+        pm = run_metrics(json.loads(pj.read_text())) if pj.is_file() else None
+        parts += [f"File: {prev[-1].relative_to(root)}", prev[-1].read_text()[:4000], "", "Metrics of the previous run: " + (json.dumps(pm) if pm else "(journal not found)")]
+    else:
+        parts.append("(no previous retro)")
+    path = d / f"brief-{rid}-retro.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(parts) + "\n")
+    return path
+
+
+def validate_retro(text, journal):
+    """Why a retro file is invalid (list; empty when fine): fixed layers, one layer and an evidence pointer per failure, every blocked task covered, at most three proposals with target, tier and metric from the list, a previous-retro section."""
+    errs = []
+
+    def section(name):
+        m = re.search(rf"^## {name}\s*$(.*?)(?=^## |\Z)", text, re.M | re.S)
+        return [l for l in m.group(1).splitlines() if l.strip()] if m else None
+    fails, props, prev = section("Failures"), section("Proposals"), section("Previous retro")
+    if fails is None or props is None or prev is None:
+        return ["missing section (needs '## Failures', '## Proposals', '## Previous retro')"]
+    covered = set()
+    for l in fails:
+        if re.fullmatch(r"\s*[-*]\s*none\s*", l, re.I):
+            continue
+        layers = re.findall(r"\blayer:\s*(\w+)", l)
+        ev = re.search(r"\bevidence:\s*([^|\s][^|]*)", l)
+        if len(layers) != 1 or layers[0] not in RETRO_LAYERS:
+            errs.append(f"failure line needs exactly one layer from {RETRO_LAYERS}: {l.strip()[:80]}")
+        if not ev:
+            errs.append(f"failure line has no evidence pointer: {l.strip()[:80]}")
+        covered.update(re.findall(r"TASK-\d+", l))
+    for tid, v in journal.get("tasks", {}).items():
+        if v.get("state") == "blocked" and tid not in covered:
+            errs.append(f"blocked task {tid} has no failure line")
+    plist = [l for l in props if not re.fullmatch(r"\s*[-*]\s*none\s*", l, re.I)]
+    if len(plist) > 3:
+        errs.append(f"{len(plist)} proposals; at most 3")
+    for l in plist:
+        t, tier, met = re.search(r"\btarget:\s*([^|\s]+)", l), re.search(r"\btier:\s*(\d)", l), re.search(r"\bmetric:\s*(\w+)", l)
+        if not t or not tier or tier.group(1) not in "123" or not met or met.group(1) not in RETRO_METRICS or not re.search(r"\beffect:\s*\S", l):
+            errs.append(f"proposal needs target, tier 1-3, a metric from {RETRO_METRICS} and an effect: {l.strip()[:80]}")
+            continue
+        if re.search(r"waiver", l, re.I):
+            errs.append("waivers are never produced unattended (decision-11)")
+        if any(fnmatch.fnmatch(t.group(1), pat) for pat in PROTECTED + ("docs/agent/tron/*",)) and tier.group(1) != "3":
+            errs.append(f"protected target {t.group(1)} must be tier 3")
+    return errs
+
+
+def retro_for_run(root, tron, journal, jpath, force=False):
+    """One retro analyst session over a finished run; writes docs/agent/tron/RETRO-<run>.md. Returns the path or raises TronError."""
+    rid = journal["run_id"]
+    out = root / JOURNAL_DIR / f"RETRO-{rid}.md"
+    if out.exists() and not force:
+        raise TronError(f"{out.relative_to(root)} exists; pass --force to overwrite")
+    brief = retro_brief(root, tron, journal)
+    prompt = (f"You are the retro analyst of an unattended Tron mode run. Read .claude/agents/retro-analyst.md and follow it exactly. "
+              f"Your brief is {brief.relative_to(root)}. Change no file in the project; answer with the retro in your final message.")
+    before = (tree_state(root), tree_dirty(root))
+    entry = run_session(root, tron, "retro", "retro", rid, journal["milestone"], prompt)
+    text = entry.pop("_out", "") or ""
+    journal["sessions"].append(entry)
+    write_journal(jpath, journal)
+    if (tree_state(root), tree_dirty(root)) != before:
+        raise TronError("the retro session changed HEAD, branches or files; nothing written")
+    if entry.get("exit_code"):
+        raise TronError(f"retro session failed (exit {entry.get('exit_code')}); tail: {text[-200:]!r}")
+    m = re.search(r"^# ", text, re.M)
+    body = re.sub(r"\n?```\s*$", "", text[m.start() if m else 0:].rstrip())
+    errs = validate_retro(body, journal)
+    if errs:
+        raise TronError("retro file rejected: " + "; ".join(errs[:4]))
+    out.write_text(body + "\n")
+    journal["retro"] = str(out.relative_to(root))
+    write_journal(jpath, journal)
+    return out
+
+
+def cmd_retro(args):
+    """Unattended retro analysis (doc-12 11.3 A2-5, analysis part): a fresh analyst session over one run's data."""
+    root = pathlib.Path(args.root).resolve()
+    tron = load_config(root, args.config)
+    d = root / JOURNAL_DIR
+    if args.run_id:
+        jpath = d / f"run-{args.run_id}.json"
+    else:
+        runs = sorted(d.glob("run-*.json")) if d.is_dir() else []
+        jpath = runs[-1] if runs else None
+    if not jpath or not jpath.is_file():
+        raise TronError("no run journal found (pass --run <id>)")
+    journal = json.loads(jpath.read_text())
+    if not journal.get("ended"):
+        raise TronError(f"run {journal['run_id']} has not ended")
+    if not tron.get("retro_cmd"):
+        print("warning: tron.retro_cmd is unset; the analyst falls back to worker_cmd, which may edit files", file=sys.stderr)
+    out = retro_for_run(root, tron, journal, jpath, force=args.force)
+    print(f"retro written: {out.relative_to(root)}")
+    return 0
+
+
 def check_milestone(root, milestone, cfg_path=None):
     """Readiness check (doc-12 3.1): returns (failures, warnings, tron config or None). Deterministic, starts nothing."""
     fails, warns = [], []
@@ -1715,6 +1866,8 @@ def check_milestone(root, milestone, cfg_path=None):
         warns.append("tron.doctor_cmd is missing: no Doctor step; a stalled task goes straight to Blocked (set a read-only command, ideally on a stronger model, R-ROUTING)")
     elif not any(x in ("--allowedTools", "--allowed-tools", "--disallowedTools", "--permission-mode") for x in tron["doctor_cmd"]):
         warns.append("tron.doctor_cmd has no tool restriction (--allowedTools or --permission-mode): read-only is then only enforced by the tree check afterwards")
+    if tron.get("retro") == "on" and not cmdok(tron.get("retro_cmd")):
+        warns.append("tron.retro is on but tron.retro_cmd is missing: the analyst falls back to worker_cmd, which may edit files")
     if not cmdok(tron.get("evaluator_cmd")) and tron.get("evaluator", "milestone") != "off":
         warns.append("tron.evaluator_cmd is missing: the evaluator falls back to worker_cmd, which may edit files")
     return fails, warns, tron
@@ -1759,13 +1912,18 @@ def main(argv=None):
     sw.add_argument("--force", action="store_true", help="overwrite an existing SWEEP file (its answers are lost)")
     sw.add_argument("--config", help="config file (default: docs/agent/stem-config.json)")
     sw.add_argument("--root", default=".", help="project root (default: current directory)")
+    rt = sub.add_parser("retro", help="start the retro analyst in a fresh session over a finished run; writes docs/agent/tron/RETRO-<run>.md")
+    rt.add_argument("--run", dest="run_id", help="run id (default: the latest run)")
+    rt.add_argument("--force", action="store_true", help="overwrite an existing RETRO file")
+    rt.add_argument("--config", help="config file (default: docs/agent/stem-config.json)")
+    rt.add_argument("--root", default=".", help="project root (default: current directory)")
     rp = sub.add_parser("report", help="write docs/agent/tron/REPORT-<run>.md from the journal and the backlog")
     rp.add_argument("--run-id", help="run id (default: the latest run)")
     rp.add_argument("--config", help="config file (default: docs/agent/stem-config.json)")
     rp.add_argument("--root", default=".", help="project root (default: current directory)")
     args = p.parse_args(argv)
     try:
-        return {"report": cmd_report, "check": cmd_check, "sweep": cmd_sweep}.get(args.cmd, cmd_run)(args)
+        return {"report": cmd_report, "check": cmd_check, "sweep": cmd_sweep, "retro": cmd_retro}.get(args.cmd, cmd_run)(args)
     except TronError as e:
         print(f"tron: {e}", file=sys.stderr)
         return 2

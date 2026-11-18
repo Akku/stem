@@ -189,6 +189,8 @@ Applies when session start prints the Tron mode line (`STEM_TRON=1`). An unatten
 - Outside the frame or touching an invariant (`INVARIANTS.md`): record the question as a draft task, set the task Blocked, stop; the runner continues with an independent task.
 - Stalled task (same failure twice, no diff, or the second to last repair failed): with `tron.doctor_cmd` set, the runner calls the Doctor once (read-only, `.claude/agents/doctor.md`) for exactly one verdict: retry with hint (one more repair), split task (subtasks with the parent's AC texts verbatim, parent closes when all pass), environment problem (one baseline repair), needs the user (draft question, Blocked). Every step is in the journal and the report.
 
+**Unattended retro (analysis):** with `tron.retro` set to `on` (and `tron.retro_cmd`), the runner starts the retro analyst (read-only, `.claude/agents/retro-analyst.md`) once when a run completes; `python3 scripts/tron.py retro --run <id>` does it by hand. Output `docs/agent/tron/RETRO-<run>.md`: every failure in exactly one layer (task_quality, rule, environment, model, evaluator_miss) with evidence, at most three proposals (target, tier, metric, effect), a check of the previous retro; the runner rejects a file that breaks this. The report links it. Applying proposals is `TASK-280`; the guided retro stays in the `retro` skill.
+
 **Roles by tier** (tendencies, tested by the trials; model names live in the config, `R-ROUTING` decides escalation)
 
 | Role | Tier |

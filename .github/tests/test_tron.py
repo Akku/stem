@@ -740,6 +740,29 @@ class Tron(unittest.TestCase):
         self.assertIsNone(m.parse_doctor(blk(a) + "quoted:" + blk(b)))
         self.assertIsNone(m.parse_doctor(blk(dict(a, diagnosis="<cause, 2-5 sentences>"))))
 
+    def retro_agent(self, text):
+        agent = self.tmp / "retro_agent.py"
+        agent.write_text("import json, sys\nprint(json.dumps({'session_id': sys.argv[1], 'total_cost_usd': 0.1, 'result': " + json.dumps(text) + "}))\n")
+        return [sys.executable, str(agent), "{session_id}", "{prompt}"]
+
+    def test_retro_runs_at_run_end_when_on_and_the_report_links_it(self):
+        self.config({"retro": "on", "retro_cmd": self.retro_agent("# Retro: x\n## Failures\n- none\n## Proposals\n- none\n## Previous retro\n- none\n")})
+        self.tron("run", "--milestone", "m-1")
+        j = self.journal()
+        self.assertTrue(j["complete"]); self.assertTrue(j["retro"].endswith(f"RETRO-{j['run_id']}.md"))
+        self.assertIn("retro", [s["role"] for s in j["sessions"]])
+        self.assertIn(j["retro"], (self.proj / f"docs/agent/tron/REPORT-{j['run_id']}.md").read_text())
+
+    def test_retro_failure_at_run_end_does_not_fail_the_run(self):
+        self.config({"retro": "on", "retro_cmd": self.retro_agent("no structure")})
+        r = self.tron("run", "--milestone", "m-1")
+        j = self.journal()
+        self.assertEqual(r.returncode, 0); self.assertTrue(j["complete"]); self.assertIn("retro file rejected", j["retro_error"])
+
+    def test_retro_off_by_default(self):
+        self.tron("run", "--milestone", "m-1")
+        self.assertNotIn("retro", [s["role"] for s in self.journal()["sessions"]])
+
     def test_doctor_session_that_writes_a_file_stops_the_run(self):
         self.with_doctor({"TASK-1": ["write"]})
         self.behavior({"TASK-1": "no_evidence"})
@@ -1110,6 +1133,60 @@ class Check(unittest.TestCase):
         planner.write_text("import json, sys\nprint(json.dumps({'session_id': sys.argv[1], 'total_cost_usd': 0.2, 'result': " + json.dumps(text) + "}))\n")
         self.cfg(sweep=True, planner_cmd=[sys.executable, str(planner), "{session_id}", "{prompt}"]); self.commit()
         return subprocess.run([sys.executable, str(TRON), "sweep", "--milestone", "m-9", "--root", str(self.proj)], capture_output=True, text=True)
+
+    def retro(self, text, run="r1", blocked=True):
+        (self.proj / "docs/agent/tron").mkdir(parents=True, exist_ok=True)
+        j = {"run_id": run, "milestone": "m-9", "ended": "2026-11-18T10:00:00", "stop_reason": "no ready task left", "complete": True,
+             "tasks": {"TASK-1": {"state": "blocked" if blocked else "accepted", "repairs": 2, "reason": "still failing"}}, "sessions": []}
+        (self.proj / f"docs/agent/tron/run-{run}.json").write_text(json.dumps(j))
+        agent = self.tmp / "retro.py"
+        agent.write_text("import json, sys\nprint(json.dumps({'session_id': sys.argv[1], 'total_cost_usd': 0.1, 'result': " + json.dumps(text) + "}))\n")
+        self.cfg(retro_cmd=[sys.executable, str(agent), "{session_id}", "{prompt}"]); self.commit()
+        return subprocess.run([sys.executable, str(TRON), "retro", "--run", run, "--root", str(self.proj)], capture_output=True, text=True)
+
+    GOOD_RETRO = ("# Retro: r1\n## Failures\n- F1 (TASK-1) layer: task_quality | evidence: docs/agent/tron/run-r1.json | AC too vague\n"
+                  "## Proposals\n- P1 target: docs/agent/PITFALLS.md | tier: 1 | metric: blocked_tasks | effect: fewer blocked tasks\n"
+                  "## Previous retro\n- (no previous retro)\n")
+
+    def test_retro_writes_validated_file_and_brief_points_to_the_data(self):
+        r = self.retro(self.GOOD_RETRO)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("layer: task_quality", (self.proj / "docs/agent/tron/RETRO-r1.md").read_text())
+        brief = (self.proj / "docs/agent/tron/brief-r1-retro.md").read_text()
+        for needle in ("## Tasks", "## Gate failures per session", "## Assumptions", "blocked_tasks", "(no previous retro)"):
+            self.assertIn(needle, brief)
+
+    def test_retro_rejects_bad_files(self):
+        g = self.GOOD_RETRO
+        for why, bad in (("layer", g.replace("task_quality", "bad_layer")),
+                         ("two layers", g.replace("| evidence", "layer: rule | evidence")),
+                         ("no evidence", g.replace("evidence: docs/agent/tron/run-r1.json", "evidence:")),
+                         ("blocked task uncovered", g.replace("(TASK-1)", "(run)")),
+                         ("metric", g.replace("blocked_tasks", "vibes")),
+                         ("four proposals", g.replace("## Previous", "".join(f"- P{i} target: a.md | tier: 1 | metric: blocked_tasks | effect: x\n" for i in range(2, 5)) + "## Previous")),
+                         ("protected tier", g.replace("docs/agent/PITFALLS.md", "scripts/tron.py")),
+                         ("waiver", g.replace("fewer blocked tasks", "a waiver for it")),
+                         ("no previous section", g.split("## Previous")[0])):
+            r = self.retro(bad)
+            self.assertEqual(r.returncode, 2, why + r.stdout)
+            self.assertFalse((self.proj / "docs/agent/tron/RETRO-r1.md").exists(), why)
+
+    def test_retro_with_no_failures_and_no_proposals_is_valid(self):
+        r = self.retro("# Retro: r1\n## Failures\n- none\n## Proposals\n- none\n## Previous retro\n- none\n", blocked=False)
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_retro_session_that_writes_a_file_is_rejected(self):
+        agent = self.tmp / "w.py"
+        agent.write_text("import json, sys\nopen('loose.txt','w').write('x')\nprint(json.dumps({'session_id': 's', 'result': 'x'}))\n")
+        self.retro(self.GOOD_RETRO)  # journal and config
+        (self.proj / "docs/agent/tron/RETRO-r1.md").unlink()
+        self.cfg(retro_cmd=[sys.executable, str(agent)]); self.commit()
+        r = subprocess.run([sys.executable, str(TRON), "retro", "--run", "r1", "--root", str(self.proj)], capture_output=True, text=True)
+        self.assertEqual(r.returncode, 2); self.assertIn("changed HEAD, branches or files", r.stderr)
+
+    def test_check_warns_retro_on_without_retro_cmd(self):
+        self.cfg(retro="on"); self.commit()
+        self.assertIn("tron.retro_cmd is missing", self.check().stdout)
 
     def test_check_fails_while_sweep_is_missing(self):
         self.cfg(sweep=True); self.commit(); self.fails_with("question sweep missing")

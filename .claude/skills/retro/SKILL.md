@@ -28,6 +28,9 @@ Run `python3 scripts/context-report.py` (numbers only; check the session-length 
 - **Unrecorded decisions:** lasting decisions of this period (what `R-DECISION` names) in task notes or the user's input without a record in `backlog/decisions` get a record or a reason to drop.
 - **Cost series:** write `Series: <date> | tasks | turns/task | cache_read/task | output/task | models+effort | first-to-last commit span | handoff commits per task | share of commits without task ID` in the notes, copied from the metrics output (STEM projects: `scripts/retro-metrics.sh --repo <path> [since-date]`), compare with all earlier `Series:` lines and state the total task count behind the trend. Append the cost line of `retro-run.py finish` as `retro cost: <stage> turns=.. tool_calls=.. cache_read=.. output=..`.
 
+## Unattended analysis
+After a Tron run, `docs/agent/tron/RETRO-<run>.md` may exist (see `ADVANCED.md`, unattended retro). Read it as one input to *Pick*: its failures and proposals are evidence to weigh, not decisions. It produces no waivers (decision-11); the user decides here as always.
+
 ## Start context
 Every retro: `python3 scripts/start-context.py report` (median start context per session, trend; numbers only; compare a change with `--compare <time>`, same model only). Write the median into the retro notes next to `Series:`. In the **second or third retro** (once, unless the user asks again) read `start-context.md` (next to this file) and run its dialog.
 
