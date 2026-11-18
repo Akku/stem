@@ -185,7 +185,7 @@ Applies when session start prints the Tron mode line (`STEM_TRON=1`). An unatten
 - Never edit acceptance criteria, the gate and runner files, `docs/agent/stem-config.json`, `DECISION_FRAME.md` or `INVARIANTS.md`.
 
 **Ambiguity** (`DECISION_FRAME.md` lists what may be decided alone)
-- Small, reversible, inside the frame: decide and record `Assumption: ...` in the task notes.
+- Small, reversible, inside the frame: search `DECISION_FRAME.md` and `PRECEDENTS.md` first, then decide and record `Assumption: <text> (basis: <frame line, precedent ID such as P-3, or none>)` in the task notes. A line without a basis is a warning in the journal; `none` is listed first in the report for the user to rule on.
 - Outside the frame or touching an invariant (`INVARIANTS.md`): record the question as a draft task, set the task Blocked, stop; the runner continues with an independent task.
 
 **Roles by tier** (tendencies, tested by the trials; model names live in the config, `R-ROUTING` decides escalation)

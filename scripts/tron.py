@@ -517,6 +517,15 @@ def assumptions(root, ids):
     return out
 
 
+ASSUMPTION_BASIS = re.compile(r"\(basis:\s*([^)]*?)\s*\)\s*$", re.I)
+
+
+def assumption_basis(line):
+    """Basis of an 'Assumption:' line: text after '(basis: ...)' at the end, 'none' when it says so, None when the line names no basis."""
+    m = ASSUMPTION_BASIS.search(line.strip())
+    return (m.group(1) or "none").strip() if m else None
+
+
 def task_intent(text):
     """Title and description only: the implementer's notes and evidence claims stay out of the evaluator's input."""
     title = re.search(r"^title: *(.+?) *$", text, re.M)
@@ -894,7 +903,13 @@ def build_report(root, journal, tron):
         out.append("(no evaluator verdict in this run)")
     out += ["", "## Assumptions made", ""]
     al = assumptions(root, list(tasks))
-    out += [f"- {a}" for a in al] or ["(none recorded)"]
+    groups = {}
+    for a in al:
+        b = assumption_basis(a)
+        groups.setdefault(b.lower() if b and b.lower() == "none" else (b or "none"), []).append(a if b is not None else a + "  [no basis named]")
+    for b in sorted(groups, key=lambda k: (k != "none", k)):
+        out += [f"Basis: {b}" + (" (needs your ruling)" if b == "none" else "")] + [f"- {a}" for a in groups[b]] + [""]
+    out += [] if al else ["(none recorded)"]
     out += ["", "## Blocked tasks", ""]
     for i in blk:
         v = tasks[i]
@@ -1247,6 +1262,9 @@ def run_loop(root, tron, args, milestone, jpath, run_id):
             journal["no_diff_blocks"] = 0
             journal.pop("in_progress", None)
             journal["tasks"][task_id] = {"state": "accepted", "repairs": repairs}
+            nb = [a for a in assumptions(root, [task_id]) if assumption_basis(a) is None]
+            if nb:
+                journal["tasks"][task_id]["warnings"] = [f"assumption without a basis: {a[:160]}" for a in nb]
         write_journal(jpath, journal)
         if state == "accepted" and pause_after == "task" and [t for t in ready_tasks(root, milestone, blocked_status) if t not in journal["tasks"] and t in acs0]:
             fin("pause_after task")

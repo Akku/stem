@@ -27,6 +27,6 @@ Rules: `R-TRON` (session duties, role tiers), `R-BATCHING` (approval of a batch)
 - When it prints `READY`, show the exact `start:` line, ideally `--dry-run` first. The user starts it in a sandbox or with an allowlist; a run costs money, so name the budget again.
 
 ## 4. After the run
-- Read `docs/agent/tron/REPORT-<run>.md` with the user: Done, Blocked (with the draft questions), evaluator findings, cost, branch `tron/<milestone>`.
+- Read `docs/agent/tron/REPORT-<run>.md` with the user: Done, Blocked (with the draft questions), evaluator findings, cost, branch `tron/<milestone>`. Assumptions come grouped by basis, `none` first; when the user corrects one, add a line to `docs/agent/PRECEDENTS.md` (`P-<n> | date | kind | ruling | source report <run>`; keep it at 60 lines or fewer) and commit it.
 - The user decides on merging; the run never pushed, tagged or merged. Answer Blocked questions, then offer to run again (it resumes).
 - Defects the user finds go into the tasks as evidence; do not fix them silently.

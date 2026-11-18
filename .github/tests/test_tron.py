@@ -87,6 +87,8 @@ if beh == "note_only":
     s3 = open(f).read(); open(f, "w").write(s3.replace("status: Done", "status: To Do").replace("- [x] #1", "- [ ] #1").replace("AC#1: E2 fake evidence\\n", "").replace("<!-- SECTION:NOTES:END -->", "BLOCKED: need a decision\\n<!-- SECTION:NOTES:END -->"))
 if beh == "extrapolated":
     s3 = open(f).read(); open(f, "w").write(s3.replace("AC#1: E2 fake evidence", "AC#1: E2 extrapolated from 52 MB"))
+if beh == "assume_nobasis":
+    s3 = open(f).read(); open(f, "w").write(s3.replace("AC#1: E2 fake evidence\\n", "AC#1: E2 fake evidence\\nAssumption: CSV is fine\\nAssumption: sep is comma (basis: P-3)\\n"))
 if beh == "overwrite_notes":
     s3 = open(f).read(); open(f, "w").write(re.sub(r"(?s)<!-- SECTION:NOTES:BEGIN -->.*<!-- SECTION:NOTES:END -->", "<!-- SECTION:NOTES:BEGIN -->\\nAC#1: E2 fake evidence\\n<!-- SECTION:NOTES:END -->", s3))
 if beh == "protected":
@@ -818,6 +820,24 @@ class Tron(unittest.TestCase):
         self.assertIn("AC#1 it works (evidence: E2 test_a passes)", rep)
         self.assertIn("TASK-2: still failing", rep); self.assertIn("TASK-1: CSV is fine".replace("TASK-1: ", "TASK-1: Assumption: "), rep)
         self.assertIn("a.py:1", rep)
+
+    def test_report_groups_assumptions_by_basis_none_first(self):
+        self.sample_journal()
+        f = self.proj / "backlog/tasks/task-1 - x.md"
+        f.write_text(f.read_text().replace("Assumption: CSV is fine\n", "Assumption: CSV is fine (basis: none)\nAssumption: comma (basis: P-3)\nAssumption: naming (basis: frame: naming)\nAssumption: no basis at all\n"))
+        self.tron("report", "--run-id", "s1")
+        rep = (self.proj / "docs/agent/tron/REPORT-s1.md").read_text()
+        i_none, i_p3, i_fr = rep.index("Basis: none"), rep.index("Basis: P-3"), rep.index("Basis: frame: naming")
+        self.assertLess(i_none, i_p3); self.assertLess(i_none, i_fr)
+        self.assertIn("needs your ruling", rep)
+        self.assertLess(rep.index("CSV is fine"), i_p3); self.assertLess(rep.index("no basis at all  [no basis named]"), i_p3)
+
+    def test_assumption_without_basis_is_a_journal_warning(self):
+        self.behavior({"TASK-1": "assume_nobasis"})
+        self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
+        j = json.loads(next((self.proj / "docs/agent/tron").glob("run-*.json")).read_text())
+        w = j["tasks"]["TASK-1"].get("warnings", [])
+        self.assertEqual(len(w), 1); self.assertIn("CSV is fine", w[0]); self.assertNotIn("P-3", w[0])
 
     def test_report_shows_unknown_cost_never_zero_and_cost_per_role_with_models(self):
         self.sample_journal()
