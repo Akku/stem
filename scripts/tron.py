@@ -1254,7 +1254,19 @@ def run_loop(root, tron, args, milestone, jpath, run_id):
             return 0
 
 
-SWEEP_OPEN = re.compile(r"^\s*-\s*\[ \]\s*Q\d+", re.M)
+SWEEP_Q = re.compile(r"^\s*-\s*\[(.)\]\s*Q\d+", re.M)
+SWEEP_ID = re.compile(r"[\w.-]+")
+
+
+def sweep_open(text):
+    """Number of questions without a tick and a non-empty 'Answer:' line in their own block."""
+    ms = list(SWEEP_Q.finditer(text))
+    n = 0
+    for i, m in enumerate(ms):
+        block = text[m.end():ms[i + 1].start() if i + 1 < len(ms) else len(text)]
+        if m.group(1).lower() != "x" or not re.search(r"^\s*(?:[-*]\s*)?Answer:\s*\S", block, re.M | re.I):
+            n += 1
+    return n
 
 
 def sweep_brief(root, milestone):
@@ -1281,23 +1293,35 @@ def sweep_brief(root, milestone):
 def cmd_sweep(args):
     """Question sweep (doc-12 11.3 A2-1): a fresh planner session lists what a run would have to ask; writes docs/agent/tron/SWEEP-<milestone>.md."""
     root = pathlib.Path(args.root).resolve()
+    if not SWEEP_ID.fullmatch(args.milestone):
+        raise TronError(f"invalid milestone id: {args.milestone!r}")
     tron = load_config(root, args.config)
     d = root / "docs/agent/tron"
+    out = d / f"SWEEP-{args.milestone}.md"
+    if out.exists() and not getattr(args, "force", False):
+        raise TronError(f"{out.relative_to(root)} exists (answers would be lost); pass --force to overwrite")
     d.mkdir(parents=True, exist_ok=True)
     brief = d / f"brief-sweep-{args.milestone}.md"
     brief.write_text(sweep_brief(root, args.milestone))
     prompt = (f"You are the planner of an unattended Tron mode run. Read .claude/agents/planner.md and follow it exactly. "
               f"Your brief is {brief.relative_to(root)}. Change no file in the project; answer with the sweep in your final message.")
-    before = tree_state(root)
+    if not tron.get("planner_cmd"):
+        print("warning: tron.planner_cmd is unset; the planner falls back to worker_cmd, which may edit files", file=sys.stderr)
+    before = (tree_state(root), tree_dirty(root))
     entry = run_session(root, tron, "planner", "sweep", f"sweep-{args.milestone}", args.milestone, prompt)
-    if tree_state(root) != before:
-        raise TronError("the planner session changed HEAD, branches or tracked files; nothing written")
+    if (tree_state(root), tree_dirty(root)) != before:
+        raise TronError("the planner session changed HEAD, branches or files; nothing written")
     text = entry.pop("_out", "") or ""
     if entry.get("exit_code") or "## Questions" not in text:
         raise TronError(f"planner session gave no usable sweep (exit {entry.get('exit_code')}); tail: {text[-200:]!r}")
-    out = d / f"SWEEP-{args.milestone}.md"
-    out.write_text(text[text.index("# ") if "# " in text else 0:].rstrip() + "\n")
-    n = len(SWEEP_OPEN.findall(out.read_text()))
+    m = re.search(r"^# ", text, re.M)
+    body = re.sub(r"\n?```\s*$", "", text[m.start() if m else 0:].rstrip())
+    qs = re.search(r"^## Questions\s*$(.*?)(?=^## |\Z)", body, re.M | re.S)
+    bad = [l for l in (qs.group(1).splitlines() if qs else []) if re.match(r"\s*[-*]\s*(\[|Q\d)", l) and not SWEEP_Q.match(l)]
+    if not qs or bad:
+        raise TronError(f"sweep has no parsable '## Questions' section (lines must be '- [ ] Q<n> ...' or '- none'); bad: {bad[:2]}")
+    out.write_text(body + "\n")
+    n = sweep_open(body)
     cost = entry.get("cost_usd")
     print(f"sweep written: {out.relative_to(root)} ({n} open question(s); cost {cost if cost is not None else 'unknown'} USD)")
     print("next: answer the questions with the user (skill tron), tick them '[x]' with 'Answer: ...', commit the file, then run the check")
@@ -1356,7 +1380,7 @@ def check_milestone(root, milestone, cfg_path=None):
         if not sw.is_file():
             fails.append(f"question sweep missing: run 'python3 scripts/tron.py sweep --milestone {milestone}' and answer its questions (or set tron.sweep to false)")
         else:
-            n = len(SWEEP_OPEN.findall(sw.read_text()))
+            n = sweep_open(sw.read_text())
             if n:
                 fails.append(f"{sw.relative_to(root)} holds {n} unanswered question(s): answer them with the user, tick them '[x]' and add 'Answer: ...'")
     dirty = tree_dirty(root)
@@ -1410,6 +1434,7 @@ def main(argv=None):
     c.add_argument("--root", default=".", help="project root (default: current directory)")
     sw = sub.add_parser("sweep", help="start the planner in a fresh session; writes docs/agent/tron/SWEEP-<milestone>.md with the questions a run would hit")
     sw.add_argument("--milestone", required=True, help="milestone id, e.g. m-5")
+    sw.add_argument("--force", action="store_true", help="overwrite an existing SWEEP file (its answers are lost)")
     sw.add_argument("--config", help="config file (default: docs/agent/stem-config.json)")
     sw.add_argument("--root", default=".", help="project root (default: current directory)")
     rp = sub.add_parser("report", help="write docs/agent/tron/REPORT-<run>.md from the journal and the backlog")

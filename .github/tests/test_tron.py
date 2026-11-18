@@ -973,6 +973,24 @@ class Check(unittest.TestCase):
         r = self.sweep("I looked and all is fine")
         self.assertEqual(r.returncode, 2); self.assertFalse((self.proj / "docs/agent/tron/SWEEP-m-9.md").exists())
 
+    def test_answer_must_sit_under_its_own_question(self):
+        q = "# Sweep: m-9\n## Questions\n- [ ] Q1 (TASK-1) a?\n- [ ] Q2 (TASK-1) b?\n## Draft acceptance scenario\nx\n"
+        self.sweep(q); f = self.proj / "docs/agent/tron/SWEEP-m-9.md"
+        f.write_text(f.read_text().replace("- [ ] Q1 (TASK-1) a?", "- [x] Q1 (TASK-1) a?\n  Answer: a").replace("- [ ] Q2", "- [x] Q2"))
+        self.commit(); self.fails_with("1 unanswered question")  # Q2 ticked but no Answer line
+        f.write_text(f.read_text().replace("- [x] Q2 (TASK-1) b?", "- [x] Q2 (TASK-1) b?\n  Answer: b")); self.commit()
+        r = self.check(); self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
+    def test_sweep_rejects_malformed_question_line(self):
+        r = self.sweep("# Sweep: m-9\n## Questions\n- [] Q1 (TASK-1) a?\n")
+        self.assertEqual(r.returncode, 2); self.assertFalse((self.proj / "docs/agent/tron/SWEEP-m-9.md").exists())
+
+    def test_sweep_does_not_overwrite_answers_without_force(self):
+        ok = "# Sweep: m-9\n## Questions\n- none\n"
+        self.assertEqual(self.sweep(ok).returncode, 0)
+        f = self.proj / "docs/agent/tron/SWEEP-m-9.md"; f.write_text(f.read_text() + "KEEP\n")
+        r = self.sweep(ok); self.assertEqual(r.returncode, 2); self.assertIn("KEEP", f.read_text())
+
     def test_warnings(self):
         self.cfg(evaluator="milestone"); self.commit()
         r = self.check(env={"CLAUDE_CODE_EFFORT_LEVEL": "high"})
