@@ -688,9 +688,22 @@ def unhide(root):
             git_ok(root, "update-index", "--no-assume-unchanged", "--no-skip-worktree", "--", l[2:])
 
 
+KEEP_DRAFT = re.compile(r"^backlog/drafts/")
+NOTES_RE = re.compile(r"<!-- SECTION:NOTES:BEGIN -->\n?(.*?)<!-- SECTION:NOTES:END -->", re.S)
+
+
+def worker_notes(root, task_id):
+    """Notes the worker wrote in the task file; they survive the reset inside the Blocked note."""
+    for p in (root / "backlog/tasks").glob(f"task-{task_id.split('-')[-1]} - *.md"):
+        m = NOTES_RE.search(p.read_text())
+        return m.group(1).strip() if m else ""
+    return ""
+
+
 def block_task(root, tron, task_id, base, reason, journal, refs0):
-    """Failed work is kept (backup branch for commits, named stash for loose files), then the task's files go back to the state before the task."""
+    """Failed work is kept (backup branch for commits, named stash for loose files), then the task's files go back to the state before the task. Decision drafts stay; the worker's notes move into the Blocked note."""
     kept = {}
+    wnotes = worker_notes(root, task_id)
     if head(root) != base:
         name = f"tron/blocked-{task_id.lower()}-{journal['run_id']}"
         existing = set(branch_refs(root))
@@ -702,11 +715,13 @@ def block_task(root, tron, task_id, base, reason, journal, refs0):
     unhide(root)
     if tree_dirty(root):
         n0 = len(git_ok(root, "stash", "list").splitlines())
-        git_ok(root, "stash", "push", "-u", "-q", "-m", f"tron {journal['run_id']} {task_id} blocked", "--", ".", *EXCLUDE)
+        git_ok(root, "stash", "push", "-u", "-q", "-m", f"tron {journal['run_id']} {task_id} blocked", "--", ".", ":(exclude,glob)backlog/drafts/**", *EXCLUDE)
         if len(git_ok(root, "stash", "list").splitlines()) > n0:
             kept["stash"] = f"tron {journal['run_id']} {task_id} blocked"
     at_base = set(git_ok(root, "ls-tree", "-r", "--name-only", base).splitlines())
     for f in changed_paths(root, base):
+        if KEEP_DRAFT.match(f):
+            continue
         if f in at_base:
             git_ok(root, "checkout", base, "--", f)
         else:
@@ -714,6 +729,8 @@ def block_task(root, tron, task_id, base, reason, journal, refs0):
     if subprocess.run(["git", "diff", "--cached", "--quiet"], cwd=root).returncode:
         git_ok(root, "commit", "-q", "-m", f"{task_id}: Tron run reset the files of the blocked task")
     note = f"Blocked by the Tron runner (run {journal['run_id']}): {reason}. Failed work kept: " + (", ".join(f"{k} {v}" for k, v in kept.items()) or "none")
+    if wnotes:
+        note += "\nWorker notes before the reset:\n" + wnotes
     set_blocked(root, tron, task_id, note)
     refs0.clear(); refs0.update(branch_refs(root))
     return kept

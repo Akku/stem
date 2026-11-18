@@ -78,6 +78,11 @@ if beh != "no_evidence":
 if beh == "ac_change":
     s = s.replace("works", "works differently")
 open(f, "w").write(s)
+if beh == "draft_block":
+    os.makedirs("backlog/drafts", exist_ok=True)
+    open("backlog/drafts/draft-1 - Decide-x.md", "w").write("---\\nid: DRAFT-1\\ntitle: Decide x\\n---\\n")
+    s3 = open(f).read(); open(f, "w").write(s3.replace("<!-- SECTION:NOTES:END -->", "BLOCKED: need a decision on x\\n<!-- SECTION:NOTES:END -->"))
+    open("junk.txt", "w").write("half done")
 if beh == "protected":
     open("scripts/tron.py", "a").write("# tampered\\n")
 if beh == "verify_fail":
@@ -427,6 +432,18 @@ class Tron(unittest.TestCase):
         self.assertNotIn("[x]", text)  # files reset to the state before the task
         self.assertFalse((self.proj / "junk.txt").exists())
         self.assertTrue(j["tasks"]["TASK-1"]["kept"])
+
+    def test_blocked_task_keeps_draft_and_worker_notes(self):
+        self.config({"max_repairs": 0})
+        self.behavior({"TASK-1": ["draft_block"]})
+        self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
+        self.assertEqual(self.journal()["tasks"]["TASK-1"]["state"], "blocked")
+        self.assertTrue((self.proj / "backlog/drafts/draft-1 - Decide-x.md").exists())
+        text = (self.proj / "backlog/tasks/task-1 - x.md").read_text()
+        self.assertIn("status: Blocked", text); self.assertIn("need a decision on x", text)
+        self.assertNotIn("[x]", text)
+        self.assertFalse((self.proj / "junk.txt").exists())  # code changes still reset
+        self.assertIn("Decide x", (self.proj / "docs/agent/tron" / next((self.proj / "docs/agent/tron").glob("REPORT-*")).name).read_text())
 
     def test_stop_file_ends_run(self):
         (self.proj / "docs/agent/tron").mkdir(parents=True, exist_ok=True)
