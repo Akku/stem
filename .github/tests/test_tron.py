@@ -187,6 +187,37 @@ if v == "write":
     v = {"verdict": "needs_user", "diagnosis": "d", "question": "q?"}
 print(json.dumps({"session_id": sid, "total_cost_usd": 0.07, "result": "diagnosis\\n```json\\n" + json.dumps(v) + "\\n```"}))
 '''
+FAKE_APPLIER = '''#!/usr/bin/env python3
+import json, os, subprocess, sys
+task, sid = sys.argv[1], sys.argv[2]
+td = os.environ["TRON_TEST_DIR"]
+open(td + "/applier_calls.log", "a").write(task + "\\n")
+beh = json.load(open(td + "/applier.json")).get(task, "nothing")
+P = "docs/agent/PITFALLS.md"
+def run(*a): subprocess.run(a, check=True, capture_output=True)
+def add(path, line):
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True); open(path, "a").write(line + "\\n")
+def commit(msg="retro: r1 " + task[6:] + " change", journal=False):
+    run("git", "add", "-A", *([] if journal else ["--", ".", ":!docs/agent/tron"])); run("git", "commit", "-qm", msg)
+if beh == "kill":
+    add(P, "- half"); os.kill(os.getppid(), 9); sys.exit(1)
+if beh == "pitfall": add(P, "- New pitfall: x -> y"); commit()
+if beh == "pitfall_red": add(P, "- New pitfall: x -> y"); open(td + "/verify_fail", "w").write("x"); commit()
+if beh == "test": add("tests/test_new.py", "assert True"); commit()
+if beh == "protected": add(P, "- ok"); add("scripts/tron.py", "# weakened"); commit()
+if beh == "rule": add("AGENTS.md", "- New rule line"); commit()
+if beh == "rule_with_journal": add("AGENTS.md", "- New rule line"); commit(journal=True)
+if beh == "delete": open(P, "w").write(open(P).read().replace("- old entry\\n", "- new wording\\n")); commit()
+if beh == "outside": add(P, "- ok"); add("src/app.py", "x = 1"); commit()
+if beh == "noprefix": add(P, "- ok"); commit("fix pitfalls")
+if beh == "edit_test": add("tests/test_old.py", "x = 2"); commit()
+if beh == "conftest": add("tests/conftest.py", "collect_ignore = ['.']"); commit()
+if beh == "rule_and_test": add("AGENTS.md", "- New rule line"); open("tests/test_old.py", "w").write(""); commit()
+if beh == "rule2": add("AGENTS.md", "- New rule line"); commit(); add("AGENTS.md", "- Second rule line"); commit()
+if beh == "commit_and_dirty": add(P, "- ok"); commit(); add("AGENTS.md", "- loose")
+if beh == "leave_branch": run("git", "checkout", "-q", "-b", "elsewhere")
+print(json.dumps({"session_id": sid, "total_cost_usd": 0.05}))
+'''
 FAKE_VERIFY = '''#!/bin/sh
 [ -e "$TRON_TEST_DIR/verify_fail" ] && exit 1
 exit 0
@@ -1049,6 +1080,278 @@ class Tron(unittest.TestCase):
         # 'git stash push' keeps work safe and is the one allowed use of the word
         self.assertIsNone(re.search(r"""(?<!"stash", )["'](push|tag|merge)["']|git\s+(push|tag|merge)\b""", src))
 
+    # ---- retro changes in tiers (TASK-280) ----
+
+    def applier_setup(self, beh, extra=None, hook=False):
+        (self.bin / "applier").write_text(FAKE_APPLIER); (self.bin / "applier").chmod(0o755)
+        (self.td / "applier.json").write_text(json.dumps(beh))
+        (self.proj / "tests").mkdir(exist_ok=True); (self.proj / "tests/test_old.py").write_text("x = 1\n")
+        if hook:  # the product's commit-msg hook, as SETUP.md wires it
+            (self.proj / "scripts/githooks").mkdir(exist_ok=True)
+            shutil.copy(ROOT / "scripts/githooks/commit-msg", self.proj / "scripts/githooks/commit-msg")
+        (self.proj / "docs/agent/PITFALLS.md").write_text("# Pitfalls\n\n- starter hint\n\n<!-- Project entries: -->\n- old entry\n")
+        (self.proj / "AGENTS.md").write_text("# Agents\n")
+        self.config(dict({"retro": "on", "retro_apply": "on", "applier_cmd": [str(self.bin / "applier"), "{task_id}", "{session_id}", "{prompt}"]}, **(extra or {})))
+        if hook:
+            git(self.proj, "config", "core.hooksPath", "scripts/githooks")
+
+    def retro_apply(self, proposals, rid="r1", tasks=None, pre=None, run=True):
+        if git(self.proj, "branch", "--show-current").stdout.strip() != "tron/m-1":
+            git(self.proj, "checkout", "-q", "-b", "tron/m-1")
+        d = self.proj / "docs/agent/tron"; d.mkdir(parents=True, exist_ok=True)
+        tasks = tasks or {"TASK-1": {"state": "accepted", "repairs": 0}}
+        j = {"run_id": rid, "milestone": "m-1", "branch": "tron/m-1", "ended": "2026-11-18T10:00:00", "complete": True,
+             "stop_reason": "no ready task left", "start_commit": git(self.proj, "rev-parse", "HEAD").stdout.strip(), "tasks": tasks, "sessions": []}
+        (d / f"run-{rid}.json").write_text(json.dumps(dict(j, **(pre or {}))))
+        fails = "".join(f"- F{k} ({t}) layer: model | evidence: docs/agent/tron/run-{rid}.json | x\n" for k, t in enumerate(tasks, 1) if tasks[t]["state"] == "blocked")
+        (d / f"RETRO-{rid}.md").write_text(f"# Retro: {rid}\n## Failures\n{fails or '- none'}\n## Proposals\n" + ("".join(p + "\n" for p in proposals) or "- none\n") + "## Previous retro\n- none\n")
+        return self.tron("retro", "--run", rid, "--apply") if run else None
+
+    def jr(self, rid="r1"):
+        return json.loads((self.proj / f"docs/agent/tron/run-{rid}.json").read_text())
+
+    def changes(self, rid="r1"):
+        return {r["id"]: r for r in self.jr(rid).get("retro_changes", [])}
+
+    P1 = "- P1 target: docs/agent/PITFALLS.md | tier: 1 | metric: blocked_tasks | effect: fewer blocked tasks"
+
+    def test_retro_tier1_pitfall_and_test_applied_as_retro_commits(self):
+        self.applier_setup({"retro-P1": "pitfall", "retro-P2": "test"})
+        r = self.retro_apply([self.P1, "- P2 target: tests/test_new.py | tier: 1 | metric: repairs_per_task | effect: fewer repairs"])
+        self.assertEqual(r.returncode, 0, r.stderr)
+        c = self.changes()
+        self.assertEqual((c["P1"]["result"], c["P2"]["result"]), ("applied", "applied"))
+        self.assertIn("- New pitfall", (self.proj / "docs/agent/PITFALLS.md").read_text())
+        self.assertTrue((self.proj / "tests/test_new.py").is_file())
+        self.assertEqual(git(self.proj, "log", "--format=%s", "-2").stdout.split("\n")[:2], ["retro: r1 P2 change", "retro: r1 P1 change"])
+        self.assertIn("applier", [s["role"] for s in self.jr()["sessions"]])
+        self.assertIn("P1 tier 1 `docs/agent/PITFALLS.md`: applied", (self.proj / "docs/agent/tron/REPORT-r1.md").read_text())
+        self.assertNotIn("EXPERIMENTS", " ".join(git(self.proj, "log", "--format=%s").stdout.splitlines()))
+
+    def test_retro_tier1_failing_verification_is_reverted(self):
+        self.applier_setup({"retro-P1": "pitfall_red"})
+        self.retro_apply([self.P1])
+        c = self.changes()["P1"]
+        self.assertEqual(c["result"], "reverted"); self.assertIn("verification exited", c["reason"])
+        self.assertNotIn("- New pitfall", (self.proj / "docs/agent/PITFALLS.md").read_text())
+        log = git(self.proj, "log", "--format=%s").stdout
+        self.assertIn("retro: revert r1 P1", log); self.assertIn("retro: r1 P1 change", log)  # history keeps the reverted change
+        self.assertEqual(git(self.proj, "status", "--porcelain", "--", ".", ":(exclude)docs/agent/tron").stdout, "")
+
+    def test_retro_tier1_gate_rejects_deletion_other_paths_and_missing_prefix(self):
+        self.applier_setup({"retro-P1": "delete", "retro-P2": "outside", "retro-P3": "noprefix"})
+        self.retro_apply([self.P1, self.P1.replace("P1", "P2"), self.P1.replace("P1", "P3")])
+        c = self.changes()
+        self.assertIn("only gain lines", c["P1"]["reason"])
+        self.assertIn("outside tier 1: src/app.py", c["P2"]["reason"])
+        self.assertIn("without the prefix 'retro:'", c["P3"]["reason"])
+        self.assertTrue(all(c[p]["result"] == "reverted" for p in ("P1", "P2", "P3")))
+        self.assertEqual((self.proj / "docs/agent/PITFALLS.md").read_text().count("old entry"), 1)
+        self.assertFalse((self.proj / "src/app.py").exists())
+
+    def test_retro_tier1_pitfalls_cap(self):
+        self.applier_setup({"retro-P1": "pitfall"})
+        p = self.proj / "docs/agent/PITFALLS.md"; p.write_text(p.read_text() + "".join(f"- e{i}\n" for i in range(29)))
+        git(self.proj, "add", "-A"); git(self.proj, "commit", "-qm", "full")
+        self.retro_apply([self.P1])
+        c = self.changes()["P1"]
+        self.assertEqual(c["result"], "reverted"); self.assertIn("more than 30 project entries", c["reason"])
+
+    def test_retro_tier3_only_in_report_and_protected_diff_fails_the_gate(self):
+        self.applier_setup({"retro-P2": "protected"})
+        self.retro_apply(["- P1 target: scripts/tron.py | tier: 3 | metric: repairs_per_task | effect: fewer repairs",
+                          "- P2 target: docs/agent/PITFALLS.md | tier: 1 | metric: blocked_tasks | effect: fewer blocked"])
+        c = self.changes()
+        self.assertEqual(c["P1"]["result"], "proposed (tier 3: for the user)")
+        self.assertEqual((self.td / "applier_calls.log").read_text().split(), ["retro-P2"])  # no session for tier 3
+        self.assertEqual(c["P2"]["result"], "reverted"); self.assertIn("protected files changed: scripts/tron.py", c["P2"]["reason"])
+        self.assertEqual((self.proj / "scripts/tron.py").read_text(), "# original\n")
+        rep = (self.proj / "docs/agent/tron/REPORT-r1.md").read_text()
+        self.assertIn("Tier 3 proposals touch protected parts and are yours to decide: P1 (scripts/tron.py)", rep)
+
+    def test_retro_tier_target_mismatch_and_no_baseline_are_skipped(self):
+        self.applier_setup({})
+        self.retro_apply(["- P1 target: src/app.py | tier: 1 | metric: blocked_tasks | effect: x",
+                          "- P2 target: AGENTS.md | tier: 2 | metric: cost_per_accepted_task | effect: cheaper"],
+                         tasks={"TASK-1": {"state": "blocked", "repairs": 1, "reason": "still failing"}})
+        c = self.changes()
+        self.assertIn("not a tier 1 path", c["P1"]["result"]); self.assertIn("no baseline value", c["P2"]["result"])
+        self.assertFalse((self.td / "applier_calls.log").exists())
+
+    def tier2(self, beh="rule"):
+        self.applier_setup({"retro-P1": beh})
+        self.retro_apply(["- P1 target: AGENTS.md | tier: 2 | metric: blocked_tasks | effect: fewer blocked tasks"])
+        c = self.changes()["P1"]
+        self.assertEqual(c["result"], "applied")
+        return c
+
+    def test_retro_tier2_applied_and_recorded_in_experiments_with_baseline(self):
+        c = self.tier2()
+        exp = (self.proj / "docs/agent/EXPERIMENTS.md").read_text()
+        self.assertIn(f"tron-exp run=r1 p=P1 commits={c['base']}..{c['commit']} metric=blocked_tasks baseline=0", exp)
+        self.assertIn("| 0 (run r1) |", exp); self.assertIn("| open |", exp)
+        self.assertEqual(git(self.proj, "log", "--format=%s", "-2").stdout.split("\n")[:2],
+                         ["retro: experiment r1 P1 (blocked_tasks baseline 0)", "retro: r1 P1 change"])
+
+    def test_retro_tier2_worse_metric_next_run_reverts_with_record(self):
+        c = self.tier2("rule_with_journal")  # the session also committed the runner's journal (git add -A): the revert leaves it alone
+        r = self.retro_apply([], rid="r2", tasks={"TASK-1": {"state": "blocked", "repairs": 1, "reason": "still failing"}})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        e = self.jr("r2")["experiment_checks"][0]
+        self.assertEqual((e["id"], e["result"]), ("P1", "reverted: blocked_tasks 0 -> 1 (run r2)"))
+        self.assertNotIn("New rule line", (self.proj / "AGENTS.md").read_text())
+        exp = (self.proj / "docs/agent/EXPERIMENTS.md").read_text()
+        self.assertIn("| reverted: blocked_tasks 0 -> 1 (run r2) |", exp); self.assertNotIn("| open |", exp)
+        self.assertIn("retro: revert experiment r1 P1", git(self.proj, "log", "--format=%s", "-1").stdout)
+        self.assertIn("Experiment r1 P1", (self.proj / "docs/agent/tron/REPORT-r2.md").read_text())
+        self.retro_apply([], rid="r3", tasks={"TASK-1": {"state": "blocked", "repairs": 1, "reason": "still failing"}})  # a settled experiment is not checked again
+        self.assertEqual(self.jr("r3").get("experiment_checks"), None)
+
+    def test_retro_tier2_not_worse_is_kept(self):
+        self.tier2()
+        self.retro_apply([], rid="r2")
+        self.assertTrue(self.jr("r2")["experiment_checks"][0]["result"].startswith("kept: blocked_tasks 0 -> 0"))
+        self.assertIn("New rule line", (self.proj / "AGENTS.md").read_text())
+
+    def test_retro_tier2_revert_that_breaks_verification_needs_the_user(self):
+        self.tier2()
+        (self.td / "verify_fail").write_text("x")
+        self.retro_apply([], rid="r2", tasks={"TASK-1": {"state": "blocked", "repairs": 1, "reason": "still failing"}})
+        self.assertIn("revert breaks verification: needs the user", self.jr("r2")["experiment_checks"][0]["result"])
+        self.assertIn("New rule line", (self.proj / "AGENTS.md").read_text())
+        self.assertEqual(git(self.proj, "status", "--porcelain", "--", ".", ":(exclude)docs/agent/tron").stdout, "")
+
+    def test_retro_interrupted_applier_is_judged_on_resume(self):
+        self.applier_setup({"retro-P1": "kill"})
+        self.retro_apply([self.P1])
+        self.assertEqual(self.changes()["P1"]["result"], "started")
+        (self.td / "applier.json").write_text("{}")
+        r = self.tron("retro", "--run", "r1", "--apply")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        c = self.changes()["P1"]
+        self.assertEqual(c["result"], "reverted"); self.assertIn("not clean", c["reason"])
+        self.assertNotIn("- half", (self.proj / "docs/agent/PITFALLS.md").read_text())
+        self.assertIn("retro: revert r1 P1", git(self.proj, "stash", "list").stdout)
+        self.assertEqual((self.td / "applier_calls.log").read_text().split(), ["retro-P1"])  # judged, not started again
+
+    def test_retro_stop_file_stops_and_resume_applies(self):
+        self.applier_setup({"retro-P1": "pitfall"})
+        (self.proj / "docs/agent/tron").mkdir(parents=True, exist_ok=True); (self.proj / "docs/agent/tron/STOP").write_text("")
+        self.retro_apply([self.P1])
+        self.assertTrue(self.changes()["P1"]["result"].startswith("stopped: stop file"))
+        (self.proj / "docs/agent/tron/STOP").unlink()
+        self.tron("retro", "--run", "r1", "--apply")
+        self.assertEqual(self.changes()["P1"]["result"], "applied")
+
+    def test_retro_changes_at_run_end(self):
+        self.applier_setup({"retro-P1": "pitfall"}, {"retro_cmd": self.retro_agent("# Retro: x\n## Failures\n- none\n## Proposals\n" + self.P1 + "\n## Previous retro\n- none\n")})
+        r = self.tron("run", "--milestone", "m-1")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        j = self.journal()
+        self.assertEqual(j["retro_changes"][0]["result"], "applied")
+        self.assertIn("retro: ", git(self.proj, "log", "--format=%s", "-1").stdout)
+        self.assertIn("## Unattended retro changes", (self.proj / f"docs/agent/tron/REPORT-{j['run_id']}.md").read_text())
+
+    def test_retro_with_the_commit_msg_hook_applies_and_reverts(self):
+        self.applier_setup({"retro-P1": "pitfall", "retro-P2": "pitfall_red"}, hook=True)
+        self.retro_apply([self.P1, self.P1.replace("P1", "P2")])
+        c = self.changes()
+        self.assertEqual(c["P1"]["result"], "applied"); self.assertEqual(c["P2"]["result"], "reverted")
+        self.assertIn("retro: revert r1 P2", git(self.proj, "log", "--format=%s", "-1").stdout)
+
+    def test_retro_tier1_rejects_edited_tests_and_helpers_and_tier2_follows_tier1_rules(self):
+        self.applier_setup({"retro-P1": "edit_test", "retro-P2": "conftest", "retro-P3": "rule_and_test"})
+        self.retro_apply([self.P1, self.P1.replace("P1", "P2"), "- P3 target: AGENTS.md | tier: 2 | metric: blocked_tasks | effect: fewer"])
+        c = self.changes()
+        self.assertIn("existing test files changed", c["P1"]["reason"])
+        self.assertIn("outside tier 1: tests/conftest.py", c["P2"]["reason"])
+        self.assertIn("existing test files changed", c["P3"]["reason"])
+        self.assertTrue(all(c[p]["result"] == "reverted" for p in ("P1", "P2", "P3")))
+        self.assertEqual((self.proj / "tests/test_old.py").read_text(), "x = 1\n")
+        self.assertFalse((self.proj / "tests/conftest.py").exists())
+        self.assertNotIn("EXPERIMENTS", " ".join(git(self.proj, "log", "--format=%s").stdout.splitlines()))
+
+    def test_retro_commit_plus_loose_files_reverted_and_kept_in_stash(self):
+        self.applier_setup({"retro-P1": "commit_and_dirty"})
+        self.retro_apply([self.P1])
+        self.assertEqual(self.changes()["P1"]["result"], "reverted")
+        self.assertNotIn("- ok", (self.proj / "docs/agent/PITFALLS.md").read_text()); self.assertNotIn("loose", (self.proj / "AGENTS.md").read_text())
+        self.assertIn("retro: revert r1 P1", git(self.proj, "stash", "list").stdout)
+
+    def test_retro_tier2_several_commits_are_reverted_together(self):
+        self.applier_setup({"retro-P1": "rule2"})
+        self.retro_apply(["- P1 target: AGENTS.md | tier: 2 | metric: blocked_tasks | effect: fewer"])
+        self.retro_apply([], rid="r2", tasks={"TASK-1": {"state": "blocked", "repairs": 1, "reason": "x"}})
+        self.assertTrue(self.jr("r2")["experiment_checks"][0]["result"].startswith("reverted"))
+        self.assertEqual((self.proj / "AGENTS.md").read_text(), "# Agents\n")
+
+    def test_retro_tier2_revert_conflict_needs_the_user(self):
+        self.tier2()
+        a = self.proj / "AGENTS.md"; a.write_text(a.read_text().replace("New rule line", "Edited rule line"))
+        git(self.proj, "commit", "-qam", "user edit")
+        self.retro_apply([], rid="r2", tasks={"TASK-1": {"state": "blocked", "repairs": 1, "reason": "x"}})
+        self.assertIn("revert conflicts: needs the user", self.jr("r2")["experiment_checks"][0]["result"])
+        self.assertIn("Edited rule line", a.read_text())
+        self.assertEqual(git(self.proj, "status", "--porcelain", "--", ".", ":(exclude)docs/agent/tron").stdout, "")
+
+    def test_retro_resume_records_a_missing_experiment_row_once(self):
+        c = self.tier2()
+        j = self.jr(); j["retro_changes"][0].pop("experiment")
+        git(self.proj, "reset", "-q", "--hard", "HEAD~1")  # as if the runner died after the applied mark, before the row
+        (self.proj / "docs/agent/tron/run-r1.json").write_text(json.dumps(j))
+        r = self.tron("retro", "--run", "r1", "--apply")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        exp = (self.proj / "docs/agent/EXPERIMENTS.md").read_text()
+        self.assertEqual(exp.count("tron-exp run=r1 p=P1"), 1); self.assertEqual(self.changes()["P1"]["result"], "applied")
+        self.tron("retro", "--run", "r1", "--apply")
+        self.assertEqual((self.proj / "docs/agent/EXPERIMENTS.md").read_text().count("tron-exp run=r1 p=P1"), 1)
+        self.assertEqual((self.td / "applier_calls.log").read_text().split(), ["retro-P1"])
+
+    def test_retro_interrupted_experiment_check_is_stashed_and_redone(self):
+        self.tier2()
+        (self.proj / "AGENTS.md").write_text("# Agents\n")  # half of a killed revert
+        self.retro_apply([], rid="r2", tasks={"TASK-1": {"state": "blocked", "repairs": 1, "reason": "x"}}, run=False,
+                         pre={"experiment_checks": [{"run": "r1", "id": "P1", "result": "checking", "metric": "blocked_tasks", "baseline": "0", "current": 1}]})
+        r = self.tron("retro", "--run", "r2", "--apply")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual([x["result"] for x in self.jr("r2")["experiment_checks"]], ["reverted: blocked_tasks 0 -> 1 (run r2)"])
+        self.assertIn("interrupted experiment check", git(self.proj, "stash", "list").stdout)
+
+    def test_retro_open_rows_are_recorded_once(self):
+        self.tier2()
+        git(self.proj, "checkout", "-q", "-b", "other", "main"); git(self.proj, "checkout", "-q", "tron/m-1", "--", "docs/agent/EXPERIMENTS.md")
+        git(self.proj, "commit", "-qm", "rows only")  # the row arrived, the change commit did not
+        self.retro_apply([], rid="r2", tasks={"TASK-1": {"state": "blocked", "repairs": 1, "reason": "x"}}, pre={"branch": "other"})
+        r = self.tron("retro", "--run", "r2", "--apply")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual([x["result"] for x in self.jr("r2")["experiment_checks"]], ["commit not on this branch (stays open)"])
+
+    def test_retro_apply_error_at_run_end_does_not_fail_the_run(self):
+        self.applier_setup({"retro-P1": "leave_branch"}, {"retro_cmd": self.retro_agent("# Retro: x\n## Failures\n- none\n## Proposals\n" + self.P1 + "\n## Previous retro\n- none\n")})
+        r = self.tron("run", "--milestone", "m-1")
+        j = self.journal()
+        self.assertEqual(r.returncode, 0, r.stderr); self.assertTrue(j["complete"])
+        self.assertIn("left the run branch", j["retro_apply_error"])
+        self.assertIn("Retro changes stopped", (self.proj / f"docs/agent/tron/REPORT-{j['run_id']}.md").read_text())
+
+    def test_retro_apply_refuses_while_a_run_holds_the_lock(self):
+        self.applier_setup({"retro-P1": "pitfall"})
+        self.retro_apply([self.P1], run=False)
+        (self.proj / "docs/agent/tron/LOCK").write_text(str(os.getpid()))
+        r = self.tron("retro", "--run", "r1", "--apply")
+        self.assertEqual(r.returncode, 2); self.assertIn("is active", r.stderr)
+
+    def test_retro_tiers_of_paths(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("tron", TRON); m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+        tron = {"verify_cmd": ["x"]}
+        cases = {"docs/agent/PITFALLS.md": 1, "tests/a/test_b.py": 1, "tests/a/b.py": None, "tests/conftest.py": None, "src/foo_test.go": 1, "web/x.spec.ts": 1, "scripts/latest_x.py": None,
+                 "AGENTS.md": 2, ".claude/skills/retro/SKILL.md": 2, "docs/agent/OPERATING_MODEL.md": 2, "docs/agent/EXPERIMENTS.md": 3,
+                 "docs/agent/tron/RETRO-r1.md": None, "scripts/tron.py": 3, ".claude/settings.json": 3, "scripts/hooks/manifest.json": 3,
+                 "scripts/deny-guard.py": 3, ".claude/agents/planner.md": 3, "docs/agent/INVARIANTS.md": 3, "src/app.py": None}
+        for path, t in cases.items():
+            self.assertEqual(m.tier_of_path(self.proj, tron, path), t, path)
+
 
 class Check(unittest.TestCase):
     """Readiness check: each failure on its own, plus the ready case."""
@@ -1183,6 +1486,10 @@ class Check(unittest.TestCase):
         self.cfg(retro_cmd=[sys.executable, str(agent)]); self.commit()
         r = subprocess.run([sys.executable, str(TRON), "retro", "--run", "r1", "--root", str(self.proj)], capture_output=True, text=True)
         self.assertEqual(r.returncode, 2); self.assertIn("changed HEAD, branches or files", r.stderr)
+
+    def test_check_warns_task_naming_a_protected_path(self):
+        self.task("TASK-2", acs="- [ ] #1 scripts/githooks/pre-commit refuses x\n"); self.commit()
+        self.assertIn("TASK-2 names protected paths", self.check().stdout)
 
     def test_check_warns_retro_on_without_retro_cmd(self):
         self.cfg(retro="on"); self.commit()

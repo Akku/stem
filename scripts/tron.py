@@ -16,13 +16,15 @@ Placeholders: {prompt} {session_id} {task_id} {run_id} {milestone}. Roles: worke
 Python standard library only (macOS and Linux)."""
 import argparse, datetime, fnmatch, hashlib, json, os, pathlib, re, subprocess, sys, time, uuid
 
-ROLES = ("worker", "evaluator", "doctor", "planner", "retro")
+ROLES = ("worker", "evaluator", "doctor", "planner", "retro", "applier")
 DEFAULT_PROMPT = ("Work on backlog task {task_id} following AGENTS.md. This is an unattended Tron mode session "
                   "(STEM_TRON=1): read R-TRON first and follow it; nobody answers questions. Work on this one task only.")
 JOURNAL_DIR = pathlib.Path("docs/agent/tron")
-# files a session must not change: the gate itself, the config, the decision frame, the invariants, the evaluator (R-TRON)
+# files a session must not change (tier 3 of the retro changes, R-TRON): the gate itself, the config, the decision frame, the invariants,
+# the judging and diagnosing agents, security and deny rules
 PROTECTED = ("scripts/tron.py", "docs/agent/stem-config.json", "docs/agent/DECISION_FRAME.md", "docs/agent/INVARIANTS.md",
-             ".claude/agents/evaluator.md", ".claude/agents/doctor.md", ".claude/agents/retro-analyst.md")
+             ".claude/agents/evaluator.md", ".claude/agents/doctor.md", ".claude/agents/retro-analyst.md", ".claude/agents/planner.md",
+             ".claude/settings.json", ".claude/settings.local.json", "scripts/deny-guard.py", "scripts/hooks/*", "scripts/githooks/*")
 BASELINE_PROMPT = ("The verification command fails on the current branch before any task starts (unattended Tron mode session, "
                    "STEM_TRON=1; read R-TRON first). Find the cause and fix it with the smallest change. Do not change acceptance "
                    "criteria and do not start task work.")
@@ -298,8 +300,9 @@ def restore_acs(root, task_id, path, start_commit):
 
 # run output the runner itself writes; every other path under docs/agent/tron/ counts as a change
 EXCLUDE = [":(exclude,glob)docs/agent/tron/run-*", ":(exclude,glob)docs/agent/tron/REPORT-*", ":(exclude)docs/agent/tron/STOP", ":(exclude)docs/agent/tron/LOCK",
-           ":(exclude,glob)docs/agent/tron/brief-*", ":(exclude,glob)docs/agent/tron/verdict-*", ":(exclude,glob)docs/agent/tron/doctor-*"]
-RUNNER_FILE = re.compile(r"^docs/agent/tron/(run-|REPORT-|STOP$|LOCK$|brief-|verdict-|doctor-)")
+           ":(exclude,glob)docs/agent/tron/brief-*", ":(exclude,glob)docs/agent/tron/verdict-*", ":(exclude,glob)docs/agent/tron/doctor-*",
+           ":(exclude,glob)docs/agent/tron/RETRO-*"]
+RUNNER_FILE = re.compile(r"^docs/agent/tron/(run-|REPORT-|STOP$|LOCK$|brief-|verdict-|doctor-|RETRO-)")
 
 
 def tree_dirty(root):
@@ -370,7 +373,7 @@ def verify(root, tron):
 
 def protected_paths(root, tron):
     """Gate and config files plus the files that decide the verdict: run.sh and every repo file named in verify_cmd."""
-    prot = set(PROTECTED) | {"scripts/run.sh", "docs/agent/tron/ACCEPTANCE-*"} | set(tron.get("protected", []))
+    prot = set(PROTECTED) | {"scripts/run.sh", "docs/agent/tron/ACCEPTANCE-*", EXPERIMENTS} | set(tron.get("protected", []))
     if tron.get("acceptance_scenario"):
         prot.add(tron["acceptance_scenario"])
     for arg in tron["verify_cmd"]:
@@ -1066,7 +1069,7 @@ def build_report(root, journal, tron):
             "- The first core flows are tested by you: " + (", ".join(acc) or "(no accepted task)")]
     out += [f"- Unattended retro (analysis): {journal['retro']}"] if journal.get("retro") else []
     out += [f"- Unattended retro failed: {journal['retro_error']}"] if journal.get("retro_error") else []
-    out += [""]
+    out += [""] + retro_changes_report(journal)
     out += ["## Accepted tasks: acceptance criteria and evidence", ""]
     for i in acc:
         f = files.get(i)
@@ -1319,6 +1322,11 @@ def run_loop(root, tron, args, milestone, jpath, run_id):
                 retro_for_run(root, tron, journal, jpath)
             except (TronError, OSError, ValueError) as e:
                 journal["retro_error"] = str(e)[:300]; write_journal(jpath, journal)
+        if complete and tron.get("retro_apply") == "on":  # tier 1 and 2 changes, experiment checks (R-TRON "Retro changes"); never fails the run
+            try:
+                apply_retro(root, tron, journal, jpath)
+            except (TronError, OSError, ValueError) as e:
+                journal["retro_apply_error"] = str(e)[:300]; write_journal(jpath, journal)
         try:  # one report per run, rewritten whenever the run stops
             (root / JOURNAL_DIR / f"REPORT-{journal['run_id']}.md").write_text(build_report(root, journal, tron))
         except (OSError, TronError, KeyError, ValueError):
@@ -1662,7 +1670,7 @@ def run_metrics(journal):
     """Numbers of one run for the retro: the names are the fixed list RETRO_METRICS."""
     tasks, sess = journal.get("tasks", {}), journal.get("sessions", [])
     acc = [v for v in tasks.values() if v.get("state") == "accepted"]
-    cost = sum(s.get("cost_usd") or 0 for s in sess)
+    cost = sum(s.get("cost_usd") or 0 for s in sess if s.get("role") not in ("retro", "applier"))  # the retro's own cost is not the run's
     n = max(len(tasks), 1)
     return {"blocked_tasks": sum(1 for v in tasks.values() if v.get("state") == "blocked"),
             "repairs_per_task": round(sum(v.get("repairs", 0) for v in tasks.values()) / n, 2),
@@ -1792,9 +1800,345 @@ def cmd_retro(args):
         raise TronError(f"run {journal['run_id']} has not ended")
     if not tron.get("retro_cmd"):
         print("warning: tron.retro_cmd is unset; the analyst falls back to worker_cmd, which may edit files", file=sys.stderr)
-    out = retro_for_run(root, tron, journal, jpath, force=args.force)
-    print(f"retro written: {out.relative_to(root)}")
+    out = root / JOURNAL_DIR / f"RETRO-{journal['run_id']}.md"
+    if not args.apply or args.force or not out.is_file():
+        out = retro_for_run(root, tron, journal, jpath, force=args.force)
+        print(f"retro written: {out.relative_to(root)}")
+    elif not journal.get("retro"):
+        errs = validate_retro(out.read_text(), journal)
+        if errs:
+            raise TronError(f"{out.relative_to(root)} is invalid: " + "; ".join(errs[:4]))
+        journal["retro"] = str(out.relative_to(root)); write_journal(jpath, journal)
+    if args.apply:
+        lock = root / JOURNAL_DIR / "LOCK"  # never next to an active run on the same checkout
+        try:
+            pid = int(lock.read_text().strip()) if lock.is_file() else 0
+        except ValueError:
+            pid = 0
+        if pid and pid_alive(pid):
+            raise TronError(f"a run or another --apply is active (pid {pid}, {lock.relative_to(root)})")
+        lock.write_text(str(os.getpid()))
+        try:
+            apply_retro(root, tron, journal, jpath)
+        finally:
+            try:
+                lock.unlink()
+            except OSError:
+                pass
+            try:
+                (root / JOURNAL_DIR / f"REPORT-{journal['run_id']}.md").write_text(build_report(root, journal, tron))
+            except (OSError, TronError, KeyError, ValueError) as e:
+                print(f"warning: report not written: {e}", file=sys.stderr)
+        for r in journal.get("retro_changes", []):
+            print(f"{r['id']} tier {r['tier']} {r['target']}: {r['result']}")
+        for e in journal.get("experiment_checks", []):
+            print(f"experiment {e['run']} {e['id']}: {e['result']}")
     return 0
+
+
+# ---- unattended retro: changes applied in tiers (R-TRON "Retro changes") ----
+
+PITFALLS, EXPERIMENTS, PITFALLS_CAP = "docs/agent/PITFALLS.md", "docs/agent/EXPERIMENTS.md", 30
+TIER2_GLOBS = ("AGENTS.md", "CLAUDE.md", "docs/agent/*.md", ".claude/skills/*.md", ".agents/skills/*.md")
+NOT_TIER2 = ("docs/agent/tron/*", EXPERIMENTS, "backlog/*")
+TEST_NAME = re.compile(r"^(test_\w+\.py|\w+_test\.\w+|[\w.-]+\.(test|spec)\.\w+|Test\w+\.\w+|\w+Tests?\.\w+)$")
+EXP_TAG = re.compile(r"<!-- tron-exp run=(\S+) p=(\S+) commits=(\w+)\.\.(\w+) metric=(\w+) baseline=(\S+) -->")
+APPLY_PROMPT = ("You apply one change proposal from the unattended retro of Tron mode run {rid} (STEM_TRON=1; read R-TRON first, "
+                "'Retro changes'). Proposal {pid}: target {target}, tier {tier}, expected effect on {metric}: {effect}. "
+                "Make the smallest change that implements it ({scope}). Change no other file, no task and no protected file. "
+                "Run the verification command, then commit once with a message that starts with 'retro: {rid} {pid}'. "
+                "Nobody answers questions: if the proposal cannot be done safely, change nothing and say why.")
+TIER_SCOPE = {1: f"tier 1: add lines to {PITFALLS} (at most {PITFALLS_CAP} project entries) or add a new regression test file named like test_x.py, x_test.go or x.test.ts; change no existing line",
+              2: "tier 2: project rule or skill text only"}
+
+
+def is_test_path(path, tron):
+    """A regression test file by its name (or tron.test_globs); helpers, fixtures and conftest files in test folders are not."""
+    return bool(TEST_NAME.match(path.rsplit("/", 1)[-1])) or any(fnmatch.fnmatchcase(path, g) for g in tron.get("test_globs", []))
+
+
+def tier_of_path(root, tron, path):
+    """3 for a protected path, 1 for PITFALLS.md or a test file, 2 for other rule or skill text, None for anything else (no retro change may touch it)."""
+    if any(fnmatch.fnmatchcase(path, pat) for pat in protected_paths(root, tron)):
+        return 3
+    if path == PITFALLS or is_test_path(path, tron):
+        return 1
+    if any(fnmatch.fnmatchcase(path, g) for g in TIER2_GLOBS) and not any(fnmatch.fnmatchcase(path, g) for g in NOT_TIER2):
+        return 2
+    return None
+
+
+def pitfall_entries(text):
+    """Project entries of PITFALLS.md: non-empty lines after the '<!-- Project entries: -->' marker (the whole file without it)."""
+    _, sep, rest = text.partition("<!-- Project entries: -->")
+    return [l for l in (rest if sep else text).splitlines() if l.strip()]
+
+
+def retro_proposals(text):
+    """Proposals of a validated retro file: [{id, target, tier, metric, effect}] in file order."""
+    m = re.search(r"^## Proposals\s*$(.*?)(?=^## |\Z)", text, re.M | re.S)
+    out = []
+    for l in (m.group(1).splitlines() if m else []):
+        t, tier, met, eff = (re.search(r"\btarget:\s*([^|\s]+)", l), re.search(r"\btier:\s*(\d)", l),
+                             re.search(r"\bmetric:\s*(\w+)", l), re.search(r"\beffect:\s*(.+)$", l))
+        if t and tier and met and eff:
+            pid = re.match(r"\s*[-*]\s*(P\d+)\b", l)
+            out.append({"id": pid.group(1) if pid else f"P{len(out) + 1}", "target": t.group(1), "tier": int(tier.group(1)),
+                        "metric": met.group(1), "effect": eff.group(1).replace("|", "/").strip()[:200]})
+    return out
+
+
+def retro_gate(root, tron, base, tier, branch, refs0):
+    """Checks after an applier session: run branch and other refs untouched, clean tree, only 'retro:' commits,
+    no protected path, every path inside the tier, tier 1 only adds lines and keeps the PITFALLS cap, verification passes."""
+    fails = []
+    try:
+        cur = git_ok(root, "branch", "--show-current").strip()
+        if cur != branch:
+            return {"passed": False, "failures": [{"check": "branch", "reason": f"session left the run branch (now on '{cur or 'detached HEAD'}')"}]}
+        if subprocess.run(["git", "merge-base", "--is-ancestor", base, "HEAD"], cwd=root).returncode:
+            return {"passed": False, "failures": [{"check": "branch", "reason": "history rewritten: the commit before the session is no longer an ancestor of HEAD"}]}
+        if {k: v for k, v in branch_refs(root).items() if k != branch} != {k: v for k, v in refs0.items() if k != branch}:
+            return {"passed": False, "failures": [{"check": "refs", "reason": "other branches changed during the session"}]}
+        dirty = tree_dirty(root)
+        if dirty:
+            fails.append({"check": "tree", "reason": f"working tree not clean ({len(dirty)} entries)", "detail": "; ".join(dirty[:5])})
+        subjects = [x for x in git_ok(root, "log", "--format=%s", f"{base}..HEAD").splitlines() if x.strip()]
+        paths = changed_paths(root, base)
+        if not subjects and not paths:
+            return {"passed": False, "no_change": True, "failures": [{"check": "change", "reason": "the session changed nothing"}]}
+        if not subjects:
+            fails.append({"check": "commit", "reason": "no commit"})
+        bad = [x for x in subjects if not x.startswith("retro:")]
+        if bad:
+            fails.append({"check": "commit", "reason": f"commit message without the prefix 'retro:': '{bad[0][:80]}'"})
+        tiers = {f: tier_of_path(root, tron, f) for f in paths}
+        hit = [f for f, t in tiers.items() if t == 3]
+        if hit:
+            fails.append({"check": "protected", "reason": "protected files changed: " + ", ".join(hit)})
+        out = [f for f, t in tiers.items() if t is None or (t != 3 and t > tier)]
+        if out:
+            fails.append({"check": "tier", "reason": f"files outside tier {tier}: " + ", ".join(out)})
+        t1 = [f for f, t in tiers.items() if t == 1]
+        if t1:  # tier 1 rules hold for these paths in every tier: PITFALLS only grows, tests only arrive as new files
+            status = dict(reversed(l.split("\t", 1)) for l in git_ok(root, "diff", "--name-status", "--no-renames", base, "--", *t1).splitlines() if "\t" in l)
+            old_tests = [f for f in t1 if f != PITFALLS and f in status and status[f] != "A"]
+            if old_tests:
+                fails.append({"check": "tier", "reason": "existing test files changed (tier 1 only adds new test files): " + ", ".join(old_tests)})
+            removed = [l for l in git_ok(root, "diff", "-U0", "--no-renames", base, "--", *t1).splitlines() if l.startswith("-") and not l.startswith("---")]
+            if removed or PITFALLS in status and status[PITFALLS] not in ("M", "A"):
+                fails.append({"check": "tier", "reason": f"tier 1 paths only gain lines; {len(removed)} line(s) removed or changed"})
+            odd = [l for l in git_ok(root, "diff", "--numstat", "--summary", "--no-renames", base, "--", *t1).splitlines() if l.startswith("-\t") or "mode change" in l]
+            if odd:
+                fails.append({"check": "tier", "reason": "binary or mode changes in tier 1 paths: " + "; ".join(odd)[:200]})
+        if PITFALLS in paths and (root / PITFALLS).is_file() and len(pitfall_entries((root / PITFALLS).read_text())) > PITFALLS_CAP:
+            fails.append({"check": "cap", "reason": f"{PITFALLS} has more than {PITFALLS_CAP} project entries"})
+        if not fails:
+            code, tail = verify(root, tron)
+            if code:
+                fails.append({"check": "verify", "reason": f"verification exited {code}", "detail": tail})
+    except TronError as e:
+        fails.append({"check": "git", "reason": str(e)})
+    return {"passed": not fails, "failures": fails}
+
+
+def revert_retro(root, base, msg):
+    """Undo one applier session on the run branch: loose files go to a named stash, committed changes are undone by one
+    'retro: revert' commit (history keeps them). Returns the revert commit or None."""
+    unhide(root)
+    if tree_dirty(root):
+        git_ok(root, "stash", "push", "-u", "-q", "-m", msg[:100], "--", ".", *EXCLUDE)
+    at_base = set(git_ok(root, "ls-tree", "-r", "--name-only", base).splitlines())
+    for f in changed_paths(root, base):
+        if f in at_base:
+            git_ok(root, "checkout", base, "--", f)
+        else:
+            git_ok(root, "rm", "-rf", "-q", "--ignore-unmatch", "--", f)
+    if subprocess.run(["git", "diff", "--cached", "--quiet"], cwd=root).returncode:
+        r = sh(["git", "commit", "-q", "-m", msg], root)
+        if r.returncode:
+            raise TronError(f"revert commit refused ({(r.stderr or r.stdout).strip()[:200]}); the restored files are staged on the run branch")
+        return head(root)
+    return None
+
+
+def record_experiment(root, journal, prop, base, commit, baseline):
+    """Tier 2 bookkeeping: one row in EXPERIMENTS.md with metric, baseline and the change commits, committed by the runner as
+    'retro: experiment ...'. Idempotent: a row that is already there is only committed."""
+    p, rid = root / EXPERIMENTS, journal["run_id"]
+    if p.is_file() and f"<!-- tron-exp run={rid} p={prop['id']} " in p.read_text():
+        if subprocess.run(["git", "diff", "--quiet", "HEAD", "--", EXPERIMENTS], cwd=root).returncode:
+            git_ok(root, "add", "--", EXPERIMENTS)
+            git_ok(root, "commit", "-q", "-m", f"retro: experiment {rid} {prop['id']} ({prop['metric']} baseline {baseline})")
+        return
+    text = p.read_text() if p.is_file() else ("# Experiments on cost-carrying rules\n\n| Rule / change | Hypothesis | Metric (per accepted task) and threshold "
+                                              "| Baseline | Check by | Confounders to note | Result | Grade |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n")
+    row = (f"| Tron retro {rid} {prop['id']}: {prop['target']} (commit {commit[:10]}) <!-- tron-exp run={rid} p={prop['id']} commits={base}..{commit} "
+           f"metric={prop['metric']} baseline={baseline} --> | {prop['effect']} | {prop['metric']}, lower is better: not worse than the baseline, "
+           f"else the runner reverts the change | {baseline} (run {rid}) | next Tron run's retro | other changes between the runs, task mix | open | G1 (one run) |")
+    marker = "<!-- New entries above this line. -->"
+    text = text.replace(marker, row + "\n" + marker, 1) if marker in text else text.rstrip("\n") + "\n" + row + "\n"
+    p.write_text(text)
+    git_ok(root, "add", "--", EXPERIMENTS)
+    git_ok(root, "commit", "-q", "-m", f"retro: experiment {rid} {prop['id']} ({prop['metric']} baseline {baseline})")
+
+
+def check_experiments(root, tron, journal, jpath):
+    """Open tier 2 experiments of earlier runs: compare the metric with this run's value; worse reverts the change commit, with a record in EXPERIMENTS.md and the journal."""
+    p, rid = root / EXPERIMENTS, journal["run_id"]
+    if not p.is_file():
+        return
+    metrics = run_metrics(journal)
+    checks = journal.setdefault("experiment_checks", [])
+    for line in p.read_text().splitlines():
+        m = EXP_TAG.search(line)
+        if not m or m.group(1) == rid or not re.search(r"\| open \|[^|]*\|\s*$", line):
+            continue
+        run, pid, c0, commit, metric, base = m.groups()
+        rec = {"run": run, "id": pid, "commit": commit, "metric": metric, "baseline": base, "current": metrics.get(metric), "at_run": rid}
+        try:
+            b, c = float(base), metrics.get(metric)
+        except ValueError:
+            b, c = None, None
+        stays = ("not measurable (stays open)" if b is None or c is None else
+                 "commit not on this branch (stays open)" if subprocess.run(["git", "merge-base", "--is-ancestor", commit, "HEAD"], cwd=root, capture_output=True).returncode
+                 else None)
+        if stays:
+            if not any(x["run"] == run and x["id"] == pid and x.get("result") == stays for x in checks):
+                checks.append(dict(rec, result=stays)); write_journal(jpath, journal)
+            continue
+        rec["result"] = "checking"  # a runner killed from here on leaves this mark; the next --apply stashes what it left and checks again
+        checks.append(rec); write_journal(jpath, journal)
+        # the change commits minus runner files (a session may have committed the journal with 'git add -A'); git apply is all or nothing
+        patch = git_ok(root, "diff", "--binary", c0, commit, "--", ".", *EXCLUDE)
+        apply = lambda *a: subprocess.run(["git", "apply", "--index", *a], cwd=root, input=patch, capture_output=True, text=True).returncode
+        if c <= b:
+            result = f"kept: {metric} {base} -> {c} (run {rid})"
+        elif not patch.strip():
+            result = f"worse ({metric} {base} -> {c}, run {rid}) but the change has no file changes left to revert: needs the user"
+        elif apply("-R"):
+            result = f"worse ({metric} {base} -> {c}, run {rid}) but the revert conflicts: needs the user"
+        elif verify(root, tron)[0]:
+            if apply():
+                raise TronError(f"experiment {run} {pid}: undoing the revert failed; the run branch has staged changes")
+            result = f"worse ({metric} {base} -> {c}, run {rid}) but the revert breaks verification: needs the user"
+        else:
+            result = f"reverted: {metric} {base} -> {c} (run {rid})"
+        rec["result"] = result
+        cur = p.read_text()
+        p.write_text(cur.replace(line, re.sub(r"\| open \|([^|]*)\|\s*$", lambda x: f"| {result} |{x.group(1)}|", line), 1))
+        git_ok(root, "add", "--", EXPERIMENTS)
+        git_ok(root, "commit", "-q", "-m", f"retro: {'revert' if result.startswith('reverted') else 'check'} experiment {run} {pid} "
+               f"({metric} {base} -> {c})")
+        rec["check_commit"] = head(root)
+        write_journal(jpath, journal)
+
+
+def apply_one(root, tron, journal, jpath, prop, rec):
+    """Settle one tier 1 or 2 proposal whose applier session ran (or was interrupted): keep it when the gate passes, else revert it."""
+    rid = journal["run_id"]
+    g = retro_gate(root, tron, rec["base"], prop["tier"], journal["branch"], rec["refs"])
+    rec["gate"] = g["failures"]
+    if g["passed"]:
+        rec["result"], rec["commit"] = "applied", head(root)
+        write_journal(jpath, journal)  # before the experiment row: a resume then records the row instead of judging it as a protected change
+        if prop["tier"] == 2:
+            record_experiment(root, journal, prop, rec["base"], rec["commit"], rec["baseline"])
+            rec["experiment"] = EXPERIMENTS
+    elif g.get("no_change"):
+        rec["result"] = "stopped: the session hit an API error; a later --apply retries" if rec.get("api_error") else "skipped: the session changed nothing"
+    elif any(f["check"] in ("branch", "refs") for f in g["failures"]):
+        rec["result"] = "stopped: " + g["failures"][0]["reason"]
+        write_journal(jpath, journal)
+        raise TronError(f"retro change {prop['id']}: {g['failures'][0]['reason']}; the run branch needs the user")
+    else:
+        why = "; ".join(f["reason"] for f in g["failures"])[:300]
+        rec["result"], rec["reason"] = "reverted", why
+        rec["revert_commit"] = revert_retro(root, rec["base"], f"retro: revert {rid} {prop['id']} ({why[:120]})")
+    write_journal(jpath, journal)
+
+
+def apply_retro(root, tron, journal, jpath):
+    """Run end, retro part 2: check open tier 2 experiments of earlier runs, then apply the tier 1 and 2 proposals of this run's retro,
+    each in its own applier session behind retro_gate; tier 3 stays in the report. Resumable: settled proposals are skipped."""
+    branch = journal["branch"]
+    cur = git_ok(root, "branch", "--show-current").strip()
+    if cur != branch:
+        raise TronError(f"retro changes need the run branch {branch} checked out (now '{cur or 'detached HEAD'}')")
+    recs = {r["id"]: r for r in journal.setdefault("retro_changes", [])}
+    pending = [r for r in recs.values() if r.get("result") == "started"]
+    unrecorded = [r for r in recs.values() if r.get("result") == "applied" and r["tier"] == 2 and not r.get("experiment")]
+    checking = [x for x in journal.get("experiment_checks", []) if x.get("result") == "checking"]
+    if checking:  # a killed experiment check: keep what it left in a stash, then check again from a clean tree
+        unhide(root)
+        if tree_dirty(root):
+            git_ok(root, "stash", "push", "-u", "-q", "-m", f"tron {journal['run_id']} interrupted experiment check", "--", ".", *EXCLUDE)
+        journal["experiment_checks"] = [x for x in journal["experiment_checks"] if x.get("result") != "checking"]
+        write_journal(jpath, journal)
+    if tree_dirty(root) and not pending and not unrecorded:
+        raise TronError("working tree is not clean; retro changes need a clean run branch")
+    for r in pending:  # an applier session was interrupted: judge what it left
+        apply_one(root, tron, journal, jpath, r["proposal"], r)
+    for r in unrecorded:  # killed between the applied mark and the experiment row
+        record_experiment(root, journal, r["proposal"], r["base"], r["commit"], r["baseline"])
+        r["experiment"] = EXPERIMENTS
+        write_journal(jpath, journal)
+    check_experiments(root, tron, journal, jpath)
+    if not journal.get("retro"):
+        return
+    text = (root / journal["retro"]).read_text()
+    errs = validate_retro(text, journal)  # the file is runner output outside the gate: check it again before acting on it
+    if errs:
+        raise TronError(f"{journal['retro']} is invalid now: " + "; ".join(errs[:3]))
+    metrics = journal.setdefault("retro_baseline", run_metrics(journal))  # one baseline per run, taken before any applier session
+    for prop in retro_proposals(text):
+        r = recs.get(prop["id"])
+        if r and not str(r.get("result", "")).startswith("stopped"):
+            continue
+        base_rec = {"id": prop["id"], "tier": prop["tier"], "target": prop["target"], "metric": prop["metric"], "proposal": prop}
+        t = tier_of_path(root, tron, prop["target"])
+        if prop["tier"] == 3 or t == 3:
+            rec = dict(base_rec, result="proposed (tier 3: for the user)")
+        elif t is None or t > prop["tier"]:
+            rec = dict(base_rec, result=f"skipped: target {prop['target']} is not a tier {prop['tier']} path")
+        elif prop["tier"] == 2 and metrics.get(prop["metric"]) is None:
+            rec = dict(base_rec, result=f"skipped: no baseline value for {prop['metric']} in this run")
+        else:
+            stop = ("stop file docs/agent/tron/STOP" if (root / STOP_FILE).is_file() else limit_hit(journal, tron, None))
+            if stop:
+                rec = dict(base_rec, result=f"stopped: {stop}")
+            else:
+                rec = dict(base_rec, result="started", base=head(root), refs=branch_refs(root), baseline=metrics.get(prop["metric"]))
+        journal["retro_changes"] = [x for x in journal["retro_changes"] if x["id"] != prop["id"]] + [rec]
+        recs[prop["id"]] = rec
+        write_journal(jpath, journal)
+        if rec["result"] != "started":
+            continue
+        prompt = APPLY_PROMPT.format(rid=journal["run_id"], pid=prop["id"], target=prop["target"], tier=prop["tier"],
+                                     metric=prop["metric"], effect=prop["effect"], scope=TIER_SCOPE[prop["tier"]])
+        entry = run_session(root, tron, "applier", f"retro-{prop['id']}", journal["run_id"], journal["milestone"], prompt)
+        journal["sessions"].append(entry)
+        rec["session"] = entry.get("session_id")
+        rec["api_error"] = bool(entry.get("api_error"))
+        apply_one(root, tron, journal, jpath, prop, rec)
+
+
+def retro_changes_report(journal):
+    rows, exps = journal.get("retro_changes", []), journal.get("experiment_checks", [])
+    if not rows and not exps and not journal.get("retro_apply_error"):
+        return []
+    out = ["## Unattended retro changes (R-TRON 'Retro changes')", ""]
+    for r in rows:
+        extra = (f", commit `{r['commit'][:10]}`" if r.get("commit") else "") + (f", reason: {r['reason']}" if r.get("reason") else "")
+        extra += f", recorded in {r['experiment']} (metric {r['metric']}, baseline {r.get('baseline')})" if r.get("experiment") else ""
+        out.append(f"- {r['id']} tier {r['tier']} `{r['target']}`: {r['result']}{extra}")
+    out += [f"- Experiment {e['run']} {e['id']} ({e['metric']} baseline {e['baseline']}, now {e['current']}): {e['result']}" for e in exps]
+    if journal.get("retro_apply_error"):
+        out.append(f"- Retro changes stopped: {journal['retro_apply_error']}")
+    tier3 = [r for r in rows if r["result"].startswith("proposed")]
+    if tier3:
+        out.append("- Tier 3 proposals touch protected parts and are yours to decide: " + ", ".join(f"{r['id']} ({r['target']})" for r in tier3))
+    return out + [""]
 
 
 def check_milestone(root, milestone, cfg_path=None):
@@ -1868,6 +2212,13 @@ def check_milestone(root, milestone, cfg_path=None):
         warns.append("tron.doctor_cmd has no tool restriction (--allowedTools or --permission-mode): read-only is then only enforced by the tree check afterwards")
     if tron.get("retro") == "on" and not cmdok(tron.get("retro_cmd")):
         warns.append("tron.retro is on but tron.retro_cmd is missing: the analyst falls back to worker_cmd, which may edit files")
+    prot_lits = sorted(x for x in protected_paths(root, dict(tron, verify_cmd=tron.get("verify_cmd") or [])) if "*" not in x) + ["scripts/hooks/", "scripts/githooks/"]
+    for tid in ids:
+        named = [x for x in prot_lits if x in files[tid].read_text()]
+        if named and parse_task(files[tid].read_text())[0] != "Done":
+            warns.append(f"{tid} names protected paths ({', '.join(named[:3])}): a session that changes them stops the run; do it by hand or take the task out")
+    if tron.get("retro_apply") == "on" and tron.get("retro") != "on":
+        warns.append("tron.retro_apply is on but tron.retro is not: open experiments are checked, no new proposals are applied")
     if not cmdok(tron.get("evaluator_cmd")) and tron.get("evaluator", "milestone") != "off":
         warns.append("tron.evaluator_cmd is missing: the evaluator falls back to worker_cmd, which may edit files")
     return fails, warns, tron
@@ -1915,6 +2266,7 @@ def main(argv=None):
     rt = sub.add_parser("retro", help="start the retro analyst in a fresh session over a finished run; writes docs/agent/tron/RETRO-<run>.md")
     rt.add_argument("--run", dest="run_id", help="run id (default: the latest run)")
     rt.add_argument("--force", action="store_true", help="overwrite an existing RETRO file")
+    rt.add_argument("--apply", action="store_true", help="also apply the tier 1 and 2 proposals on the run branch and check open experiments (R-TRON 'Retro changes')")
     rt.add_argument("--config", help="config file (default: docs/agent/stem-config.json)")
     rt.add_argument("--root", default=".", help="project root (default: current directory)")
     rp = sub.add_parser("report", help="write docs/agent/tron/REPORT-<run>.md from the journal and the backlog")
