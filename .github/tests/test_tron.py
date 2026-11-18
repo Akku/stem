@@ -83,6 +83,8 @@ if beh == "draft_block":
     open("backlog/drafts/draft-1 - Decide-x.md", "w").write("---\\nid: DRAFT-1\\ntitle: Decide x\\n---\\n")
     s3 = open(f).read(); open(f, "w").write(s3.replace("<!-- SECTION:NOTES:END -->", "BLOCKED: need a decision on x\\n<!-- SECTION:NOTES:END -->"))
     open("junk.txt", "w").write("half done")
+if beh == "note_only":
+    s3 = open(f).read(); open(f, "w").write(s3.replace("status: Done", "status: To Do").replace("- [x] #1", "- [ ] #1").replace("AC#1: E2 fake evidence\\n", "").replace("<!-- SECTION:NOTES:END -->", "BLOCKED: need a decision\\n<!-- SECTION:NOTES:END -->"))
 if beh == "protected":
     open("scripts/tron.py", "a").write("# tampered\\n")
 if beh == "verify_fail":
@@ -762,6 +764,28 @@ class Tron(unittest.TestCase):
         self.assertIn("Total cost: at least 0.90 USD", rep)
         self.assertIn("Cost per accepted task: at least 0.90 USD", rep)
         self.assertIn("Blocked rate: 1 of 2", rep); self.assertIn("Repair rate: 1 repair session(s) in 3 worker session(s)", rep)
+
+    def test_report_shows_smoke_cmd_when_preview_cmd_is_unset(self):
+        self.config({"smoke_cmd": ["python3", "app.py", "--smoke"]})
+        self.sample_journal()
+        self.tron("report", "--run-id", "s1")
+        self.assertIn("Preview start command: `python3 app.py --smoke`", (self.proj / "docs/agent/tron/REPORT-s1.md").read_text())
+
+    def test_report_milestone_row_sums_evaluator_and_repair_sessions(self):
+        self.sample_journal()
+        p = self.proj / "docs/agent/tron/run-s1.json"; j = json.loads(p.read_text())
+        base = j["sessions"][0]
+        j["sessions"] += [dict(base, task="milestone", role="evaluator", cost_usd=0.5, model="opus"), dict(base, task="milestone", role="worker", cost_usd=0.25, model="sonnet", repair=1)]
+        p.write_text(json.dumps(j))
+        self.tron("report", "--run-id", "s1")
+        self.assertIn("| milestone | 2 | - | 0.75 USD |", (self.proj / "docs/agent/tron/REPORT-s1.md").read_text())
+
+    def test_worker_that_stops_without_a_diff_shows_its_own_reason(self):
+        self.config({"max_repairs": 0})
+        self.behavior({"TASK-1": ["note_only"]})
+        self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
+        r = self.journal()["tasks"]["TASK-1"]["reason"]
+        self.assertIn("on purpose", r); self.assertIn("need a decision", r); self.assertNotIn("no diff", r)
 
     def test_report_is_written_when_a_run_stops(self):
         self.tron("run", "--milestone", "m-1", "--run-id", "auto")

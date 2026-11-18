@@ -811,8 +811,10 @@ def build_report(root, journal, tron):
             f"Branch `{journal['branch']}`, run start commit `{journal['start_commit'][:10]}`. State: " +
             ("complete" if journal.get("complete") else f"not complete ({journal.get('stop_reason') or 'running'})") +
             f". Review with: `git log --oneline {journal['start_commit'][:10]}..{journal['branch']}`. The run did not push, tag or merge; merging is your decision.", ""]
+    start_cmd = tron.get("preview_cmd") or tron.get("smoke_cmd") or "not configured"
+    start_cmd = " ".join(start_cmd) if isinstance(start_cmd, list) else start_cmd
     out += ["## Look at this first", "",
-            f"- Preview start command: `{' '.join(tron['preview_cmd']) if isinstance(tron.get('preview_cmd'), list) else tron.get('preview_cmd', 'not configured')}`",
+            f"- Preview start command: `{start_cmd}`",
             f"- Preview URL: {tron.get('preview_url', 'not configured')}",
             "- The first core flows are tested by you: " + (", ".join(acc) or "(no accepted task)"), ""]
     out += ["## Accepted tasks: acceptance criteria and evidence", ""]
@@ -865,7 +867,7 @@ def build_report(root, journal, tron):
     wall = journal.get("wall_seconds")
     out += [f"- Total cost: {money(tot, part)}; sessions: {len(sess)}; wall time: " + (f"{wall / 3600:.2f} h" if wall else "unknown"), "", "| Task | Sessions | Repairs | Cost |", "| --- | --- | --- | --- |"]
     for i in list(tasks) + [x for x in dict.fromkeys(s["task"] for s in sess) if x not in tasks]:
-        ss = [s for s in sess if s["task"] == i and s["role"] != "evaluator"]
+        ss = [s for s in sess if s["task"] == i and (s["role"] != "evaluator" or i == "milestone")]
         c, pt = cost_of(ss) if ss else (None, False)
         out.append(f"| {i} | {len(ss)} | {tasks.get(i, {}).get('repairs', '-')} | {money(c, pt)} |")
     out += ["", "| Role | Sessions | Cost | Models |", "| --- | --- | --- | --- |"]
@@ -1181,6 +1183,9 @@ def run_loop(root, tron, args, milestone, jpath, run_id):
             prompt = repair_prompt(tron, task_id, g, repairs, max_repairs)
         state, reason = outcome
         if state == "blocked":
+            wn = worker_notes(root, task_id)
+            if re.search(r"\bblock(ed)?\b", wn, re.I):  # the worker blocked on purpose: its reason is the reason
+                reason = "the worker blocked the task on purpose: " + wn[:300].replace("\n", " ")
             journal["blocking"] = {"task": task_id, "base": base, "reason": reason, "repairs": repairs}
             write_journal(jpath, journal)
             settle(task_id, base, reason, repairs)
