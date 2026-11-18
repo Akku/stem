@@ -268,7 +268,7 @@ class TronMode(Sandbox):
         setup = (ROOT / "SETUP.md").read_text()
         sent = re.search(r"Tron mode off: delete exactly (.*?), remove the `R-TRON` section", setup, re.S).group(1)
         gone = re.findall(r"`([^`]+)`", sent)
-        self.assertEqual(len(gone), 7)
+        self.assertEqual(len(gone), 8)
         copy = self.tmp / "copy"
         shutil.copytree(ROOT, copy, symlinks=True, ignore=shutil.ignore_patterns(".git", "__pycache__", "local", ".agent-logs"))
         for rel in gone:

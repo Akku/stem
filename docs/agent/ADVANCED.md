@@ -187,6 +187,7 @@ Applies when session start prints the Tron mode line (`STEM_TRON=1`). An unatten
 **Ambiguity** (`DECISION_FRAME.md` lists what may be decided alone)
 - Small, reversible, inside the frame: search `DECISION_FRAME.md` and `PRECEDENTS.md` first, then decide and record `Assumption: <text> (basis: <frame line, precedent ID such as P-3, or none>)` in the task notes. A line without a basis is a warning in the journal; `none` is listed first in the report for the user to rule on.
 - Outside the frame or touching an invariant (`INVARIANTS.md`): record the question as a draft task, set the task Blocked, stop; the runner continues with an independent task.
+- Stalled task (same failure twice, no diff, or the second to last repair failed): with `tron.doctor_cmd` set, the runner calls the Doctor once (read-only, `.claude/agents/doctor.md`) for exactly one verdict: retry with hint (one more repair), split task (subtasks with the parent's AC texts verbatim, parent closes when all pass), environment problem (one baseline repair), needs the user (draft question, Blocked). Every step is in the journal and the report.
 
 **Roles by tier** (tendencies, tested by the trials; model names live in the config, `R-ROUTING` decides escalation)
 

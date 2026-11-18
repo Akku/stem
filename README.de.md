@@ -133,7 +133,7 @@ Stand laut eigener Dokumentation der Projekte, November 2026; diese Projekte än
 | `.claude/skills/` | Skills: `retro`, `alignment`, `handoff`, `promote-learning`, `stem-update`, `port-check`; optionale Module (Auswahl beim Setup): `market-analysis`, `tron` |
 | `.agents/skills` | Verweis auf `.claude/skills/` für gemeinsame Codex-Skill-Quellen; Codex listet diese Skills nativ (automatisierter Testlauf) |
 | `dgpt.md`, `.deutschlandgpt/skills` | Adapter für DeutschlandGPT Code: Verweis auf `AGENTS.md` und auf `.claude/skills/` (ein echter Durchlauf) |
-| `.claude/agents/` | Agenten: `evaluator` (lesender Prüf-Agent für Tron-Läufe), `planner` (lesende Fragenrunde vor einem Lauf), `ux-designer` (optionales Modul, für Projekte mit Oberfläche) |
+| `.claude/agents/` | Agenten: `evaluator` (lesender Prüf-Agent für Tron-Läufe), `planner` (lesende Fragenrunde vor einem Lauf), `doctor` (lesende Diagnose einer festgefahrenen Aufgabe), `ux-designer` (optionales Modul, für Projekte mit Oberfläche) |
 | `SETUP.md` | Einmalige Setup-Anleitung für den Agenten (wird nach dem Setup gelöscht) |
 | `AGENTS.md` | Gemeinsame Kernregeln (Codex & kompatible Tools) |
 | `CLAUDE.md` | Dünner Adapter, verweist auf `AGENTS.md` |

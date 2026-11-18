@@ -90,7 +90,7 @@ for d in (root / ".claude/skills").iterdir():
     if f"`{d.name}`" not in agents: err(f"AGENTS.md does not mention skill {d.name}")
 
 # Tron mode module: all its files ship together (SETUP.md lists them for removal; TASK-273)
-for rel in ("scripts/tron.py", ".claude/agents/evaluator.md", ".claude/skills/tron/SKILL.md", "docs/agent/DECISION_FRAME.md", "docs/agent/INVARIANTS.md", "docs/agent/PRECEDENTS.md", ".claude/agents/planner.md"):
+for rel in ("scripts/tron.py", ".claude/agents/evaluator.md", ".claude/agents/doctor.md", ".claude/skills/tron/SKILL.md", "docs/agent/DECISION_FRAME.md", "docs/agent/INVARIANTS.md", "docs/agent/PRECEDENTS.md", ".claude/agents/planner.md"):
     if not (root / rel).is_file(): err(f"Tron mode file missing: {rel}")
 adv_t = (root / "docs/agent/ADVANCED.md").read_text()
 if "<!-- RULE:R-TRON:START -->" not in adv_t or "| `R-TRON` |" not in adv_t: err("ADVANCED.md: R-TRON rule or index row missing")

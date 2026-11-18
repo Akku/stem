@@ -28,6 +28,18 @@ if sys.argv[1:3] == ["task", "edit"]:
         if x["id"] == "TASK-" + n: x["status"] = status
     json.dump(st, open("state.json", "w"))
     sys.exit(0)
+if sys.argv[1:3] == ["task", "create"]:
+    import os
+    a = sys.argv
+    n = max(int(x["id"].split("-")[1]) for x in st["tasks"]) + 1
+    acs = [a[i + 1] for i, x in enumerate(a) if x == "--ac"]
+    labels = a[a.index("-l") + 1].split(",") if "-l" in a else []
+    body = "---\\nid: TASK-%d\\ntitle: %s\\nstatus: To Do\\nmilestone: %s\\nlabels:\\n%s---\\n\\n<!-- AC:BEGIN -->\\n%s\\n<!-- AC:END -->\\n\\n<!-- SECTION:NOTES:BEGIN -->\\n<!-- SECTION:NOTES:END -->\\n" % (
+        n, a[2], a[a.index("-m") + 1], "".join("  - %s\\n" % l for l in labels), "\\n".join("- [ ] #%d %s" % (k + 1, t) for k, t in enumerate(acs)))
+    open("backlog/tasks/task-%d - sub.md" % n, "w").write(body)
+    st["tasks"].append({"id": "TASK-%d" % n, "title": a[2], "status": "To Do", "deps": []})
+    json.dump(st, open("state.json", "w"))
+    print("Created task TASK-%d" % n); sys.exit(0)
 if sys.argv[1:3] == ["task", "list"] and "--ready" in sys.argv:
     print("To Do:")
     for t in st["tasks"]:
@@ -158,6 +170,23 @@ else:
     j = {"verdict": "pass", "findings": [], "assumption_flags": [], "checked": [{"ac": "AC#1", "how": "ran it", "observed": "ok"}]}
 print(json.dumps({"session_id": sid, "total_cost_usd": 0.05, "result": "ran it\\n```json\\n" + json.dumps(j) + "\\n```"}))
 '''
+FAKE_DOCTOR = '''#!/usr/bin/env python3
+import json, os, re, sys
+target, sid, prompt = sys.argv[1], sys.argv[2], sys.argv[3]
+td = os.environ["TRON_TEST_DIR"]
+open(td + "/doctor_calls.log", "a").write(target + "\\n")
+n = sum(1 for l in open(td + "/doctor_calls.log") if l.strip() == target)
+plan = json.load(open(td + "/doctor.json")).get(target, ["none"])
+v = plan[min(n, len(plan)) - 1]
+brief = re.search(r"brief is (\\S+)\\.", prompt).group(1)
+open(td + "/doctor_brief.txt", "w").write(open(brief).read())
+if v == "none":
+    print(json.dumps({"session_id": sid, "result": "no idea"})); sys.exit(0)
+if v == "write":
+    open("doctor_wrote.txt", "w").write("x")
+    v = {"verdict": "needs_user", "diagnosis": "d", "question": "q?"}
+print(json.dumps({"session_id": sid, "total_cost_usd": 0.07, "result": "diagnosis\\n```json\\n" + json.dumps(v) + "\\n```"}))
+'''
 FAKE_VERIFY = '''#!/bin/sh
 [ -e "$TRON_TEST_DIR/verify_fail" ] && exit 1
 exit 0
@@ -190,7 +219,7 @@ class Tron(unittest.TestCase):
         self.proj = self.tmp / "proj"; self.proj.mkdir()
         self.td = self.tmp / "td"; self.td.mkdir()  # fake agent log, behaviours and verify switch live outside the project
         self.bin = self.tmp / "bin"; self.bin.mkdir()
-        for name, body in (("backlog", FAKE_BACKLOG), ("agent", FAKE_AGENT), ("verify", FAKE_VERIFY), ("evaluator", FAKE_EVALUATOR)):
+        for name, body in (("backlog", FAKE_BACKLOG), ("agent", FAKE_AGENT), ("verify", FAKE_VERIFY), ("evaluator", FAKE_EVALUATOR), ("doctor", FAKE_DOCTOR)):
             (self.bin / name).write_text(body); (self.bin / name).chmod(0o755)
         self.behavior({})
         self.evaluator_plan({})
@@ -215,6 +244,19 @@ class Tron(unittest.TestCase):
 
     def with_evaluator(self, mode, **extra):
         self.config(dict({"evaluator": mode, "evaluator_cmd": [str(self.bin / "evaluator"), "{task_id}", "{session_id}", "{prompt}"]}, **extra))
+
+    def with_doctor(self, plan, **extra):
+        (self.td / "doctor.json").write_text(json.dumps(plan))
+        self.config(dict({"doctor_cmd": [str(self.bin / "doctor"), "{task_id}", "{session_id}", "{prompt}"]}, **extra))
+
+    def two_acs(self, tid="1"):
+        f = self.proj / f"backlog/tasks/task-{tid} - x.md"
+        f.write_text(f.read_text().replace("- [ ] #1 it works\n", "- [ ] #1 it works\n- [ ] #2 it also works\n"))
+        git(self.proj, "add", "-A"); git(self.proj, "commit", "-qm", "two acs")
+
+    def doctor_calls(self):
+        p = self.td / "doctor_calls.log"
+        return p.read_text().split() if p.exists() else []
 
     def calls(self):
         return [json.loads(l) for l in (self.td / "calls.log").read_text().splitlines()]
@@ -618,6 +660,85 @@ class Tron(unittest.TestCase):
         self.tron("run", "--milestone", "m-1")
         self.assertEqual(self.eval_calls(), []); self.assertTrue(self.journal()["complete"])
 
+    def test_doctor_retry_with_hint_then_accepted(self):
+        self.with_doctor({"TASK-1": [{"verdict": "retry_with_hint", "diagnosis": "wrong file", "hint": "evidence line missing"}]})
+        self.behavior({"TASK-1": ["no_evidence", "no_evidence", "ok"]})
+        self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
+        t = self.journal()["tasks"]["TASK-1"]
+        self.assertEqual((t["state"], t["repairs"]), ("accepted", 2))
+        self.assertEqual([x["result"] for x in t["ladder"] if x["step"] == "doctor"], ["retry_with_hint"])
+        self.assertEqual(self.doctor_calls(), ["TASK-1"])
+        self.assertIn("## Attempts", (self.td / "doctor_brief.txt").read_text())
+
+    def test_doctor_runs_once_then_the_task_blocks(self):
+        self.with_doctor({"TASK-1": [{"verdict": "retry_with_hint", "diagnosis": "x", "hint": "y"}]})
+        self.behavior({"TASK-1": "no_evidence"})
+        self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
+        self.assertEqual(self.doctor_calls(), ["TASK-1"])
+        self.assertEqual(self.journal()["tasks"]["TASK-1"]["state"], "blocked")
+
+    def test_doctor_environment_problem_runs_one_baseline_repair_then_repair(self):
+        self.with_doctor({"TASK-1": [{"verdict": "environment_problem", "diagnosis": "verify tool missing"}]})
+        self.behavior({"TASK-1": ["no_evidence", "no_evidence", "ok"]})
+        self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
+        t = self.journal()["tasks"]["TASK-1"]
+        self.assertEqual(t["state"], "accepted", t)
+        self.assertEqual([(x["step"], x["result"]) for x in t["ladder"]][:2], [("doctor", "environment_problem"), ("baseline repair", "passed")])
+        self.assertEqual([c["task"] for c in self.calls()].count("baseline"), 1)
+
+    def test_doctor_needs_user_writes_a_draft_and_blocks(self):
+        self.with_doctor({"TASK-1": [{"verdict": "needs_user", "diagnosis": "conflict", "question": "csv or json?"}]})
+        self.behavior({"TASK-1": "no_evidence"})
+        self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
+        t = self.journal()["tasks"]["TASK-1"]
+        self.assertEqual(t["state"], "blocked"); self.assertIn("the Doctor needs the user", t["reason"])
+        drafts = list((self.proj / "backlog/drafts").glob("draft-*"))
+        self.assertEqual(len(drafts), 1); self.assertIn("csv or json?", drafts[0].read_text())
+        self.assertIn("draft question", [x["step"] for x in t["ladder"]])
+        rep = (self.proj / "docs/agent/tron" / next((self.proj / "docs/agent/tron").glob("REPORT-*.md")).name).read_text()
+        self.assertIn("ladder: doctor: needs_user", rep)
+
+    def split_plan(self, acs_a=("it works",), acs_b=("it also works",)):
+        return {"verdict": "split_task", "diagnosis": "too big", "subtasks": [{"title": "part a", "acs": list(acs_a)}, {"title": "part b", "acs": list(acs_b)}]}
+
+    def test_doctor_split_creates_subtasks_and_parent_closes_when_they_pass(self):
+        self.two_acs()
+        self.with_doctor({"TASK-1": [self.split_plan()]})
+        self.behavior({"TASK-1": "no_evidence"})
+        self.tron("run", "--milestone", "m-1")
+        j = self.journal()
+        t = j["tasks"]["TASK-1"]
+        self.assertEqual(t["closed_by"], ["TASK-4", "TASK-5"]); self.assertEqual(t["state"], "accepted")
+        self.assertEqual([j["tasks"][i]["state"] for i in ("TASK-4", "TASK-5")], ["accepted", "accepted"])
+        self.assertIn("status: Done", (self.proj / "backlog/tasks/task-1 - x.md").read_text())
+        self.assertIn("TASK-3", j["tasks"])  # the dependent became ready when the parent closed
+        sub = (self.proj / "backlog/tasks/task-4 - sub.md").read_text()
+        self.assertIn("- #1 it works".replace("- #1", "#1"), sub); self.assertIn("milestone: m-1", sub)
+        self.assertIn("split", [x["step"] for x in t["ladder"]])
+
+    def test_doctor_split_that_drops_an_ac_is_refused(self):
+        self.two_acs()
+        self.with_doctor({"TASK-1": [self.split_plan(acs_b=("something new",))]})
+        self.behavior({"TASK-1": "no_evidence"})
+        self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
+        t = self.journal()["tasks"]["TASK-1"]
+        self.assertEqual(t["state"], "blocked"); self.assertIn("invalid", t["reason"])
+        self.assertFalse(list((self.proj / "backlog/tasks").glob("task-4*")))
+
+    def test_doctor_session_that_writes_a_file_stops_the_run(self):
+        self.with_doctor({"TASK-1": ["write"]})
+        self.behavior({"TASK-1": "no_evidence"})
+        r = self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
+        self.assertEqual(r.returncode, 4, r.stderr)
+        self.assertIn("doctor session", self.journal()["aborted"])
+
+    def test_doctor_without_verdict_leaves_the_old_blocking(self):
+        self.with_doctor({"TASK-1": ["none"]})
+        self.behavior({"TASK-1": "no_evidence"})
+        self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
+        t = self.journal()["tasks"]["TASK-1"]
+        self.assertEqual(t["state"], "blocked"); self.assertEqual(t["ladder"][0]["result"], "no verdict")
+
     def test_evaluator_runs_per_task_on_review_label(self):
         self.with_evaluator("milestone")
         f = self.proj / "backlog/tasks/task-2 - x.md"
@@ -1010,6 +1131,10 @@ class Check(unittest.TestCase):
         self.assertEqual(self.sweep(ok).returncode, 0)
         f = self.proj / "docs/agent/tron/SWEEP-m-9.md"; f.write_text(f.read_text() + "KEEP\n")
         r = self.sweep(ok); self.assertEqual(r.returncode, 2); self.assertIn("KEEP", f.read_text())
+
+    def test_check_warns_without_doctor_cmd(self):
+        self.commit(); r = self.check()
+        self.assertIn("tron.doctor_cmd is missing", r.stdout)
 
     def test_warnings(self):
         self.cfg(evaluator="milestone"); self.commit()
