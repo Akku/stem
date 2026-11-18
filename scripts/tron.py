@@ -407,6 +407,15 @@ def gate(root, tron, task_id, base, acs_before, start_commit, branch, refs0):
                     fails.append({"check": "evidence", "reason": f"AC#{n} has no 'AC#{n}: E2 <pointer>' line in the notes"})
             if not acs:
                 fails.append({"check": "ac", "reason": "task has no acceptance criteria"})
+            for l in notes.splitlines():
+                if re.match(r"\s*AC#\d+: E2\b", l) and re.search(r"extrapolat|estimat", l, re.I):
+                    fails.append({"check": "evidence", "reason": f"extrapolated or estimated figure graded E2: '{l.strip()[:100]}'; measure it for real or grade it E1"})
+            old = start_text(root, task_id, base)
+            if old is not None:
+                now_lines = {x.strip() for x in notes.splitlines()}
+                for l in parse_task(old)[2].splitlines():
+                    if l.strip() and l.strip() not in now_lines:
+                        fails.append({"check": "notes", "reason": f"a line of the task notes from before the task is missing: '{l.strip()[:100]}'; append with --append-notes, never overwrite"})
         cur = git_ok(root, "branch", "--show-current").strip()
         if cur != branch:
             fails.append({"check": "branch", "reason": f"session left the run branch (now on '{cur or 'detached HEAD'}', expected {branch})"})
@@ -451,6 +460,9 @@ def eval_due(tron, task_text):
     return mode == "task" or bool({"size-l", "review"} & set(labels_of(task_text)))
 
 
+FINDING_KINDS = ("defect", "invariant", "not_verifiable", "placeholder", "risk")
+
+
 def parse_verdict(text, expected_acs=None):
     """Verdict from the final message, fail-closed: any parseable fail block wins; a pass needs lists of objects, no findings and,
     for a single task, a 'checked' entry for every AC. Returns None when there is no usable block."""
@@ -465,7 +477,20 @@ def parse_verdict(text, expected_acs=None):
         lists = {k: d.get(k) if d.get(k) is not None else [] for k in ("findings", "assumption_flags", "checked")}
         if any(not isinstance(v, list) or not all(isinstance(x, dict) for x in v) for v in lists.values()):
             continue
-        found.append(dict(verdict=d["verdict"], **lists))
+        for x in lists["findings"]:
+            x["kind"] = str(x.get("kind") or "defect").strip().lower()
+        if any(x["kind"] not in FINDING_KINDS for x in lists["findings"]):
+            return None  # unknown kind: no usable verdict at all (fail-closed)
+        for x in lists["findings"]:  # a risk that names an AC or an invariant is not beyond the criteria
+            if x["kind"] == "risk" and re.match(r"\s*(AC\s*#|invariant)", str(x.get("ac", "")), re.I):
+                x["kind"] = "invariant" if re.match(r"\s*invariant", str(x.get("ac", "")), re.I) else "defect"
+        # risk findings (beyond the AC) never fail a verdict: they become draft tasks
+        risks = [x for x in lists["findings"] if x["kind"] == "risk"]
+        lists["findings"] = [x for x in lists["findings"] if x["kind"] != "risk"]
+        verdict = d["verdict"]
+        if risks and not lists["findings"] and not lists["assumption_flags"]:
+            verdict = "pass"
+        found.append(dict(verdict=verdict, risks=risks, **lists))
     if not found:
         return None
     v = next((x for x in found if x["verdict"] == "fail"), found[-1])
@@ -584,8 +609,32 @@ def evaluate(root, tron, journal, jpath, target, base, g, task_ids, intent, abor
     vpath = root / JOURNAL_DIR / f"verdict-{journal['run_id']}-{target}-{n}.json"
     vpath.write_text(json.dumps(dict(verdict, target=target, at=now(), tail=(text or "")[-2000:]), indent=1) + "\n")
     entry["evaluator"]["file"] = str(vpath.relative_to(root))
+    write_risk_drafts(root, target, verdict.get("risks") or [], journal)
     write_journal(jpath, journal)
     return dict(verdict, file=str(vpath.relative_to(root)))
+
+
+def write_risk_drafts(root, target, risks, journal):
+    """Each risk finding becomes a draft task (a question for the user); it never triggers a repair."""
+    d = root / "backlog/drafts"
+    wrote = False
+    for r in risks:
+        key = hashlib.sha256(f"{target}|{r.get('scenario', '')}".encode()).hexdigest()[:16]
+        if key in journal.setdefault("risk_keys", []):
+            continue  # the same risk re-reported after a repair round
+        journal["risk_keys"].append(key); wrote = True
+        d.mkdir(parents=True, exist_ok=True)
+        n = max([int(m.group(1)) for p in d.glob("draft-*") for m in [re.match(r"draft-(\d+)", p.name)] if m] + [0]) + 1
+        title = f"Risk found by the evaluator ({target}): " + str(r.get("scenario", ""))[:70].replace("\n", " ").replace("'", "")
+        body = (f"Evaluator risk finding beyond the acceptance criteria (run {journal['run_id']}, {target}). It did not fail the verdict.\n\n"
+                f"Location: {r.get('location', '?')}\nScenario: {r.get('scenario', '')}\n\nDecide: accept the risk, or create a task.")
+        slug = re.sub(r"[^A-Za-z0-9]+", "-", title)[:60].strip("-")
+        (d / f"draft-{n} - {slug}.md").write_text(f"---\nid: DRAFT-{n}\ntitle: '{title}'\nstatus: Draft\nassignee: []\nlabels:\n  - tron-risk\ndependencies: []\n---\n\n"
+                                                  f"## Description\n\n<!-- SECTION:DESCRIPTION:BEGIN -->\n{body}\n<!-- SECTION:DESCRIPTION:END -->\n")
+        journal.setdefault("risk_drafts", []).append(f"draft-{n}")
+    if wrote:
+        git_ok(root, "add", "-A", "--", "backlog/drafts")
+        git_ok(root, "commit", "-q", "-m", f"{target}: Tron evaluator risk finding(s) written as draft task(s)")
 
 
 def verdict_failure(ev):

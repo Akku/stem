@@ -180,7 +180,8 @@ Applies when session start prints the Tron mode line (`STEM_TRON=1`). An unatten
 - Search the code before writing new code; reuse what exists.
 - Finding outside the task: write a draft task, do not fix it silently.
 - A stub, placeholder or TODO never counts as Done.
-- Propose Done with evidence lines; the runner's gate confirms it.
+- Propose Done with evidence lines; the runner's gate confirms it. Measured means measured: a figure extrapolated or estimated is grade E1, never E2.
+- Task notes: append (`--append-notes`), never overwrite; a line that was there before your session must still be there afterwards.
 - Never edit acceptance criteria, the gate and runner files, `docs/agent/stem-config.json`, `DECISION_FRAME.md` or `INVARIANTS.md`.
 
 **Ambiguity** (`DECISION_FRAME.md` lists what may be decided alone)

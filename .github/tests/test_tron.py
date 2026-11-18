@@ -85,6 +85,10 @@ if beh == "draft_block":
     open("junk.txt", "w").write("half done")
 if beh == "note_only":
     s3 = open(f).read(); open(f, "w").write(s3.replace("status: Done", "status: To Do").replace("- [x] #1", "- [ ] #1").replace("AC#1: E2 fake evidence\\n", "").replace("<!-- SECTION:NOTES:END -->", "BLOCKED: need a decision\\n<!-- SECTION:NOTES:END -->"))
+if beh == "extrapolated":
+    s3 = open(f).read(); open(f, "w").write(s3.replace("AC#1: E2 fake evidence", "AC#1: E2 extrapolated from 52 MB"))
+if beh == "overwrite_notes":
+    s3 = open(f).read(); open(f, "w").write(re.sub(r"(?s)<!-- SECTION:NOTES:BEGIN -->.*<!-- SECTION:NOTES:END -->", "<!-- SECTION:NOTES:BEGIN -->\\nAC#1: E2 fake evidence\\n<!-- SECTION:NOTES:END -->", s3))
 if beh == "protected":
     open("scripts/tron.py", "a").write("# tampered\\n")
 if beh == "verify_fail":
@@ -138,7 +142,11 @@ if v == "write_tracked":
     open("scripts/t.py", "a").write("# tampered\\n")
 if v == "none":
     print("I looked at it and it seems fine."); sys.exit(0)
-if v == "flag":
+if v == "risk":
+    j = {"verdict": "fail", "findings": [{"ac": "-", "location": "x", "scenario": "1 GB input with one 4 MB word", "kind": "risk"}], "assumption_flags": [], "checked": [{"ac": "AC#1"}]}
+elif v == "bad_kind":
+    j = {"verdict": "pass", "findings": [{"ac": "AC#1", "kind": "whatever"}], "assumption_flags": [], "checked": [{"ac": "AC#1"}]}
+elif v == "flag":
     j = {"verdict": "pass", "findings": [], "checked": [{"ac": "AC#1"}], "assumption_flags": [{"assumption": "uses cloud", "conflict": "invariant: no external data"}]}
 elif v == "unverifiable":
     j = {"verdict": "fail", "findings": [{"ac": "AC#1", "location": "x", "scenario": "no start command", "kind": "not_verifiable"}], "assumption_flags": []}
@@ -288,6 +296,23 @@ class Tron(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         g = self.gate_of("TASK-1")
         self.assertTrue(g["passed"], g)
+
+    def test_gate_fails_on_extrapolated_figure_graded_e2(self):
+        self.config({"max_repairs": 0})
+        self.behavior({"TASK-1": "extrapolated"})
+        self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
+        r = self.journal()["tasks"]["TASK-1"]
+        self.assertEqual(r["state"], "blocked"); self.assertIn("extrapolated", r["reason"])
+
+    def test_gate_fails_when_a_note_line_from_before_the_task_is_missing(self):
+        f = self.proj / "backlog/tasks/task-1 - x.md"
+        f.write_text(f.read_text().replace("<!-- SECTION:NOTES:BEGIN -->\n", "<!-- SECTION:NOTES:BEGIN -->\nUser decision: keep the CSV format\n"))
+        git(self.proj, "add", "-A"); git(self.proj, "commit", "-qm", "user note")
+        self.config({"max_repairs": 0})
+        self.behavior({"TASK-1": "overwrite_notes"})
+        self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
+        r = self.journal()["tasks"]["TASK-1"]
+        self.assertEqual(r["state"], "blocked"); self.assertIn("User decision: keep the CSV format", r["reason"])
 
     def test_gate_fails_without_evidence_line(self):
         self.behavior({"TASK-1": "no_evidence"})
@@ -615,6 +640,45 @@ class Tron(unittest.TestCase):
         self.assertEqual(len(list((self.proj / "docs/agent/tron").glob("verdict-*-TASK-1-*.json"))), 2)
         brief = (self.td / "brief_copy.txt").read_text()
         self.assertIn("## Acceptance criteria", brief); self.assertIn("## Invariants", brief); self.assertIn("## Diff", brief)
+
+    def test_risk_finding_passes_the_verdict_and_becomes_a_draft_without_repair(self):
+        self.with_evaluator("task")
+        self.evaluator_plan({"TASK-1": ["risk"]})
+        self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
+        self.assertEqual(self.journal()["tasks"]["TASK-1"], {"state": "accepted", "repairs": 0})
+        self.assertEqual(self.eval_calls(), ["TASK-1"])
+        drafts = list((self.proj / "backlog/drafts").glob("draft-*"))
+        self.assertEqual(len(drafts), 1); self.assertIn("1 GB input", drafts[0].read_text())
+        self.tron("report", "--run-id", self.journal()["run_id"])
+        self.assertIn("1 GB input", (self.proj / "docs/agent/tron" / f"REPORT-{self.journal()['run_id']}.md").read_text())
+
+    def test_same_risk_reported_again_makes_one_draft(self):
+        self.with_evaluator("task")
+        self.evaluator_plan({"TASK-1": ["risk"]})
+        self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
+        j = self.journal(); (self.proj / "docs/agent/tron/x").mkdir(exist_ok=True)
+        m = __import__("importlib.util").util.spec_from_file_location("t2", pathlib.Path(__file__).resolve().parents[2] / "scripts/tron.py")
+        mod = __import__("importlib.util").util.module_from_spec(m); m.loader.exec_module(mod)
+        mod.write_risk_drafts(self.proj, "TASK-1", [{"scenario": "1 GB input with one 4 MB word"}], j)
+        self.assertEqual(len(list((self.proj / "backlog/drafts").glob("draft-*"))), 1)
+
+    def test_parser_rejects_unknown_kinds_and_defect_still_fails(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("tron_mod", pathlib.Path(__file__).resolve().parents[2] / "scripts/tron.py")
+        m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+        blk = lambda d: "```json\n" + json.dumps(d) + "\n```"
+        self.assertIsNone(m.parse_verdict(blk({"verdict": "pass", "findings": [{"kind": "whatever"}]}), None))
+        v = m.parse_verdict(blk({"verdict": "fail", "findings": [{"kind": "risk", "scenario": "x"}]}), None)
+        self.assertEqual((v["verdict"], len(v["risks"])), ("pass", 1))
+        self.assertIsNone(m.parse_verdict(blk({"verdict": "fail", "findings": [{"kind": "bug"}]}) + blk({"verdict": "pass"}), None))
+        v = m.parse_verdict(blk({"verdict": "fail", "findings": [{"ac": "invariant: no network", "kind": "risk"}]}), None)
+        self.assertEqual((v["verdict"], v["findings"][0]["kind"]), ("fail", "invariant"))
+        v = m.parse_verdict(blk({"verdict": "fail", "findings": [{"ac": "AC#1", "kind": "Risk"}]}), None)
+        self.assertEqual((v["verdict"], v["findings"][0]["kind"]), ("fail", "defect"))
+        v = m.parse_verdict(blk({"verdict": "pass", "findings": [{"scenario": "x"}]}), None)
+        self.assertEqual((v["verdict"], v["findings"][0]["kind"]), ("fail", "defect"))
+        v = m.parse_verdict(blk({"verdict": "fail", "findings": [{"kind": "risk"}, {"kind": "defect"}]}), None)
+        self.assertEqual((v["verdict"], len(v["findings"]), len(v["risks"])), ("fail", 1, 1))
 
     def test_evaluator_brief_holds_assumptions_and_hints(self):
         self.with_evaluator("task")

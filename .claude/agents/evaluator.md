@@ -41,7 +41,7 @@ End your final message with exactly one fenced `json` block and nothing after it
 
 - `checked`: one entry per AC (for a single task: every AC of the task), with what you ran and saw. A pass without a check for every AC is treated as a fail by the runner.
 - `verdict`: `"pass"` only if every AC was exercised and holds, no invariant is violated, and `findings` is empty; otherwise `"fail"`.
-- `findings`: `{"ac": "AC#2" or "invariant: <name>", "location": "...", "scenario": "steps, expected, actual", "kind": "defect|not_verifiable|placeholder|invariant"}`.
+- `findings`: `{"ac": "AC#2" or "invariant: <name>", "location": "...", "scenario": "steps, expected, actual", "kind": "defect|not_verifiable|placeholder|invariant|risk"}`. Kinds: `defect` = an AC or scenario is violated with representative input; `invariant` = an invariant is violated; `risk` = a concern beyond the AC (adversarial or extreme input, e.g. a 1 GB file, far above the minimal reading of the AC). Acceptance criteria state the minimum, not the optimum: never fail a verdict for a risk. Report it as `risk`; the runner turns it into a draft for the user. Only `defect`, `invariant`, `not_verifiable` and `placeholder` fail a verdict. Tie-break: if the wording of an AC or an invariant covers the input, it is a `defect` or `invariant`, however extreme; `risk` only when no AC or invariant covers it; when unsure, `defect`. A `risk` has `"ac": "-"`; one that names an AC or invariant is treated as a defect or invariant.
 - `assumption_flags`: `{"assumption": "...", "conflict": "which vision line, invariant or frame entry"}`. A flag makes the runner treat the verdict as fail.
 
 Before the block write at most ten lines of plain text: what you ran and what you saw.
