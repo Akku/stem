@@ -33,7 +33,7 @@ Docs for humans are English/German, agent instructions are English, and the agen
 
 STEM follows *evolutionary learning*: it changes in small steps, based on what happens in real use, not on one big plan. Five sources feed it:
 
-- **Retros:** the `retro` skill is offered regularly. It looks at measured data, problems and your input. Each retro also takes the next few questions from a prepared set of reflection questions (rules, skills, context cost, new agent features and more), so every retro can uncover new improvements. Findings become small changes that a later retro checks.
+- **Retros:** the `retro` skill is offered regularly. It looks at measured data, problems and your input. Each retro also takes the next few questions from a prepared set of reflection questions ([list](docs/agent/RETRO_TOPICS.md): rules, skills, context cost, new agent features and more), so every retro can uncover new improvements. Findings become small changes that a later retro checks.
 - **Other projects:** projects built with STEM can send back what they learned (field reports, `promote-learning`), and they receive improvements through `stem-update`.
 - **Dogfooding:** STEM is developed with STEM itself, in a separate project. Most changes are tried there first.
 - **Cleanup:** retros measure how much context the work uses and which rules get loaded. Rules that do not pay off are merged or removed. The aim is fewer, better rules over time.
@@ -150,6 +150,7 @@ Based on each project's own documentation as of November 2026; these projects ch
 | `docs/agent/ADVANCED.md` | Rarely needed rules (parallelism, measurement, routing, local models) |
 | `docs/agent/EXPERIMENTS.md` | Hypotheses, metrics, baselines and evidence grades for cost-carrying rules |
 | `docs/agent/NEXT_RETRO.md` | Everything the next retro needs in one place: due checks, observations, first-retro items |
+| `docs/agent/RETRO_TOPICS.md` | The reflection questions each retro takes from the catalog, how they are picked and how to change them |
 | `docs/agent/PITFALLS.md` | Growing list of technical pitfalls |
 | `docs/agent/PROCESS_IMPROVEMENTS.md` | Retro handling and feeding learnings back into STEM |
 
