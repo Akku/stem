@@ -118,14 +118,30 @@ if hs.returncode: err(hs.stdout.strip() or "hooks-sync --check failed")
 rr = subprocess.run([sys.executable, str(root / ".github/rule-reach.py"), str(root)], capture_output=True, text=True)
 if rr.returncode: err(rr.stdout.strip())
 
-# fixture tests for the scripts (.github/tests/test_scripts.py)
-tr = subprocess.run([sys.executable, str(root / ".github/tests/test_scripts.py")], capture_output=True, text=True)
-if tr.returncode: err("script fixture tests failed:\n" + "\n".join(tr.stderr.strip().splitlines()[-15:]))
-rr = subprocess.run([sys.executable, str(root / ".github/tests/test_retro_run.py")], capture_output=True, text=True)
-if rr.returncode: err("retro-run fixture tests failed:\n" + "\n".join(rr.stderr.strip().splitlines()[-15:]))
-
-tr = subprocess.run([sys.executable, str(root / ".github/tests/test_tron.py")], capture_output=True, text=True)
-if tr.returncode: err("tron fixture tests failed:\n" + "\n".join(tr.stderr.strip().splitlines()[-15:]))
+# fixture tests (.github/tests): shards of all test files run in parallel (TASK-308); each shard is one process
+import os
+TRON_FILES = ("scripts/tron.py", ".github/tests/test_tron.py", ".github/tests/shard.py", ".claude/agents/", ".claude/skills/tron/",
+              "docs/agent/DECISION_FRAME.md", "docs/agent/INVARIANTS.md", "docs/agent/PRECEDENTS.md")
+def tron_changed():
+    """True when a Tron module file differs from origin/main (committed, staged or untracked); True when unsure."""
+    out = []
+    for cmd in (["diff", "--name-only", "origin/main"], ["ls-files", "--others", "--exclude-standard"]):
+        r = subprocess.run(["git", "-C", str(root)] + cmd, capture_output=True, text=True)
+        if r.returncode: return True
+        out += r.stdout.split()
+    return any(f.startswith(TRON_FILES) for f in out)
+skip_tron = not os.environ.get("CI") and not os.environ.get("STEM_CHECK_ALL") and not tron_changed()
+if skip_tron: print("stem-check: test_tron.py skipped (no Tron file changed since origin/main; CI or STEM_CHECK_ALL=1 runs it)")
+SHARDS = (("test_scripts.py", "script fixture tests", 3), ("test_retro_run.py", "retro-run fixture tests", 1), ("test_tron.py", "tron fixture tests", 4))
+jobs = []
+for fname, label, n in SHARDS:
+    if skip_tron and fname == "test_tron.py": continue
+    for i in range(n):
+        env = dict(os.environ, STEM_TEST_SHARD=f"{i}/{n}")
+        jobs.append((label, subprocess.Popen([sys.executable, str(root / ".github/tests" / fname)], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)))
+for label, proc in jobs:
+    se = proc.communicate()[1]
+    if proc.returncode: err(f"{label} failed:\n" + "\n".join(se.strip().splitlines()[-15:]))
 
 print("\n".join(errors) if errors else f"stem-check OK (version {v})")
 sys.exit(1 if errors else 0)
