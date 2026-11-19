@@ -28,6 +28,11 @@ PROTECTED = ("scripts/tron.py", "docs/agent/stem-config.json", "docs/agent/DECIS
 BASELINE_PROMPT = ("The verification command fails on the current branch before any task starts (unattended Tron mode session, "
                    "STEM_TRON=1; read R-TRON first). Find the cause and fix it with the smallest change. Do not change acceptance "
                    "criteria and do not start task work.")
+# duties the runner always appends, also to a configured baseline_prompt: the gate checks a clean tree and one green run is no proof (TASK-282)
+BASELINE_DUTIES = ("Before you end: run the verification command at least 3 times in a row and claim green only if every run passed "
+                   "(a test that passes only sometimes, e.g. order- or time-dependent, is part of the red baseline: fix it too). "
+                   "Then commit the fix (one commit, message starting with 'baseline:') and end on a clean working tree: "
+                   "no uncommitted or untracked files; the runner's gate fails on a dirty tree.")
 
 
 API_CODES = (429, 500, 502, 503, 504, 529)
@@ -1302,6 +1307,14 @@ def run_loop(root, tron, args, milestone, jpath, run_id):
         if tree_dirty(root):
             raise TronError("working tree is not clean; commit or stash first")
         journal["ended"] = None; journal["stop_reason"] = None
+        if journal.get("retro"):  # the retro of the earlier stop is kept under its own name; the run end writes a new one (TASK-299)
+            old = root / journal["retro"]
+            keep = old.with_name(f"{old.stem}-stop{len(journal.get('retro_history', [])) + 1}.md")
+            if old.is_file():
+                old.rename(keep)
+            journal.setdefault("retro_history", []).append(str(keep.relative_to(root)))
+            journal.pop("retro")
+        journal.pop("retro_error", None)
         print(f"resuming run {run_id} on branch {branch}; {len(journal['tasks'])} task(s) settled before")
     else:
         branch, existed = prepare_branch(root, milestone, False)
@@ -1321,7 +1334,7 @@ def run_loop(root, tron, args, milestone, jpath, run_id):
     def fin(reason, complete=False):
         journal["wall_seconds"] = wall0 + time.time() - t0
         finish(journal, jpath, reason, complete)
-        if complete and tron.get("retro") == "on" and not journal.get("retro"):  # unattended retro analysis at run end; a failure never fails the run
+        if tron.get("retro") == "on" and not journal.get("retro"):  # unattended retro analysis at every run end, stopped runs included (TASK-299); a failure never fails the run
             try:
                 retro_for_run(root, tron, journal, jpath)
             except (TronError, OSError, ValueError) as e:
@@ -1402,7 +1415,7 @@ def run_loop(root, tron, args, milestone, jpath, run_id):
             base, acs_before = head(root), snapshot_acs(root)
             journal["in_progress"] = {"task": "baseline", "base": base, "acs_before": acs_before}
             entry, up = sessions_with_retry(root, tron, "worker", "baseline", run_id, milestone, journal, jpath,
-                                            tron.get("baseline_prompt", BASELINE_PROMPT), abort_check=stop_reason)
+                                            baseline_prompt(root, tron, milestone), abort_check=stop_reason)
             if not up:
                 fin(entry.get("retry_aborted") or "API unavailable after retries"); print("run ended early; run again to continue", file=sys.stderr); return 0
             entry["gate"] = gate(root, tron, None, base, acs_before, start_commit, branch, refs0)
@@ -1513,7 +1526,7 @@ def run_loop(root, tron, args, milestone, jpath, run_id):
                     print(f"{task_id}: Doctor says environment problem; baseline repair session")
                     b2, a2 = head(root), snapshot_acs(root)
                     be, up = sessions_with_retry(root, tron, "worker", "baseline", run_id, milestone, journal, jpath,
-                                                 tron.get("baseline_prompt", BASELINE_PROMPT) + "\n\nThe Doctor's diagnosis: " + dv["diagnosis"], abort_check=stop_reason)
+                                                 baseline_prompt(root, tron, milestone) + "\n\nThe Doctor's diagnosis: " + dv["diagnosis"], abort_check=stop_reason)
                     if not up:
                         fin(be.get("retry_aborted") or "API unavailable after retries"); print("run ended early; run again to continue", file=sys.stderr); return 0
                     be["gate"] = gate(root, tron, None, b2, a2, start_commit, branch, refs0)
@@ -1605,6 +1618,29 @@ def sweep_open(text):
         if m.group(1).lower() != "x" or not re.search(r"^\s*(?:[-*]\s*)?Answer:\s*\S", block, re.M | re.I):
             n += 1
     return n
+
+
+def sweep_answers(text):
+    """Answered sweep questions as text blocks ('- [x] Q<n> ...' with its 'Answer:' line), in file order."""
+    ms = list(SWEEP_Q.finditer(text))
+    out = []
+    for i, m in enumerate(ms):
+        end = ms[i + 1].start() if i + 1 < len(ms) else len(text)
+        block = text[m.start():end].split("\n## ")[0].strip()
+        if m.group(1).lower() == "x" and re.search(r"^\s*(?:[-*]\s*)?Answer:\s*\S", block, re.M | re.I):
+            out.append(block)
+    return out
+
+
+def baseline_prompt(root, tron, milestone):
+    """Prompt of a baseline repair session: configured or default text, the fixed duties, the user's answered sweep questions."""
+    parts = [tron.get("baseline_prompt", BASELINE_PROMPT), BASELINE_DUTIES]
+    sw = root / f"docs/agent/tron/SWEEP-{milestone}.md"
+    answers = sweep_answers(sw.read_text()) if sw.is_file() else []
+    if answers:
+        parts.append("The user answered these questions before the run (docs/agent/tron/" + sw.name + "); follow the answers "
+                     "that concern the red baseline, the rest belong to later tasks:\n" + "\n".join(answers))
+    return "\n\n".join(parts)
 
 
 def sweep_brief(root, milestone):

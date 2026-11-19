@@ -440,6 +440,26 @@ class Tron(unittest.TestCase):
         self.assertEqual([c["task"] for c in self.calls()], ["baseline"])
         self.assertIn("baseline", self.journal()["aborted"])
 
+    def test_baseline_prompt_carries_commit_clean_tree_three_runs_and_sweep_answers(self):
+        (self.td / "verify_fail").write_text("x")
+        d = self.proj / "docs/agent/tron"; d.mkdir(parents=True, exist_ok=True)
+        (d / "SWEEP-m-1.md").write_text("# Sweep: m-1\n## Questions\n- [x] Q1 (TASK-1) Who fixes the red baseline? a) a task b) an extra\n"
+                                        "  Answer: c) the baseline repair session, sort unique_words too\n- [ ] Q2 (TASK-2) Open one?\n"
+                                        "- [x] Q3 (TASK-3) Ticked without answer\n\n## Draft acceptance scenario\n1. x\n")
+        subprocess.run(["git", "add", "-A"], cwd=self.proj, check=True); subprocess.run(["git", "commit", "-qm", "sweep"], cwd=self.proj, check=True)
+        self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
+        p = [c for c in self.calls() if c["task"] == "baseline"][0]["prompt"]
+        self.assertIn("commit the fix", p); self.assertIn("clean working tree", p)
+        self.assertIn("at least 3 times", p)
+        self.assertIn("Answer: c) the baseline repair session, sort unique_words too", p)
+        self.assertNotIn("Open one?", p); self.assertNotIn("Ticked without answer", p); self.assertNotIn("Draft acceptance", p)
+
+    def test_configured_baseline_prompt_keeps_the_duties(self):
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import tron
+        p = tron.baseline_prompt(self.proj, {"baseline_prompt": "Own text."}, "m-none")
+        self.assertTrue(p.startswith("Own text.")); self.assertIn("at least 3 times", p); self.assertIn("clean working tree", p)
+
     def test_placeholder_scan_lists_hits_in_journal(self):
         self.behavior({"TASK-1": "placeholder"})
         self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
@@ -789,6 +809,34 @@ class Tron(unittest.TestCase):
         r = self.tron("run", "--milestone", "m-1")
         j = self.journal()
         self.assertEqual(r.returncode, 0); self.assertTrue(j["complete"]); self.assertIn("retro file rejected", j["retro_error"])
+
+    def test_retro_runs_for_a_stopped_run_and_the_report_links_it(self):
+        self.config({"retro": "on", "retro_cmd": self.retro_agent("# Retro: x\n## Failures\n- none\n## Proposals\n- none\n## Previous retro\n- none\n")})
+        (self.td / "verify_fail").write_text("x"); self.behavior({"baseline": "stay_red"})
+        r = self.tron("run", "--milestone", "m-1")
+        j = self.journal()
+        self.assertEqual(r.returncode, 3); self.assertFalse(j["complete"]); self.assertIn("baseline", j["aborted"])
+        self.assertTrue(j["retro"].endswith(f"RETRO-{j['run_id']}.md")); self.assertTrue((self.proj / j["retro"]).is_file())
+        self.assertIn(j["retro"], (self.proj / f"docs/agent/tron/REPORT-{j['run_id']}.md").read_text())
+        self.assertNotIn("retro_changes", j)  # retro_apply stays limited to complete runs
+
+    def test_retro_failure_on_a_stopped_run_keeps_the_exit_code_and_report_names_it(self):
+        self.config({"retro": "on", "retro_cmd": self.retro_agent("no structure")})
+        (self.td / "verify_fail").write_text("x"); self.behavior({"baseline": "stay_red"})
+        r = self.tron("run", "--milestone", "m-1")
+        j = self.journal()
+        self.assertEqual(r.returncode, 3); self.assertIn("retro file rejected", j["retro_error"])
+        self.assertIn("Unattended retro failed", (self.proj / f"docs/agent/tron/REPORT-{j['run_id']}.md").read_text())
+
+    def test_resumed_run_keeps_the_stop_retro_and_writes_a_new_one_at_the_end(self):
+        self.config({"retro": "on", "retro_cmd": self.retro_agent("# Retro: x\n## Failures\n- none\n## Proposals\n- none\n## Previous retro\n- none\n")})
+        self.tron("run", "--milestone", "m-1", "--max-tasks", "1", "--run-id", "r1")
+        j = self.journal(); self.assertFalse(j["complete"]); self.assertEqual(j["retro"], "docs/agent/tron/RETRO-r1.md")
+        self.tron("run", "--milestone", "m-1", "--run-id", "r1")
+        j = self.journal()
+        self.assertTrue(j["complete"]); self.assertEqual(j["retro_history"], ["docs/agent/tron/RETRO-r1-stop1.md"])
+        self.assertTrue((self.proj / "docs/agent/tron/RETRO-r1-stop1.md").is_file()); self.assertTrue((self.proj / j["retro"]).is_file())
+        self.assertEqual([s["role"] for s in j["sessions"]].count("retro"), 2)
 
     def test_retro_off_by_default(self):
         self.tron("run", "--milestone", "m-1")
