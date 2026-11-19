@@ -555,6 +555,24 @@ class Tron(unittest.TestCase):
         self.assertFalse((self.proj / "junk.txt").exists())
         self.assertTrue(j["tasks"]["TASK-1"]["kept"])
 
+    def test_blocked_task_names_stranded_dependents(self):  # TASK-296: chain TASK-3 <- TASK-4 waits for TASK-1; TASK-2 still runs
+        self.state([("TASK-1", []), ("TASK-2", []), ("TASK-3", ["TASK-1"]), ("TASK-4", ["TASK-3"])])
+        for n, dep in (("1", None), ("2", None), ("3", "TASK-1"), ("4", "TASK-3")):
+            f = self.proj / f"backlog/tasks/task-{n} - x.md"
+            f.write_text(f.read_text().replace("labels:", "milestone: m-1\n" + (f"dependencies:\n  - {dep}\n" if dep else "dependencies: []\n") + "labels:", 1))
+        git(self.proj, "add", "-A"); git(self.proj, "commit", "-qm", "chain")
+        self.config({"max_repairs": 0})
+        self.behavior({"TASK-1": ["no_evidence"]})
+        r = self.tron("run", "--milestone", "m-1", "--run-id", "r1")
+        j = self.journal()
+        self.assertEqual(j["tasks"]["TASK-1"]["state"], "blocked"); self.assertEqual(j["tasks"]["TASK-1"]["stranded"], ["TASK-3", "TASK-4"])
+        self.assertEqual(j["tasks"]["TASK-2"]["state"], "accepted")  # the independent task still runs
+        self.assertNotIn("TASK-3", j["tasks"]); self.assertNotIn("TASK-4", j["tasks"])
+        self.assertEqual(j["stop_reason"], "no ready task left; stranded: TASK-3 waits for Blocked TASK-1, TASK-4 waits for Blocked TASK-1")
+        self.assertIn("stranded (never ready in this run): TASK-3, TASK-4", r.stdout)
+        rep = (self.proj / "docs/agent/tron/REPORT-r1.md").read_text()
+        self.assertIn("- stranded: TASK-3, TASK-4 wait(s) for TASK-1", rep); self.assertIn("stranded: TASK-3 waits for Blocked TASK-1", rep)
+
     def test_blocked_task_keeps_draft_and_worker_notes(self):
         self.config({"max_repairs": 0})
         self.behavior({"TASK-1": ["draft_block"]})
@@ -1027,6 +1045,22 @@ class Tron(unittest.TestCase):
         j = self.journal()
         self.assertFalse(j["complete"]); self.assertIn("milestone evaluation failed", j["stop_reason"])
         self.assertEqual(self.eval_calls(), ["milestone", "milestone"])
+
+    def test_milestone_brief_groups_diff_by_task_and_lists_cut_parts(self):  # TASK-297
+        self.with_evaluator("milestone", max_repairs=1, brief_diff_chars=300)
+        self.evaluator_plan({"milestone": ["fail", "pass"]})
+        r = self.tron("run", "--milestone", "m-1")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        j = self.journal()
+        brief = (self.td / "brief_copy.txt").read_text().split("# Evaluator brief: milestone")[-1]  # second brief: after the milestone fix
+        for t in ("TASK-1", "TASK-2", "TASK-3"):
+            a, b = j["task_ranges"][t]
+            cmd = f"git diff --no-renames {a} {b} -- . "
+            self.assertIn(f"### {t}: commits {a[:10]}..{b[:10]}", brief); self.assertIn(f"Full: `{cmd}", brief)
+            self.assertIn(f"- {t}: commits {a[:10]}..{b[:10]}: `{cmd}", brief.split("### Left out of this brief")[1])  # cut, and listed with its command
+        fix = git(self.proj, "log", "-1", "--format=%H", "--grep", "milestone fix").stdout.strip()
+        self.assertIn(f"### Commit {fix[:10]} of no task: milestone fix", brief); self.assertIn(f"git show --no-renames --format= {fix} -- . ", brief)
+        self.assertIn("characters shown; the rest:", brief); self.assertNotIn("(diff truncated)", brief)
 
     def test_review_milestone_repair_that_changes_nothing_ends_the_run(self):
         self.with_evaluator("milestone", max_repairs=2)

@@ -117,6 +117,33 @@ def ready_tasks(root, milestone, blocked_status="Blocked"):
     return ids
 
 
+def task_deps(text):
+    """Dependencies of a backlog task file: block list or inline list in the front matter."""
+    m = re.search(r"^dependencies:(.*?)(?=^\S)", text, re.M | re.S)
+    return re.findall(r"TASK-\d+", m.group(1)) if m else []
+
+
+def stranded_by(root, milestone, blocked):
+    """Open milestone tasks that wait for a Blocked task directly or indirectly: {task: blocked task it waits for} (TASK-296).
+    The runner is serial and never offers a Blocked task again, so these never become ready in this run."""
+    deps = {}
+    for tid, f in task_files(root).items():
+        text = f.read_text()
+        m = re.search(r"^milestone: *(.+?) *$", text, re.M)
+        st, _, _ = parse_task(text)
+        if m and m.group(1).strip("'\"") == milestone and (st or "").lower() != "done":
+            deps[tid] = task_deps(text)
+    out = {}
+    for b in blocked:
+        todo = [b]
+        while todo:
+            cur = todo.pop()
+            for tid, ds in deps.items():
+                if cur in ds and tid not in out and tid not in blocked:
+                    out[tid] = b; todo.append(tid)
+    return out
+
+
 def prepare_branch(root, milestone, dry):
     branch = f"tron/{milestone}"
     exists = sh(["git", "rev-parse", "--verify", "-q", f"refs/heads/{branch}"], root).returncode == 0
@@ -546,6 +573,47 @@ def read_rel(root, rel):
     return p.read_text() if p.is_file() else f"(no {rel})"
 
 
+DIFF_BUDGET = 60000  # characters of diff in one evaluator brief
+PART_MIN = 4000  # every task of a milestone brief shows at least this much of its diff, even past DIFF_BUDGET
+
+
+def milestone_diff(root, tron, journal, base, task_ids, stat, ex):
+    """Milestone brief diff grouped by task (TASK-297): each accepted task's commits with a size budget per task, then the commits of
+    no task (baseline and milestone repairs). Every cut part names the exact git command that shows it in full."""
+    q = lambda: " ".join(["--", "."] + [f"'{e}'" for e in ex])
+    rng = {i: journal.get("task_ranges", {}).get(i) for i in task_ids}
+    groups, covered = [], set()
+    for i in task_ids:
+        r = rng.get(i)
+        if r and r[0] != r[1]:
+            covered |= set(git_ok(root, "rev-list", f"{r[0]}..{r[1]}").split())
+            groups.append((f"### {i}: commits {r[0][:10]}..{r[1][:10]}", f"git diff --no-renames {r[0]} {r[1]} {q()}",
+                           git_ok(root, "diff", "--no-renames", r[0], r[1], "--", ".", *ex)))
+    other = [c for c in git_ok(root, "rev-list", "--reverse", f"{base}..HEAD").split() if c not in covered]
+    for c in other:
+        groups.append((f"### Commit {c[:10]} of no task: {git_ok(root, 'log', '-1', '--format=%s', c).strip()[:120]}",
+                       f"git show --no-renames --format= {c} {q()}", git_ok(root, "show", "--no-renames", "--format=", c, "--", ".", *ex)))
+    total = int(tron.get("brief_diff_chars", DIFF_BUDGET))
+    budget = max(min(PART_MIN, total), total // max(len(groups), 1))
+    out = [f"Whole diff: git diff --no-renames {base} {q()} (task files are left out). Below it is grouped by task, "
+           f"at most {budget} characters per part; every cut part names the command that shows it in full.", "```", stat.strip(), "```"]
+    cut = []
+    for title, cmd, d in groups:
+        out += ["", title, f"Full: `{cmd}`"]
+        if not d.strip():
+            out.append("(no change outside task files)"); continue
+        out += ["```diff", d[:budget], "```"]
+        if len(d) > budget:
+            out.append(f"(cut: {budget} of {len(d)} characters shown; the rest: `{cmd}`)"); cut.append(f"- {title[4:]}: `{cmd}`")
+    for i in task_ids:
+        v = journal["tasks"].get(i, {})
+        if not (rng.get(i) and rng[i][0] != rng[i][1]):
+            out += ["", f"### {i}", f"closed by its subtasks {', '.join(v['closed_by'])} (their diffs are above)" if v.get("closed_by")
+                    else "no commit range recorded for this task; its commits are among the commits of no task above"]
+    out += ["", "### Left out of this brief", *(cut or ["(nothing: every part is shown in full)"])]
+    return out
+
+
 def write_brief(root, tron, journal, target, base, g, task_ids, intent):
     """The evaluator's only input besides the repository: intent, ACs, diff, verification, invariants, hints, assumptions."""
     files = task_files(root)
@@ -563,8 +631,12 @@ def write_brief(root, tron, journal, target, base, g, task_ids, intent):
     stat = git_ok(root, "diff", "--no-renames", "--stat", base, "--", ".", *ex)
     if g is None:
         g = {"placeholders": scan_placeholders(root, base), "deleted_files": [f for f in deleted_paths(root, base) if not f.startswith("backlog/")]}
-    parts += ["", "## Verification by the runner", f"exit code {code}", tail, "", f"## Diff since {base[:12]}",
-              f"Full diff: git diff {base} -- . ':(exclude)backlog' (the text below is cut at 60000 characters; task files are left out)", "```", stat.strip(), "```", diff[:60000] + ("\n(diff truncated)" if len(diff) > 60000 else "")]
+    parts += ["", "## Verification by the runner", f"exit code {code}", tail, "", f"## Diff since {base[:12]}"]
+    if target == "milestone":
+        parts += milestone_diff(root, tron, journal, base, task_ids, stat, ex)
+    else:
+        parts += [f"Full diff: git diff {base} -- . ':(exclude)backlog' (the text below is cut at {DIFF_BUDGET} characters; task files are left out)",
+                  "```", stat.strip(), "```", diff[:DIFF_BUDGET] + ("\n(diff truncated)" if len(diff) > DIFF_BUDGET else "")]
     if tron.get("smoke_cmd"):
         parts += ["", "## Start or smoke command", " ".join(tron["smoke_cmd"]) if isinstance(tron["smoke_cmd"], list) else str(tron["smoke_cmd"])]
     parts += ["", "## Invariants", read_rel(root, "docs/agent/INVARIANTS.md"), "", "## Decision frame", read_rel(root, "docs/agent/DECISION_FRAME.md"),
@@ -1064,7 +1136,7 @@ def build_report(root, journal, tron):
     blk = [i for i, v in tasks.items() if v["state"] == "blocked"]
     out += [f"# Tron mode report: run {journal['run_id']} ({journal['milestone']})", "",
             f"Branch `{journal['branch']}`, run start commit `{journal['start_commit'][:10]}`. State: " +
-            ("complete" if journal.get("complete") else f"not complete ({journal.get('stop_reason') or 'running'})") +
+            (("complete" + (f" ({journal['stop_reason']})" if "stranded" in (journal.get("stop_reason") or "") else "")) if journal.get("complete") else f"not complete ({journal.get('stop_reason') or 'running'})") +
             f". Review with: `git log --oneline {journal['start_commit'][:10]}..{journal['branch']}`. The run did not push, tag or merge; merging is your decision.", ""]
     start_cmd = tron.get("preview_cmd") or tron.get("smoke_cmd") or "not configured"
     start_cmd = " ".join(start_cmd) if isinstance(start_cmd, list) else start_cmd
@@ -1116,6 +1188,10 @@ def build_report(root, journal, tron):
         v = tasks[i]
         out.append(f"- {i}: {v['reason']}" + (f" (failed work kept: {', '.join(f'{k} {x}' for k, x in v.get('kept', {}).items())})" if v.get("kept") else ""))
         out += [f"  - ladder: {steps(v)}"] if v.get("ladder") else []
+    strand = {k: b for k, b in stranded_by(root, journal["milestone"], blk).items() if k not in tasks}
+    for b in blk:
+        waits = sorted(k for k, x in strand.items() if x == b)
+        out += [f"- stranded: {', '.join(waits)} wait(s) for {b} (directly or indirectly) and never became ready; unblock {b} and run again"] if waits else []
     for i, v in tasks.items():
         if v["state"] == "split":
             out.append(f"- {i}: split by the Doctor into {', '.join(v.get('subtasks', []))}; closes when all of them pass (not closed yet" + "".join(f"; {x} is {tasks.get(x, {}).get('state', 'not run')}" for x in v.get("subtasks", []) if tasks.get(x, {}).get("state") != "accepted") + ")")
@@ -1356,10 +1432,11 @@ def run_loop(root, tron, args, milestone, jpath, run_id):
 
     def settle(task_id, base, reason, repairs):
         kept = block_task(root, tron, task_id, base, reason, journal, refs0)
-        journal["tasks"][task_id] = {"state": "blocked", "reason": reason, "repairs": repairs, "kept": kept}
+        stranded = sorted(stranded_by(root, milestone, [task_id]))
+        journal["tasks"][task_id] = {"state": "blocked", "reason": reason, "repairs": repairs, "kept": kept, "stranded": stranded}
         journal.pop("blocking", None); journal.pop("in_progress", None)
         write_journal(jpath, journal)
-        print(f"{task_id}: BLOCKED ({reason})")
+        print(f"{task_id}: BLOCKED ({reason})" + (f"; stranded (never ready in this run): {', '.join(stranded)}" if stranded else ""))
 
     def do_split(task_id, plan, ladder):
         """Subtasks of the Doctor's split; a failure becomes a draft question, never a half-made split."""
@@ -1402,7 +1479,9 @@ def run_loop(root, tron, args, milestone, jpath, run_id):
                 res = milestone_evaluation(root, tron, journal, jpath, accepted, start_commit, max_repairs, no_count, fin, branch, refs0, run_id, milestone)
                 if res is not None:
                     return res
-            fin("no ready task left", complete=True)
+            strand = stranded_by(root, milestone, [i for i, v in journal["tasks"].items() if v["state"] == "blocked"])
+            strand = {k: v for k, v in strand.items() if k not in journal["tasks"]}
+            fin("no ready task left" + ("; stranded: " + ", ".join(f"{k} waits for Blocked {v}" for k, v in sorted(strand.items())) if strand else ""), complete=True)
             print(f"run {run_id} complete after {len(journal['tasks'])} task(s)")
             return 0
         why = stop_reason()
@@ -1593,6 +1672,7 @@ def run_loop(root, tron, args, milestone, jpath, run_id):
             journal["no_diff_blocks"] = 0
             journal.pop("in_progress", None)
             journal["tasks"][task_id] = {"state": "accepted", "repairs": repairs}
+            journal.setdefault("task_ranges", {})[task_id] = [base, head(root)]  # commits of this task, for the milestone brief (TASK-297)
             if ladder:
                 journal["tasks"][task_id]["ladder"] = ladder
             nb = [a for a in assumptions(root, [task_id]) if assumption_basis(a) is None]
