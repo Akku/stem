@@ -20,14 +20,21 @@ def utc_since(since):
     except ValueError: sys.exit("context-report: cannot parse time %r (use YYYY-MM-DD[ HH:MM] local or ISO with Z/offset)" % since)
     return t.astimezone(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
 
+def project_dirs():
+    """This project's transcript folders: the main checkout's plus its worktrees' (<main>--claude-worktrees-*); also when run from a worktree. TASK-220."""
+    base = os.path.expanduser("~/.claude/projects/")
+    main = re.sub(r"[^A-Za-z0-9]", "-", os.getcwd()).split("--claude-worktrees-")[0]
+    return [base + main] + sorted(glob.glob(glob.escape(base + main) + "--claude-worktrees-*"))
+
 def main():
     args = sys.argv[1:]
     since = utc_since(args[args.index("--since") + 1]) if "--since" in args else ""
     until = utc_since(args[args.index("--until") + 1]) if "--until" in args else ""
     brief, cost, main_only = "--brief" in args, "--cost" in args, "--main-only" in args
     pos = [a for i, a in enumerate(args) if not a.startswith("--") and (i == 0 or args[i - 1] not in ("--since", "--until"))]
-    d = pos[0] if pos else os.path.expanduser("~/.claude/projects/" + re.sub(r"[^A-Za-z0-9]", "-", os.getcwd()))
-    files = sorted(glob.glob(d + "/**/*.jsonl", recursive=True))
+    dirs = [pos[0]] if pos else project_dirs()
+    d = ", ".join(dirs)
+    files = sorted(f for x in dirs for f in glob.glob(glob.escape(x) + "/**/*.jsonl", recursive=True))
     if main_only: files = [f for f in files if "/subagents/" not in f]
     if not files:
         print("not evaluable: no transcripts in", d); return 0

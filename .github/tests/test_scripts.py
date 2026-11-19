@@ -159,6 +159,32 @@ class ContextReport(Sandbox):
         self.assertIn("'retro': 1", r.stdout)
 
 
+class WorktreeTranscripts(Sandbox):
+    """TASK-220: main and worktree transcript folders of one project are counted, from the main checkout or from a worktree."""
+    def setUp(self):
+        super().setUp()
+        self.proj = (self.tmp / "proj"); (self.proj / ".claude" / "worktrees" / "w1").mkdir(parents=True)
+        self.home = self.tmp / "home"
+        def folder(path): return self.home / ".claude" / "projects" / re.sub(r"[^A-Za-z0-9]", "-", os.path.realpath(path))
+        for path, n in ((self.proj, "main"), (self.proj / ".claude" / "worktrees" / "w1", "wt"), (self.tmp / "other", "other")):
+            f = folder(path); f.mkdir(parents=True)
+            write_jsonl(f / (n + ".jsonl"), [assistant("m", 1000, ts="2026-11-01T10:00:00Z")])
+        (self.tmp / "other").mkdir(exist_ok=True)
+        (folder(self.proj).parent / (folder(self.proj).name + "xtra")).mkdir()  # prefix lookalike, must not count
+        write_jsonl(folder(self.proj).parent / (folder(self.proj).name + "xtra") / "x.jsonl", [assistant("m", 1000, ts="2026-11-01T10:00:00Z")])
+
+    def run_from(self, script, cwd, *args):
+        return run([sys.executable, str(SCRIPTS / script), *args], cwd, {"HOME": str(self.home)})
+
+    def test_context_report_counts_main_and_worktree_from_either_cwd(self):
+        for cwd in (self.proj, self.proj / ".claude" / "worktrees" / "w1"):
+            self.assertIn("sessions=2 turns=2", self.run_from("context-report.py", cwd, "--brief").stdout)
+
+    def test_start_context_report_counts_main_and_worktree_from_either_cwd(self):
+        for cwd in (self.proj, self.proj / ".claude" / "worktrees" / "w1"):
+            self.assertIn("sessions: 2", self.run_from("start-context.py", cwd, "report").stdout)
+
+
 class StartContext(Sandbox):
     def sc(self, *args, home=None):
         return run([sys.executable, str(SCRIPTS / "start-context.py"), *args], self.tmp, {"HOME": str(home or self.tmp)})

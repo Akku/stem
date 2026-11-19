@@ -24,13 +24,16 @@ def utc(t):
     except ValueError: sys.exit("start-context: cannot parse time %r" % t)
     return d.astimezone(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
 
-def tdir():
-    return os.path.expanduser("~/.claude/projects/" + re.sub(r"[^A-Za-z0-9]", "-", os.getcwd()))
+def tdirs():
+    """This project's transcript folders: main checkout plus its worktrees (<main>--claude-worktrees-*), also when run from a worktree. TASK-220."""
+    base = os.path.expanduser("~/.claude/projects/")
+    main = re.sub(r"[^A-Za-z0-9]", "-", os.getcwd()).split("--claude-worktrees-")[0]
+    return [base + main] + sorted(glob.glob(glob.escape(base + main) + "--claude-worktrees-*"))
 
-def sessions(d, since=""):
+def sessions(dirs, since=""):
     """[(start timestamp, start context, model)] for main sessions; first non-sidechain assistant record with usage."""
     out = []
-    for f in sorted(glob.glob(d + "/*.jsonl")):  # top level only: subagent transcripts live in subfolders
+    for f in sorted(f for d in ([dirs] if isinstance(dirs, str) else dirs) for f in glob.glob(glob.escape(d) + "/*.jsonl")):  # top level only: subagent transcripts live in subfolders
         try:
             for line in open(f):
                 try: r = json.loads(line)
@@ -50,9 +53,9 @@ def report(args):
     since = utc(args[args.index("--since") + 1]) if "--since" in args else ""
     cmp_ = utc(args[args.index("--compare") + 1]) if "--compare" in args else ""
     pos = [a for i, a in enumerate(args) if not a.startswith("--") and (i == 0 or args[i - 1] not in ("--since", "--compare"))]
-    d = pos[0] if pos else tdir()
+    d = [pos[0]] if pos else tdirs()
     s = sessions(d, since)
-    if not s: print("not evaluable: no sessions with usage in", d); return
+    if not s: print("not evaluable: no sessions with usage in", ", ".join(d)); return
     print("start context per session (UTC start | tokens | model):")
     for ts, c, m in s[-15:]: print("  %s | %s | %s" % (ts, k(c), m))
     med = lambda x: k(statistics.median(x))
@@ -89,7 +92,7 @@ def mcp():
 
 def skills():
     uses = {}
-    for f in glob.glob(tdir() + "/**/*.jsonl", recursive=True):
+    for f in [f for d in tdirs() for f in glob.glob(glob.escape(d) + "/**/*.jsonl", recursive=True)]:
         try:
             for line in open(f):
                 if '"Skill"' not in line: continue
