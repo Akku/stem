@@ -488,7 +488,18 @@ class RuleReach(Sandbox):
 
 class SessionStart(SandboxRepo):
     def start(self, extra_env=None):
-        return run(["bash", "scripts/session-start.sh"], self.repo, {**self.env, **(extra_env or {})}).stdout
+        return run(["bash", "scripts/session-start.sh"], self.repo, {"STEM_DUE_FULL": "1", **self.env, **(extra_env or {})}).stdout
+
+    def test_offer_notices_full_once_per_day_then_one_due_line(self):  # TASK-309
+        for n in (1, 2, 3): self.task(n)
+        env = {"STEM_DUE_FULL": "", "RETRO_DUE_AFTER": "3"}
+        first = self.start(env)
+        self.assertIn("RETRO DUE: 3 tasks done", first); self.assertNotIn("due (offered earlier today", first)
+        second = self.start(env)
+        self.assertNotIn("RETRO DUE: 3 tasks done", second)
+        self.assertIn("due (offered earlier today, do not start unasked): RETRO DUE (3 tasks)", second)
+        self.assertLess(len(second), len(first))
+        self.assertEqual(sum("due (offered earlier today" in l for l in second.splitlines()), 1)
 
     def lag_start(self, local, remote):
         (self.repo / "STEM_VERSION").write_text(f"version: {local}\nrepo: https://github.com/example/stem\n"); self.commit("init")
