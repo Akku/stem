@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Context watchdog for Claude Code and Codex (UserPromptSubmit hook). Prints a short notice into the agent's context when the
-current context exceeds a threshold, then again every +30k. Threshold = smallest of: first-turn context of the session + 40k (the
-fixed floor of system prompt, tools and instructions is not session growth), a cap of 100k (env CONTEXT_WARN_TOKENS) and half the model's
-window (Claude: model read from the transcript; Codex: model_context_window from the session log; unknown -> cap of 100k).
+current context exceeds a threshold, then again every +30k. Threshold = smaller of: first-turn context of the session + 50k (the
+fixed floor of system prompt, tools and instructions is not session growth) and half the model's window (Claude: model read from the
+transcript; Codex: model_context_window from the session log). Without a known first-turn context or model: cap of 100k (env CONTEXT_WARN_TOKENS).
 Reads the hook JSON from stdin through hooklib.py (transcript_path, session_id); manual use: --transcript FILE; task-end check: --auto finds the current
 session log itself (Codex: CODEX_THREAD_ID; Claude: newest transcript of this directory) and also prints one line below the threshold;
 --auto --notice-only (used by scripts/run.sh, so agents without a prompt hook get the notice too) stays silent below it.
@@ -12,7 +12,7 @@ import glob, json, os, re, sys
 import hooklib
 
 CAP = int(os.environ.get("CONTEXT_WARN_TOKENS", "100000"))
-GROWTH = 40000
+GROWTH = 50000
 STEP = 30000
 WINDOW = 200000  # any claude-* model without a "[1m]" marker; other models: unknown
 
@@ -49,12 +49,12 @@ def scan(path):
 
 def threshold(first, model):
     if model.startswith("codex:"):
-        if not model[6:].isdigit(): return min([CAP] + ([first + GROWTH] if first else []))
+        if not model[6:].isdigit(): return first + GROWTH if first else CAP
         window = int(model[6:])
     elif "[1m]" in model: window = 1000000
     elif model.startswith("claude-"): window = WINDOW
     else: return CAP  # unknown Claude-side model: window unknown, fixed cap
-    return min([CAP, window // 2] + ([first + GROWTH] if first else []))
+    return min(window // 2, first + GROWTH) if first else min(CAP, window // 2)
 
 def current_log():
     """Session log of the running agent: Codex by CODEX_THREAD_ID, else the newest Claude transcript of this directory."""
