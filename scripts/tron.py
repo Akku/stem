@@ -1222,7 +1222,8 @@ def build_report(root, journal, tron):
         c, pt = cost_of(ss)
         out.append(f"| {role} | {len(ss)} | {money(c, pt)} | {', '.join(sorted({s.get('model') or 'unknown' for s in ss}))} |")
     n_acc, n_blk = len(acc), len(blk)
-    repair_sessions = sum(1 for s in sess if s["role"] == "worker" and s.get("repair"))
+    # a repair answers a failed gate or evaluator verdict (task or milestone); journals before TASK-304 lack "repair" on milestone sessions
+    repair_sessions = sum(1 for s in sess if s["role"] == "worker" and (s.get("repair") or s["task"] == "milestone"))
     worker_sessions = [s for s in sess if s["role"] == "worker"]
     out += ["", "## Metrics", ""]
     out.append("- Cost per accepted task: " + (money(tot / n_acc, part) if tot is not None and n_acc else "unknown"))
@@ -1345,6 +1346,7 @@ def milestone_evaluation(root, tron, journal, jpath, accepted, start_commit, max
         entry, up = sessions_with_retry(root, tron, "worker", "milestone", run_id, milestone, journal, jpath, prompt, abort_check=no_count)
         if not up:
             fin(entry.get("retry_aborted") or "API unavailable after retries"); return 0
+        entry["repair"] = repairs + 1  # counted by the report's repair rate
         entry["gate"] = gate(root, tron, None, base, acs_before, start_commit, branch, refs0)
         journal.pop("in_progress", None)
         write_journal(jpath, journal)

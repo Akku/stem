@@ -1045,6 +1045,7 @@ class Tron(unittest.TestCase):
         j = self.journal()
         self.assertFalse(j["complete"]); self.assertIn("milestone evaluation failed", j["stop_reason"])
         self.assertEqual(self.eval_calls(), ["milestone", "milestone"])
+        self.assertEqual([x.get("repair") for x in j["sessions"] if x["task"] == "milestone" and x["role"] == "worker"], [1])
 
     def test_milestone_brief_groups_diff_by_task_and_lists_cut_parts(self):  # TASK-297
         self.with_evaluator("milestone", max_repairs=1, brief_diff_chars=300)
@@ -1136,6 +1137,15 @@ class Tron(unittest.TestCase):
         p.write_text(json.dumps(j))
         self.tron("report", "--run-id", "s1")
         self.assertIn("| milestone | 2 | - | 0.75 USD |", (self.proj / "docs/agent/tron/REPORT-s1.md").read_text())
+
+    def test_report_repair_rate_counts_the_milestone_fix_session(self):
+        self.sample_journal()
+        p = self.proj / "docs/agent/tron/run-s1.json"; j = json.loads(p.read_text())
+        base = {k: v for k, v in j["sessions"][0].items() if k != "repair"}
+        j["sessions"] += [dict(base, task="milestone", role="evaluator"), dict(base, task="milestone", role="worker")]  # as journals before TASK-304 wrote it
+        p.write_text(json.dumps(j))
+        self.tron("report", "--run-id", "s1")
+        self.assertIn("Repair rate: 2 repair session(s) in 4 worker session(s) (50%)", (self.proj / "docs/agent/tron/REPORT-s1.md").read_text())
 
     def test_worker_that_stops_without_a_diff_shows_its_own_reason(self):
         self.config({"max_repairs": 0})
