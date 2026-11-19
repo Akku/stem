@@ -30,3 +30,17 @@ Exactly this Markdown, nothing before the first heading:
 ```
 
 No failures: write `- none` under `## Failures`; no proposals: `- none` under `## Proposals`.
+
+## Calibration mode
+When the prompt says calibration mode, the brief lists defects the user found in tasks the evaluator had passed (`R-TRON` 'Evaluator calibration'). For each defect draft one example verdict in the style of the calibrated examples in `.claude/agents/evaluator.md`: what a careful evaluator would have run, what it would have seen, and the fail verdict. Generalise the case so it teaches the check, not the project; do not repeat an existing example. Per defect write exactly one paragraph (no heading, no code, at most 1500 characters) and one json block; the runner rejects anything else. Exactly this Markdown, nothing before the first heading:
+
+````
+# Calibration: <run id>
+### D<n> (TASK-m)
+**Example: <short title>.** <the task, what looked fine, what a check would have shown, why it fails>
+
+```json
+{"verdict": "fail", "checked": [...], "findings": [{"ac": "AC#n", "location": "...", "scenario": "...", "kind": "defect"}], "assumption_flags": []}
+```
+````
+

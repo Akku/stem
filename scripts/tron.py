@@ -301,8 +301,8 @@ def restore_acs(root, task_id, path, start_commit):
 # run output the runner itself writes; every other path under docs/agent/tron/ counts as a change
 EXCLUDE = [":(exclude,glob)docs/agent/tron/run-*", ":(exclude,glob)docs/agent/tron/REPORT-*", ":(exclude)docs/agent/tron/STOP", ":(exclude)docs/agent/tron/LOCK",
            ":(exclude,glob)docs/agent/tron/brief-*", ":(exclude,glob)docs/agent/tron/verdict-*", ":(exclude,glob)docs/agent/tron/doctor-*",
-           ":(exclude,glob)docs/agent/tron/RETRO-*"]
-RUNNER_FILE = re.compile(r"^docs/agent/tron/(run-|REPORT-|STOP$|LOCK$|brief-|verdict-|doctor-|RETRO-)")
+           ":(exclude,glob)docs/agent/tron/RETRO-*", ":(exclude,glob)docs/agent/tron/CALIBRATION-*"]
+RUNNER_FILE = re.compile(r"^docs/agent/tron/(run-|REPORT-|STOP$|LOCK$|brief-|verdict-|doctor-|RETRO-|CALIBRATION-)")
 
 
 def tree_dirty(root):
@@ -1069,7 +1069,7 @@ def build_report(root, journal, tron):
             "- The first core flows are tested by you: " + (", ".join(acc) or "(no accepted task)")]
     out += [f"- Unattended retro (analysis): {journal['retro']}"] if journal.get("retro") else []
     out += [f"- Unattended retro failed: {journal['retro_error']}"] if journal.get("retro_error") else []
-    out += [""] + retro_changes_report(journal)
+    out += [""] + retro_changes_report(journal) + calibration_report(journal)
     out += ["## Accepted tasks: acceptance criteria and evidence", ""]
     for i in acc:
         f = files.get(i)
@@ -1147,6 +1147,10 @@ def build_report(root, journal, tron):
     out.append("- Cost per accepted task: " + (money(tot / n_acc, part) if tot is not None and n_acc else "unknown"))
     out.append("- Repair rate: " + (f"{repair_sessions} repair session(s) in {len(worker_sessions)} worker session(s) ({repair_sessions / len(worker_sessions):.0%})" if worker_sessions else "unknown"))
     out.append("- Blocked rate: " + (f"{n_blk} of {n_acc + n_blk} settled task(s) ({n_blk / (n_acc + n_blk):.0%})" if n_acc + n_blk else "unknown"))
+    ud = journal.get("user_defects", [])
+    out.append("- Evaluator misses: " + (f"{len(missed(journal))} of {len(ud)} defect(s) you found were in tasks the evaluator had passed" if ud
+                                         else "0 (you found no defect)" if journal.get("defects_reviewed")
+                                         else "unknown until you answer the defects question (`tron.py defect`, or `--none`)"))
     out.append("")
     return "\n".join(out)
 
@@ -1663,7 +1667,7 @@ def cmd_sweep(args):
 
 
 RETRO_LAYERS = ("task_quality", "rule", "environment", "model", "evaluator_miss")
-RETRO_METRICS = ("blocked_tasks", "repairs_per_task", "cost_per_accepted_task", "doctor_calls", "evaluator_fails", "sessions_per_task")
+RETRO_METRICS = ("blocked_tasks", "repairs_per_task", "cost_per_accepted_task", "doctor_calls", "evaluator_fails", "sessions_per_task", "evaluator_misses")
 
 
 def run_metrics(journal):
@@ -1677,7 +1681,9 @@ def run_metrics(journal):
             "cost_per_accepted_task": round(cost / len(acc), 2) if acc else None,
             "doctor_calls": sum(1 for s in sess if s.get("role") == "doctor"),
             "evaluator_fails": sum(1 for s in sess if s.get("role") == "evaluator" and (s.get("evaluator") or {}).get("verdict") == "fail"),
-            "sessions_per_task": round(sum(1 for s in sess if s.get("role") == "worker") / n, 2)}
+            "sessions_per_task": round(sum(1 for s in sess if s.get("role") == "worker") / n, 2),
+            # defects the user found in tasks the evaluator had passed; unknown until the user answered the defects question
+            "evaluator_misses": len(missed(journal)) if journal.get("defects_reviewed") else None}
 
 
 def retro_brief(root, tron, journal):
@@ -1699,6 +1705,8 @@ def retro_brief(root, tron, journal):
         parts += [f"- {p.relative_to(root)}" for p in sorted(d.glob(pat))]
     parts += ["", "## Assumptions"]
     parts += [f"- {a[:200]}" for a in assumptions(root, list(journal.get("tasks", {})))] or ["(none)"]
+    parts += ["", "## Defects the user found after the run (an evaluator miss is a failure of layer evaluator_miss)"]
+    parts += [f"- {x['id']} {x['task']}: {x['text'][:200]} (evaluator: {x['evaluator']})" for x in journal.get("user_defects", [])] or ["(none recorded)"]
     m = run_metrics(journal)
     parts += ["", "## Metrics of this run (names are the only allowed metrics)", "", "| Metric | Value |", "| --- | --- |"] + [f"| {k} | {v} |" for k, v in m.items()]
     prev = [p for p in sorted(d.glob("RETRO-*.md")) if p.stem != f"RETRO-{rid}"]
@@ -1809,6 +1817,10 @@ def cmd_retro(args):
         if errs:
             raise TronError(f"{out.relative_to(root)} is invalid: " + "; ".join(errs[:4]))
         journal["retro"] = str(out.relative_to(root)); write_journal(jpath, journal)
+    if missed(journal):  # evaluator calibration: misses the user recorded get their example verdicts drafted (tier 3)
+        refuse_while_locked(root)
+        ids = calibrate_run(root, tron, journal, jpath)
+        print(f"calibration drafted: {', '.join(ids)}" if ids else "calibration: every missed defect has an example")
     if args.apply:
         lock = root / JOURNAL_DIR / "LOCK"  # never next to an active run on the same checkout
         try:
@@ -2141,6 +2153,305 @@ def retro_changes_report(journal):
     return out + [""]
 
 
+# ---- evaluator calibration from defects the user finds (R-TRON "Evaluator calibration") ----
+
+EVALUATOR_FILE = ".claude/agents/evaluator.md"
+CALIBRATE_PROMPT = ("You are the retro analyst of an unattended Tron mode run, in calibration mode. Read .claude/agents/retro-analyst.md "
+                    "('Calibration mode') and follow it exactly. Your brief is {brief}. Change no file in the project; answer with the "
+                    "calibration in your final message.")
+
+
+def evaluator_status(root, run_id, task_id):
+    """What the evaluator said about a task in a run, from the verdict files: (passed|failed|not evaluated, file). The task's own last
+    verdict wins; without one the last milestone verdict counts."""
+    d = root / JOURNAL_DIR
+    for target in (task_id, "milestone"):
+        files = sorted(d.glob(f"verdict-{run_id}-{target}-*.json"), key=lambda p: int(re.sub(r"\D", "", p.stem.rsplit("-", 1)[-1]) or 0))
+        for vf in reversed(files):
+            try:
+                v = json.loads(vf.read_text()).get("verdict")
+            except (OSError, ValueError):
+                continue
+            if v not in ("pass", "fail"):
+                continue
+            if v == "fail" and target == "milestone":  # a failed milestone verdict caught only the tasks its findings name
+                fs = json.loads(vf.read_text()).get("findings") or []
+                named = any(re.search(rf"\b{re.escape(task_id)}\b", json.dumps(f)) for f in fs if isinstance(f, dict))
+                return ("failed" if named else "passed"), str(vf.relative_to(root))
+            return ("passed" if v == "pass" else "failed"), str(vf.relative_to(root))
+    return "not evaluated", None
+
+
+def missed(journal):
+    return [x for x in journal.get("user_defects", []) if x.get("evaluator") == "passed"]
+
+
+def load_journal(root, run_id):
+    d = root / JOURNAL_DIR
+    if run_id:
+        jpath = d / f"run-{run_id}.json"
+    else:
+        runs = sorted(d.glob("run-*.json"), key=lambda p: json.loads(p.read_text()).get("started", "")) if d.is_dir() else []
+        jpath = runs[-1] if runs else None
+    if not jpath or not jpath.is_file():
+        raise TronError("no run journal found (pass --run <id>)")
+    return jpath, json.loads(jpath.read_text())
+
+
+def write_report(root, journal, tron):
+    try:
+        (root / JOURNAL_DIR / f"REPORT-{journal['run_id']}.md").write_text(build_report(root, journal, tron))
+    except (OSError, TronError, KeyError, ValueError) as e:
+        print(f"warning: report not written: {e}", file=sys.stderr)
+
+
+def record_defect(root, journal, jpath, task_id, text):
+    """One defect the user found after the run; idempotent for the same task and text. Returns the record."""
+    task_id, text = task_id.strip().upper(), " ".join(text.split())
+    if task_id not in journal.get("tasks", {}):
+        raise TronError(f"{task_id} is not a task of run {journal['run_id']} ({', '.join(journal.get('tasks', {})) or 'no tasks'})")
+    if not text:
+        raise TronError("the defect needs a description (--text)")
+    defects = journal.setdefault("user_defects", [])
+    for x in defects:
+        if x["task"] == task_id and x["text"] == text:
+            return x
+    status, vfile = evaluator_status(root, journal["run_id"], task_id)
+    rec = {"id": f"D{len(defects) + 1}", "task": task_id, "text": text, "at": now(), "evaluator": status, "verdict": vfile}
+    defects.append(rec)
+    journal["defects_reviewed"] = now()  # the user answered the defects question
+    write_journal(jpath, journal)
+    return rec
+
+
+def calibration_brief(root, journal, todo):
+    rid = journal["run_id"]
+    files = task_files(root)
+    parts = [f"# Calibration brief: run {rid} (milestone {journal['milestone']})", "",
+             "The user found these defects after the run; the evaluator had passed each task. Draft one example verdict per defect.", ""]
+    for x in todo:
+        parts += [f"## {x['id']} ({x['task']})", f"Defect found by the user: {x['text']}", f"Evaluator verdict that passed it: {x['verdict']}"]
+        if x["task"] in files:
+            _, acs, _ = parse_task(files[x["task"]].read_text())
+            parts += ["Acceptance criteria:"] + [f"- AC#{n}: {s}" for _, n, s in acs]
+        parts.append("")
+    ev = read_rel(root, EVALUATOR_FILE)
+    m = re.search(r"^## Calibrated examples\s*$.*", ev, re.M | re.S)
+    parts += ["## Calibrated examples already in the evaluator file (do not repeat them)", m.group(0) if m else "(none)"]
+    path = root / JOURNAL_DIR / f"brief-{rid}-calibration.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(parts) + "\n")
+    return path
+
+
+def calibration_sections(text):
+    """{defect id: (task, body)} of a calibration file: '### D<n> (TASK-m)' headings, body up to the next heading."""
+    out = {}
+    for m in re.finditer(r"^### (D\d+) \((TASK-\d+)\)\s*$(.*?)(?=^#{1,3} |\Z)", text, re.M | re.S):
+        out[m.group(1)] = (m.group(2), m.group(3).strip())
+    return out
+
+
+def example_parts(body):
+    """(paragraph, verdict json) of one drafted example, or (None, reason): one '**Example...**' paragraph of plain text (no fence,
+    no heading, at most 1500 characters) and one json verdict that fails with a finding, re-serialized with the known keys only."""
+    if body.count("```") % 2:
+        return None, "unbalanced code fence"
+    blocks = re.findall(r"```[^\n]*\n.*?```", body, re.S)
+    prose = [x.strip() for x in re.split(r"\n\s*\n", re.sub(r"```[^\n]*\n.*?```", "\n\n", body, flags=re.S)) if x.strip()]
+    prose = [x for x in prose if not x.startswith("Defect found by the user:")]
+    if len(prose) != 1 or len(blocks) != 1:
+        return None, "needs exactly one paragraph and one json block"
+    para = " ".join(prose[0].split())
+    if not re.match(r"\*\*Example[^*]*\*\*\s*\S", para) or len(para) > 1500 or re.search(r"(^|\s)#|`{3}", para):
+        return None, "the paragraph must start with '**Example: <title>.**', hold no heading or fence and stay under 1500 characters"
+    v = parse_verdict(blocks[0])
+    if not v or v["verdict"] != "fail" or not v["findings"]:
+        return None, "needs a json verdict block that fails with at least one finding"
+    title = re.match(r"\*\*Example\W*(?:\d+\W*)?([^*]*)\*\*\s*(.*)", para)
+    para = f"**Example: {title.group(1).strip()}** {title.group(2)}"
+    keep = {k: v[k] for k in ("verdict", "checked", "findings", "assumption_flags")}
+    return para, json.dumps(keep)
+
+
+def validate_calibration(text, todo):
+    """Why a calibration answer is invalid (list; empty when fine): one section per defect with its task, a scenario paragraph
+    and a parseable example verdict that fails with at least one finding."""
+    errs, secs = [], calibration_sections(text)
+    for x in todo:
+        s = secs.get(x["id"])
+        if not s:
+            errs.append(f"no section '### {x['id']} ({x['task']})'"); continue
+        if s[0] != x["task"]:
+            errs.append(f"{x['id']} names {s[0]}, expected {x['task']}"); continue
+        para, why = example_parts(s[1])
+        if para is None:
+            errs.append(f"{x['id']}: {why}")
+    extra = sorted(set(secs) - {x["id"] for x in todo})
+    if extra:
+        errs.append("sections for defects not asked for: " + ", ".join(extra))
+    return errs
+
+
+def calibrate_run(root, tron, journal, jpath):
+    """Draft example verdicts for missed defects that have none yet (one read-only analyst session); each becomes a tier 3 proposal
+    for the evaluator file. Returns the drafted defect ids. Resumable: drafted defects are skipped."""
+    rid = journal["run_id"]
+    out = root / JOURNAL_DIR / f"CALIBRATION-{rid}.md"
+    have = calibration_sections(out.read_text()) if out.is_file() else {}
+    todo = [x for x in missed(journal) if x["id"] not in have]
+    rows = {r["id"]: r for r in journal.get("retro_changes", [])}
+    for x in missed(journal):  # resume: a draft written before the journal row
+        if x["id"] in have and f"C-{x['id']}" not in rows:
+            add_calibration_row(journal, x, out.relative_to(root))
+    write_journal(jpath, journal)
+    if not todo:
+        return []
+    brief = calibration_brief(root, journal, todo)
+    before = (tree_state(root), tree_dirty(root))
+    entry = run_session(root, tron, "retro", "calibration", rid, journal["milestone"], CALIBRATE_PROMPT.format(brief=brief.relative_to(root)))
+    text = entry.pop("_out", "") or ""
+    journal["sessions"].append(entry)
+    write_journal(jpath, journal)
+    if (tree_state(root), tree_dirty(root)) != before:
+        raise TronError("the calibration session changed HEAD, branches or files; nothing written")
+    if entry.get("exit_code"):
+        raise TronError(f"calibration session failed (exit {entry.get('exit_code')}); tail: {text[-200:]!r}")
+    errs = validate_calibration(text, todo)
+    if errs:
+        raise TronError("calibration rejected: " + "; ".join(errs[:4]))
+    secs = calibration_sections(text)
+    parts = {x["id"]: example_parts(secs[x["id"]][1]) for x in todo}  # stored in a fixed structure, never as raw analyst text
+    body = "".join(f"\n### {x['id']} ({x['task']})\nDefect found by the user: {x['text']}\n\n{parts[x['id']][0]}\n\n```json\n{parts[x['id']][1]}\n```\n" for x in todo)
+    head_ = f"# Calibration: {rid}\nProposed example verdicts for {EVALUATOR_FILE} (tier 3: applied only on the user's yes).\n"
+    out.write_text((out.read_text().rstrip() + "\n" if out.is_file() else head_) + body)
+    for x in todo:
+        add_calibration_row(journal, x, out.relative_to(root))
+    write_journal(jpath, journal)
+    return [x["id"] for x in todo]
+
+
+def add_calibration_row(journal, defect, rel):
+    rows = journal.setdefault("retro_changes", [])
+    if not any(r["id"] == f"C-{defect['id']}" for r in rows):
+        rows.append({"id": f"C-{defect['id']}", "tier": 3, "target": EVALUATOR_FILE, "metric": "evaluator_misses",
+                     "result": "proposed (tier 3: for the user)", "reason": f"example verdict for {defect['id']} ({defect['task']}) in {rel}"})
+
+
+def accept_calibration(root, journal, jpath, did, accept):
+    """The user's answer to one drafted example: yes appends it to the evaluator file as the next numbered example."""
+    if os.environ.get("STEM_TRON") == "1":
+        raise TronError("an unattended session never changes the evaluator file; the user decides")
+    rows = {r["id"]: r for r in journal.get("retro_changes", [])}
+    row = rows.get(f"C-{did}")
+    if not row:
+        raise TronError(f"no drafted example for {did} (run: tron.py calibrate --run {journal['run_id']})")
+    if not (row["result"].startswith("proposed") or row["result"] == "applying"):
+        return row
+    if accept:
+        cal = root / JOURNAL_DIR / f"CALIBRATION-{journal['run_id']}.md"
+        sec = calibration_sections(cal.read_text()).get(did) if cal.is_file() else None
+        if not sec:
+            raise TronError(f"{cal.relative_to(root)} has no section for {did}; draft it again with tron.py calibrate")
+        para, js = example_parts(sec[1])  # checked again: the file may have been edited since it was drafted
+        if para is None:
+            raise TronError(f"the drafted example {did} is invalid now ({js}); nothing applied")
+        ev = root / EVALUATOR_FILE
+        if not ev.is_file():
+            raise TronError(f"{EVALUATOR_FILE} not found")
+        text = ev.read_text()
+        tail = para.split("** ", 1)[1]
+        if row["result"] == "applying" and tail in text:  # killed after writing the evaluator file: do not add it twice
+            row["result"] = f"applied by the user {now()[:10]}"
+            write_journal(jpath, journal)
+            return row
+        row["result"] = "applying"
+        write_journal(jpath, journal)
+        n = max([int(x) for x in re.findall(r"^\*\*Example (\d+)", text, re.M)] or [0]) + 1
+        body = para.replace("**Example: ", f"**Example {n}: ", 1) + f"\n\n```json\n{js}\n```"
+        m = re.search(r"^## Calibrated examples\s*$.*?(?=^## |\Z)", text, re.M | re.S)
+        cut = m.end() if m else len(text)  # after the last example, before any later section
+        ev.write_text(text[:cut].rstrip() + "\n\n" + body + "\n" + ("\n" + text[cut:] if text[cut:].strip() else ""))
+        row["result"] = f"applied by the user {now()[:10]} (example {n})"
+    else:
+        row["result"] = f"rejected by the user {now()[:10]}"
+    write_journal(jpath, journal)
+    return row
+
+
+def calibration_report(journal):
+    ds = journal.get("user_defects", [])
+    if not ds:
+        return []
+    rows = {r["id"]: r for r in journal.get("retro_changes", [])}
+    out = ["## Defects you found after the run", ""]
+    for x in ds:
+        r = rows.get(f"C-{x['id']}")
+        out.append(f"- {x['id']} {x['task']}: {x['text']} (evaluator: {x['evaluator']}" + (f", {x['verdict']}" if x.get("verdict") else "") + ")"
+                   + (f"; example verdict: {r['result']}" if r else ("; example verdict: not drafted yet (`tron.py calibrate`)" if x["evaluator"] == "passed" else "")))
+    return out + [""]
+
+
+def refuse_while_locked(root):
+    lock = root / JOURNAL_DIR / "LOCK"
+    try:
+        pid = int(lock.read_text().strip()) if lock.is_file() else 0
+    except ValueError:
+        pid = 0
+    if pid and pid_alive(pid):
+        raise TronError(f"a run or --apply is active (pid {pid}, {lock.relative_to(root)}); try again when it has ended")
+
+
+def cmd_defect(args):
+    """Record a defect the user found after a run (the tron skill asks for them when reading the report); --none records 'none found'."""
+    root = pathlib.Path(args.root).resolve()
+    refuse_while_locked(root)
+    jpath, journal = load_journal(root, args.run_id)
+    if args.none:
+        journal["defects_reviewed"] = now(); write_journal(jpath, journal)
+        try:
+            write_report(root, journal, load_config(root, args.config))
+        except TronError:
+            write_report(root, journal, {})
+        print(f"run {journal['run_id']}: defects reviewed, {len(journal.get('user_defects', []))} recorded")
+        return 0
+    if not args.task or not args.text:
+        raise TronError("pass --task and --text, or --none when you found no (further) defect")
+    rec = record_defect(root, journal, jpath, args.task, args.text)
+    try:
+        tron = load_config(root, args.config)
+    except TronError:
+        tron = {}
+    write_report(root, journal, tron)
+    print(f"{rec['id']} {rec['task']}: evaluator {rec['evaluator']}" + (" (a miss: draft an example with tron.py calibrate)" if rec["evaluator"] == "passed" else ""))
+    return 0
+
+
+def cmd_calibrate(args):
+    """Draft example verdicts for missed defects (tier 3), or take the user's yes or no on one (--accept/--reject D<n>)."""
+    root = pathlib.Path(args.root).resolve()
+    refuse_while_locked(root)
+    jpath, journal = load_journal(root, args.run_id)
+    try:
+        tron = load_config(root, args.config)
+    except TronError:
+        if not (args.accept or args.reject):
+            raise
+        tron = {}
+    try:
+        if args.accept or args.reject:
+            row = accept_calibration(root, journal, jpath, args.accept or args.reject, bool(args.accept))
+            print(f"{row['id']}: {row['result']}")
+        else:
+            if not tron.get("retro_cmd"):
+                print("warning: tron.retro_cmd is unset; the analyst falls back to worker_cmd, which may edit files", file=sys.stderr)
+            ids = calibrate_run(root, tron, journal, jpath)
+            print(f"drafted: {', '.join(ids)} in docs/agent/tron/CALIBRATION-{journal['run_id']}.md" if ids else "nothing to draft (no missed defect without an example)")
+    finally:
+        write_report(root, journal, tron)
+    return 0
+
+
 def check_milestone(root, milestone, cfg_path=None):
     """Readiness check (doc-12 3.1): returns (failures, warnings, tron config or None). Deterministic, starts nothing."""
     fails, warns = [], []
@@ -2269,13 +2580,27 @@ def main(argv=None):
     rt.add_argument("--apply", action="store_true", help="also apply the tier 1 and 2 proposals on the run branch and check open experiments (R-TRON 'Retro changes')")
     rt.add_argument("--config", help="config file (default: docs/agent/stem-config.json)")
     rt.add_argument("--root", default=".", help="project root (default: current directory)")
+    df = sub.add_parser("defect", help="record a defect you found after a run (task, text); notes whether the evaluator had passed the task")
+    df.add_argument("--run", dest="run_id", help="run id (default: the latest run)")
+    df.add_argument("--task", help="task id, e.g. TASK-12")
+    df.add_argument("--text", help="what is wrong, in one line")
+    df.add_argument("--none", action="store_true", help="you found no (further) defect: makes the metric evaluator_misses known")
+    df.add_argument("--config", help="config file (default: docs/agent/stem-config.json)")
+    df.add_argument("--root", default=".", help="project root (default: current directory)")
+    ca = sub.add_parser("calibrate", help="draft example verdicts for the evaluator from defects it missed (tier 3); --accept/--reject D<n> takes your answer")
+    ca.add_argument("--run", dest="run_id", help="run id (default: the latest run)")
+    g = ca.add_mutually_exclusive_group()
+    g.add_argument("--accept", metavar="D<n>", help="append that drafted example to .claude/agents/evaluator.md (your yes)")
+    g.add_argument("--reject", metavar="D<n>", help="record your no for that drafted example")
+    ca.add_argument("--config", help="config file (default: docs/agent/stem-config.json)")
+    ca.add_argument("--root", default=".", help="project root (default: current directory)")
     rp = sub.add_parser("report", help="write docs/agent/tron/REPORT-<run>.md from the journal and the backlog")
     rp.add_argument("--run-id", help="run id (default: the latest run)")
     rp.add_argument("--config", help="config file (default: docs/agent/stem-config.json)")
     rp.add_argument("--root", default=".", help="project root (default: current directory)")
     args = p.parse_args(argv)
     try:
-        return {"report": cmd_report, "check": cmd_check, "sweep": cmd_sweep, "retro": cmd_retro}.get(args.cmd, cmd_run)(args)
+        return {"report": cmd_report, "check": cmd_check, "sweep": cmd_sweep, "retro": cmd_retro, "defect": cmd_defect, "calibrate": cmd_calibrate}.get(args.cmd, cmd_run)(args)
     except TronError as e:
         print(f"tron: {e}", file=sys.stderr)
         return 2
