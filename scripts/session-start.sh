@@ -4,6 +4,13 @@
 set -u
 # model class (R-ROUTING, Model classes): read the hook input before anything else can consume stdin; empty without python3 or input
 mc=$(python3 "$(dirname "$0")/hooklib.py" class --root "$PWD" 2>/dev/null)
+# offer-type notices (TASK-309): full text on the first session of a day, afterwards one "due:" line (STEM_DUE_FULL=1 always shows the full text)
+today=$(date +%F); dstate="${TMPDIR:-/tmp}/agent-logs/due-$(printf %s "$PWD" | cksum | cut -d' ' -f1)"; mkdir -p "$(dirname "$dstate")" 2>/dev/null; dues=""
+[ -f "$dstate" ] && { grep "^$today " "$dstate" >"$dstate.n" 2>/dev/null; mv -f "$dstate.n" "$dstate" 2>/dev/null; }
+due_notice() {  # key, short form, full text
+  if [ -z "${STEM_DUE_FULL:-}" ] && grep -qx "$today $1" "$dstate" 2>/dev/null; then dues="${dues:+$dues; }$2"
+  else printf '%s\n' "$3"; echo "$today $1" >>"$dstate" 2>/dev/null; fi
+}
 echo "## git"
 if git rev-parse --git-dir >/dev/null 2>&1; then
   echo "branch: $(git branch --show-current)"
@@ -26,7 +33,7 @@ if [ -f STEM_VERSION ]; then
   fi
   rv=$(cat "$cache" 2>/dev/null)
   if [ -n "$rv" ] && [ -n "$lv" ] && [ "$rv" != "$lv" ] && [ "$(printf '%s\n%s\n' "$lv" "$rv" | sort -V | tail -1)" = "$rv" ]; then
-    echo "STEM UPDATE AVAILABLE: $lv -> $rv (offer the stem-update skill, \`R-STEM-UPDATE\`; do not update unasked)"
+    due_notice "update-$rv" "STEM UPDATE AVAILABLE $lv -> $rv" "STEM UPDATE AVAILABLE: $lv -> $rv (offer the stem-update skill, \`R-STEM-UPDATE\`; do not update unasked)"
     # distance in minor versions (patch releases do not count; another major always warns)
     lmaj=${lv%%.*}; rmaj=${rv%%.*}; lmin=$(echo "$lv" | cut -d. -f2); rmin=$(echo "$rv" | cut -d. -f2)
     if [ "$lmaj" != "$rmaj" ]; then lag=99; else lag=$((${rmin:-0} - ${lmin:-0})); fi
@@ -46,7 +53,7 @@ elif grep -q '^\*\*Setup status:\*\* DONE' AGENTS.md 2>/dev/null && [ -f STEM_VE
   elif env | grep -q '^CODEX_'; then cag=codex
   else cag=unknown; fi
   if { [ -n "$ros" ] && [ "$cos" != "$ros" ]; } || { [ -n "$rag" ] && [ "$cag" != "$rag" ]; }; then
-    echo "PORT CHECK AVAILABLE: this environment (os $cos, agent $cag) differs from the reference ($ros, $rag, $(sed -n 's/^reference-model: *//p' STEM_VERSION | head -1)); offer the port-check skill once, do not start unasked"
+    due_notice port "PORT CHECK AVAILABLE" "PORT CHECK AVAILABLE: this environment (os $cos, agent $cag) differs from the reference ($ros, $rag, $(sed -n 's/^reference-model: *//p' STEM_VERSION | head -1)); offer the port-check skill once, do not start unasked"
   fi
 fi
 if [ -z "${STEM_OFFLINE:-}" ] && [ -f .github/stem-check.py ] && command -v gh >/dev/null 2>&1; then
@@ -102,7 +109,7 @@ if [ -d backlog/tasks ]; then
     [ -n "$lj" ] && [ "$(python3 -c 'import json,sys; r=json.load(open(sys.argv[1])).get("result") or {}; print(int(r.get("adopted", 1) == 0 and r.get("open_signals", 1) == 0))' "$lj" 2>/dev/null)" = 1 ] && thr=16
   fi
   if [ "$n" -ge "$thr" ]; then
-    echo "RETRO DUE: $n tasks done since ${lrd:-the start} (threshold $thr); offer the retro skill, do not start unasked"
+    due_notice retro "RETRO DUE ($n tasks)" "RETRO DUE: $n tasks done since ${lrd:-the start} (threshold $thr); offer the retro skill, do not start unasked"
   fi
 fi
 # waiting tasks whose outside event happened (fixed condition kinds only, see the script)
@@ -118,6 +125,7 @@ for f in backlog/drafts/*.md; do
     && oq="$oq$(sed -n 's/^id: //p' "$f" | head -1): $(sed -n 's/^title: //p' "$f" | head -1 | tr -d "'")"$'\n'
 done
 [ -n "$oq" ] && { echo; echo "## open questions for the user (answer or ask first; the draft holds the options)"; printf '%s' "$oq"; }
+[ -n "$dues" ] && { echo; echo "due (offered earlier today, do not start unasked): $dues"; }
 echo; echo "## handoff"
 if [ -f docs/agent/HANDOFF.md ]; then
   # consumed: a handoff is written for exactly the next session; any commit after the one that last touched it means that session ran
