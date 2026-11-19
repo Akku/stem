@@ -18,6 +18,10 @@ For each task ask: what would a worker have to decide that the frame, an invaria
 - tasks that depend on each other without saying so.
 Do not ask what the frame already allows to decide alone. Do not suggest redesigns.
 
+Not questions (`SWEEP_NOT_QUESTIONS` in `scripts/tron.py` repeats this in the brief):
+- A red or flaky baseline (failing or order- or time-dependent tests before any task): the runner starts a baseline repair session on its own before the next task. Do not ask how to fix it; mention it under the draft scenario at most.
+- Anything a precedent already answers: do not ask it; name the precedent (e.g. `P-1`) in the draft acceptance scenario or the task's line instead.
+
 ## Output
 Exactly this Markdown, nothing before the first heading:
 

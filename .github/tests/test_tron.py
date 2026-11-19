@@ -1554,9 +1554,15 @@ class Check(unittest.TestCase):
         self.assertIn("brief-sweep-m-9.md", "".join(p.name for p in (self.proj / "docs/agent/tron").iterdir()))
         brief = (self.proj / "docs/agent/tron/brief-sweep-m-9.md").read_text()
         self.assertIn("### TASK-1", brief); self.assertIn("AC#1: it works", brief)
+        self.assertIn("baseline repair session", brief); self.assertIn("precedent below answers", brief)  # TASK-302
         self.commit(); self.fails_with("1 unanswered question")
         f.write_text(f.read_text().replace("- [ ] Q1", "- [x] Q1") + "Answer: a\n"); self.commit()
         r = self.check(); self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
+    def test_planner_does_not_ask_baseline_or_precedent_questions(self):  # TASK-302
+        text = (ROOT / ".claude/agents/planner.md").read_text()
+        self.assertIn("A red or flaky baseline", text); self.assertIn("baseline repair session", text)
+        self.assertIn("Anything a precedent already answers: do not ask it", text)
 
     def test_sweep_without_questions_section_is_rejected(self):
         r = self.sweep("I looked and all is fine")

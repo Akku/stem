@@ -1643,6 +1643,12 @@ def baseline_prompt(root, tron, milestone):
     return "\n\n".join(parts)
 
 
+# kinds of question the planner must not ask (TASK-302); repeated in .claude/agents/planner.md
+SWEEP_NOT_QUESTIONS = ("## Not questions",
+                       "- A red or flaky baseline: the runner starts a baseline repair session on its own before the next task; do not ask about it.",
+                       "- Anything a precedent below answers: do not ask it; name the precedent (e.g. P-1) in the draft acceptance scenario instead.")
+
+
 def sweep_brief(root, milestone):
     """Input of the planner: vision, frame, invariants, precedents and every open task of the milestone (intent, ACs, labels)."""
     def read(rel, cap=6000):
@@ -1651,7 +1657,7 @@ def sweep_brief(root, milestone):
     vision = next((r for r in ("VISION.md", "docs/VISION.md", "README.md") if (root / r).is_file()), None)
     parts = [f"# Planner brief: milestone {milestone}", "", f"## Vision ({vision})", read(vision) if vision else "(none)", "",
              "## Decision frame", read("docs/agent/DECISION_FRAME.md"), "", "## Invariants", read("docs/agent/INVARIANTS.md"), "",
-             "## Precedents", read("docs/agent/PRECEDENTS.md"), "", "## Tasks"]
+             "## Precedents", read("docs/agent/PRECEDENTS.md"), "", *SWEEP_NOT_QUESTIONS, "", "## Tasks"]
     for tid, f in task_files(root).items():
         text = f.read_text()
         m = re.search(r"^milestone: *(.+?) *$", text, re.M)
