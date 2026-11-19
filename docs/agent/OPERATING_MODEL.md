@@ -482,6 +482,7 @@ Practical points:
 - Real database or framework behavior needs a real instance; each test gets its own instance with cleanup of timers, listeners and shared state; a fake server is maintained together with the real API contract.
 - A check that cannot parse its input (NaN, empty file) fails instead of passing silently: assert the input is valid first.
 - A browser or UI check done by hand a second time is the signal to propose a test framework (`R-DESIGN` "Propose missing tools"). Playwright pitfalls: run the main flows in a phone viewport too (the desktop viewport may open a two-pane layout); `getByText` matches substrings case-insensitively, so give indicators their own element or use `exact`; a shared e2e database makes names collide, use unique ones per test.
+- A bug-fix criterion is E2-proven only by a pin test that fails before the fix and passes after it; name the test in the evidence line.
 - Run suites via `scripts/run.sh`; load only failing sections of a log.
 - A probe firing in `probes.jsonl` proves only that the code ran in a real session, not that its result was right; test runs never count as firing (`docs/agent/PROBES.md`).
 <!-- RULE:R-VERIFY:END -->
