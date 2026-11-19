@@ -106,6 +106,19 @@ class ContextReport(Sandbox):
         self.assertIn("sessions=1 turns=2", r.stdout)
         self.assertIn("models=claude-sonnet-5-5", r.stdout)
 
+    def test_by_model_splits_tokens_prices_and_keeps_unknown(self):
+        def rec(model, tok):
+            r = assistant(model, tok); r["message"]["usage"]["output_tokens"] = 1000
+            if model is None: del r["message"]["model"]
+            return r
+        r = self.report([rec("claude-sonnet-5-5", 100), rec("claude-opus-5-5", 100), rec("claude-fable-5-2", 100), rec(None, 100)], "--by-model", "--tasks", "2")
+        for name in ("claude-sonnet-5-5:", "claude-opus-5-5:", "claude-fable-5-2:", "unknown:"):
+            self.assertIn(name, r.stdout)
+        self.assertIn("dated 2026-11-19", r.stdout)
+        self.assertRegex(r.stdout, r"claude-fable-5-2: .*est cost n/a")
+        self.assertRegex(r.stdout, r"unknown: .*est cost n/a")
+        self.assertRegex(r.stdout, r"claude-sonnet-5-5: .*est cost \$0\.0[0-9] \| per accepted task: .*output 500")
+
     def test_since_filters_old_records(self):
         r = self.report([assistant("claude-sonnet-5-5", 1000, ts="2026-01-01T00:00:00Z")], "--brief", "--since", "2026-06-01")
         self.assertIn("not evaluable", r.stdout)

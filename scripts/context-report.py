@@ -3,6 +3,7 @@
 Usage: scripts/context-report.py [--since TIME] [--until TIME] [--main-only] [--brief|--cost] [transcript-dir]   (default dir: this project's folder under ~/.claude/projects)
 --brief prints one key=value line (for retro-metrics.sh): sessions, turns, tokens, longest session, user_msgs (typed user messages, effort proxy), models and effort levels seen (confounders).
 --cost prints one key=value line for a window: turns, tool_calls, cache_read, output (retro-run.py finish uses it with --since/--until as UTC "YYYY-MM-DDTHH:MM:SSZ" and --main-only).
+--by-model [--tasks N] prints tokens per model (turns, fresh input, cache_write, cache_read, output) and an estimated cost; with --tasks N (accepted tasks) also per accepted task. Records without model info show as "unknown".
 --main-only skips subagent transcripts and sidechain records.
 TIME: YYYY-MM-DD[ HH:MM] is local time; ISO with Z or offset (2026-11-03T15:10Z) is taken as given. --since limits sessions, totals
 and biggest carried results to records at or after it (retro metrics that start after a change); the report prints the UTC window.
@@ -10,6 +11,31 @@ Prints numbers only. Labels may contain tool names, file base names and the firs
 review before copying anything into notes. The transcript format is undocumented; unknown format -> "not evaluable".
 Estimates are rough (characters / 4; assumes a result stays in context until the session ends, so compaction makes it an upper bound)."""
 import collections, datetime as dt, glob, json, os, re, sys
+
+# Price table (USD per million tokens), the one place for cost estimates. Estimate from public list prices, dated; check before relying on it.
+# Matched by family name in the model id; a model without a match shows cost "n/a", never 0. Order: input, cache_write, cache_read, output.
+PRICES_DATE = "2026-11-19"
+PRICES = {"opus": (15.0, 18.75, 1.50, 75.0), "sonnet": (3.0, 3.75, 0.30, 15.0), "haiku": (1.0, 1.25, 0.10, 5.0)}
+
+def price_of(model):
+    for fam, p in PRICES.items():
+        if fam in model.lower(): return p
+    return None
+
+def by_model_report(per_model, tasks):
+    print("tokens per model (cost estimate from the price table in context-report.py, dated %s, USD per MTok; 'n/a' = model not in the table; 'unknown' = records without model info):" % PRICES_DATE)
+    total, known = 0.0, True
+    for name, (turns, u) in sorted(per_model.items(), key=lambda kv: -kv[1][1]["output_tokens"]):
+        ks = ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens", "output_tokens")
+        p = price_of(name)
+        cost = sum(u[k] * c for k, c in zip(ks, p)) / 1e6 if p else None
+        if cost is None: known = False
+        else: total += cost
+        line = "  %s: turns %d, input %d, cache_write %d, cache_read %d, output %d, est cost %s" % (name, turns, u[ks[0]], u[ks[1]], u[ks[2]], u[ks[3]], "$%.2f" % cost if cost is not None else "n/a")
+        if tasks > 0:
+            line += " | per accepted task: input %d, cache_read %dk, output %d, cost %s" % (u[ks[0]] // tasks, u[ks[2]] // tasks // 1000, u[ks[3]] // tasks, "$%.2f" % (cost / tasks) if cost is not None else "n/a")
+        print(line)
+    if tasks > 0: print("  all models: est cost %s%s, per accepted task %s" % ("$%.2f" % total, "" if known else " (without n/a models)", "$%.2f" % (total / tasks)))
 
 RULE_ID = re.compile(r"\bR-[A-Z][A-Z-]+[A-Z]\b")
 
@@ -30,8 +56,10 @@ def main():
     args = sys.argv[1:]
     since = utc_since(args[args.index("--since") + 1]) if "--since" in args else ""
     until = utc_since(args[args.index("--until") + 1]) if "--until" in args else ""
+    by_model = "--by-model" in args
+    tasks = int(args[args.index("--tasks") + 1]) if "--tasks" in args else 0
     brief, cost, main_only = "--brief" in args, "--cost" in args, "--main-only" in args
-    pos = [a for i, a in enumerate(args) if not a.startswith("--") and (i == 0 or args[i - 1] not in ("--since", "--until"))]
+    pos = [a for i, a in enumerate(args) if not a.startswith("--") and (i == 0 or args[i - 1] not in ("--since", "--until", "--tasks"))]
     dirs = [pos[0]] if pos else project_dirs()
     d = ", ".join(dirs)
     files = sorted(f for x in dirs for f in glob.glob(glob.escape(x) + "/**/*.jsonl", recursive=True))
@@ -42,6 +70,7 @@ def main():
     tot, sess, by_tool, cnt, offenders = collections.Counter(), [], collections.Counter(), collections.Counter(), []
     rules, skills, docs = collections.Counter(), collections.Counter(), collections.Counter()
     models, efforts = collections.Counter(), collections.Counter()
+    per_model = {}
     def size(c):
         if isinstance(c, str): return len(c)
         if isinstance(c, list): return sum(len(x.get("text", "")) if isinstance(x, dict) else len(str(x)) for x in c)
@@ -63,6 +92,11 @@ def main():
             if r.get("type") == "assistant":
                 turns += 1
                 models[str(m.get("model", "?"))] += 1
+                mname = str(m.get("model") or "unknown")
+                if mname == "?": mname = "unknown"
+                pm = per_model.setdefault(mname, [0, collections.Counter()]); pm[0] += 1
+                for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens", "output_tokens"):
+                    pm[1][k] += (m.get("usage") or {}).get(k, 0)
                 if r.get("effort"): efforts[str(r.get("effort"))] += 1
                 for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens", "output_tokens"):
                     u[k] += (m.get("usage") or {}).get(k, 0)
@@ -92,6 +126,8 @@ def main():
         tot.update(u)
     if not sum(tot.values()):
         print("not evaluable: no usage data (format changed?)"); return 0
+    if by_model:
+        by_model_report(per_model, tasks); return 0
     if cost:
         print("turns=%d tool_calls=%d cache_read=%d output=%d" % (sum(s[1] for s in sess), tool_calls, tot["cache_read_input_tokens"], tot["output_tokens"]))
         return 0

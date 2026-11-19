@@ -119,6 +119,7 @@ if [ -f scripts/context-report.py ] && [ -n "$py" ]; then
     echo "usage: $b"
     t=$(echo "$b" | sed -n 's/.* turns=\([0-9]*\).*/\1/p'); c=$(echo "$b" | sed -n 's/.*cache_read=\([0-9]*\).*/\1/p')
     if [ "$done_p" -gt 0 ]; then echo "per accepted task: turns $((t/done_p)), cache_read $((c/done_p/1000))k tokens (small numbers of tasks: an indication, not proof)"; fi
+    $py scripts/context-report.py --since "$since" --by-model --tasks "$done_p" 2>/dev/null
     um=$(echo "$b" | sed -n 's/.* user_msgs=\([0-9]*\).*/\1/p')
     if [ -n "$um" ] && [ "$done_p" -gt 0 ]; then echo "human effort proxy: $um typed user messages, $((um/done_p)) per accepted task (method: transcript user records with text, tool results and subagents excluded; sessions spanning several tasks and several projects blur it)"; fi ;;
   *) echo "usage: not evaluable" ;;
