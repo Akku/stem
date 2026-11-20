@@ -62,7 +62,7 @@ if beh == "api_error0":
     print(json.dumps({"is_error": True, "api_error_status": 429, "session_id": sid})); sys.exit(0)
 if beh == "hang_child":
     import subprocess as sp
-    sp.Popen(["sh", "-c", "sleep 3; touch " + td + "/orphan"]); import time; time.sleep(10)
+    sp.Popen(["sh", "-c", "sleep 6; touch " + td + "/orphan"]); import time; time.sleep(14)
 if beh == "hang":
     import time; time.sleep(10)
 if beh == "crash":
@@ -703,7 +703,7 @@ class Tron(unittest.TestCase):
         self.config({"session_timeout": 1})
         self.behavior({"TASK-1": "hang_child"})
         self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
-        import time; time.sleep(4)
+        import time; time.sleep(7)
         self.assertFalse((self.td / "orphan").exists())
 
     def test_review_api_error_with_exit_zero_is_retried(self):
