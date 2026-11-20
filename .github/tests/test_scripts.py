@@ -180,6 +180,57 @@ class ContextReport(Sandbox):
         self.assertIn("'retro': 1", r.stdout)
 
 
+class MetricsExplorer(Sandbox):
+    """TASK-311: data collection and the offline HTML file."""
+    def build(self):
+        root = self.tmp / "proj"; (root / "backlog/tasks").mkdir(parents=True); (root / "docs/agent/retro-runs").mkdir(parents=True)
+        (root / "backlog/tasks/task-7 - x.md").write_text("---\nid: TASK-7\ntitle: >-\n  Do the\n  thing\nstatus: Done\ncreated_date: '2026-10-20 08:00'\nupdated_date: '2026-10-20 12:00'\nlabels:\n  - size-S\nmilestone: m-1\n---\n\n## Acceptance Criteria\n- [x] #1 a\n\n## Definition of Done\n- [x] #1 d\nAC#1: E2 log\nOutcome: corrections=1 rework=5min defects=0\nLearning: x\n")
+        (root / "docs/agent/retro-runs/2026-10-21.json").write_text(json.dumps({"label": "2026-10-21", "stage": "light", "result": {"adopted": 1, "open_signals": 0}, "cost": {"turns": 9}}))
+        run(["git", "init", "-q"], root); run(["git", "commit", "-q", "--allow-empty", "-m", "TASK-7: done", "--date", "2026-10-20T10:00:30Z"], root, {"GIT_COMMITTER_DATE": "2026-10-20T10:00:30Z"})
+        d = self.tmp / "tr"; (d / "abcdef12-s" / "subagents").mkdir(parents=True)
+        secret = [{"type": "text", "text": "SECRET-MESSAGE-TEXT"}]
+        write_jsonl(d / "abcdef12-s.jsonl", [{"type": "user", "timestamp": "2026-10-20T10:00:00Z", "message": {"content": "SECRET-MESSAGE-TEXT"}},
+                                             assistant("claude-sonnet-5-5", 1000, content=secret, ts="2026-10-20T10:01:00Z"),
+                                             assistant("claude-fable-5-2", 1000, ts="2026-10-20T10:20:00Z"),
+                                             assistant("<synthetic>", 0, ts="2026-10-20T10:20:01Z")])
+        # one message split into two records (thinking, then tool_use) with the same id: one turn, one tool call, usage once
+        split = [assistant("claude-sonnet-5-5", 7, ts="2026-10-20T10:01:30Z", content=c) for c in ([{"type": "thinking"}], [{"type": "tool_use", "id": "t1", "name": "Bash", "input": {}}])]
+        for x in split: x["message"]["id"] = "msg-1"
+        with open(d / "abcdef12-s.jsonl", "a") as fh: fh.write("\n".join(json.dumps(x) for x in split) + "\n")
+        write_jsonl(d / "abcdef12-s" / "subagents" / "a.jsonl", [assistant("claude-haiku-5-5", 500, sidechain=True)])
+        return root, d
+
+    def test_json_collects_numbers_links_tasks_and_keeps_unknown_price_na(self):
+        root, d = self.build()
+        r = run([sys.executable, str(SCRIPTS / "metrics-explorer.py"), "--json", str(d)], root)
+        data = json.loads(r.stdout)
+        s = data["sessions"][0]
+        self.assertEqual((s["turns"], s["tool_calls"], s["subagent_turns"], s["tasks"]), (3, 1, 1, ["TASK-7"]))
+        self.assertEqual(s["models"]["claude-sonnet-5-5"]["input"], 1007)
+        self.assertEqual(s["active_min"], 1.5)  # the 19-minute gap is idle
+        self.assertIsNone(s["cost"])            # fable has no price: n/a, never 0
+        self.assertIsNotNone(s["models"]["claude-haiku-5-5"]["cost"])
+        t = data["tasks"][0]
+        self.assertEqual((t["title"], t["size"], t["milestone"], t["cycle_h"], t["e2"], t["learnings"]), ("Do the thing", "S", "m-1", 4.0, 1, 1))
+        self.assertEqual(t["outcome"], {"corrections": 1, "rework_min": 5, "defects": 0})
+        self.assertEqual(data["retros"][0]["adopted"], 1)
+        self.assertNotIn("SECRET-MESSAGE-TEXT", r.stdout)
+
+    def test_html_is_offline_and_embeds_data_once(self):
+        root, d = self.build()
+        out = self.tmp / "x.html"
+        r = run([sys.executable, str(SCRIPTS / "metrics-explorer.py"), "--out", str(out), str(d)], root)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        html = out.read_text()
+        self.assertNotIn("__STEM_DATA__", html)
+        self.assertIn('"TASK-7"', html)
+        self.assertNotIn("SECRET-MESSAGE-TEXT", html)
+        t = root / "backlog/tasks/task-7 - x.md"; t.write_text(t.read_text().replace("Do the", "<!--<script> Do the"))
+        run([sys.executable, str(SCRIPTS / "metrics-explorer.py"), "--out", str(out), str(d)], root)
+        self.assertEqual(out.read_text().count("<script"), html.count("<script"), "a title cannot open a script tag")
+        self.assertIsNone(re.search(r"(src|href)=[\"']?(https?:)?//|@import|fetch\(|XMLHttpRequest", html), "no network references")
+
+
 class WorktreeTranscripts(Sandbox):
     """TASK-220: main and worktree transcript folders of one project are counted, from the main checkout or from a worktree."""
     def setUp(self):
