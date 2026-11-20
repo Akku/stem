@@ -128,6 +128,24 @@ dl.kv{display:grid;grid-template-columns:minmax(9rem,auto) 1fr;gap:4px var(--sp4
 dl.kv dt{color:var(--muted)}dl.kv dd{margin:0}
 .close{min-width:44px;min-height:44px}
 footer{max-width:1240px;margin:0 auto;padding:var(--sp4);font-size:var(--t-xs);color:var(--muted);border-top:1px solid var(--line)}
+/* chart hover: highlight the hovered mark(s), dim the rest, one floating tooltip */
+svg.hz{touch-action:pan-y}
+svg.hz:focus{outline:none}svg.hz:focus-visible{outline:2px solid var(--accent);outline-offset:4px}
+svg .band{fill:var(--accent-weak)}
+@media (prefers-reduced-motion:no-preference){svg .mk{transition:opacity .12s}}
+svg.hov .mk:not(.hl){opacity:.3}
+svg .pt.hl{stroke:var(--text);stroke-width:2.5px}
+svg line.mk.hl{stroke:var(--text);stroke-width:2px}
+.tip{position:fixed;z-index:20;pointer-events:none;max-width:min(300px,calc(100vw - 16px));padding:8px 10px;background:var(--surface);color:var(--text);border:1px solid var(--line-strong);border-radius:6px;box-shadow:0 4px 16px rgba(10,12,16,.18);font-size:var(--t-sm);line-height:1.35}
+.tip>b{display:block;font-weight:600}
+.tip .tsub{color:var(--muted);font-size:var(--t-xs);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tip table{width:auto;margin-top:6px;font-size:var(--t-sm)}
+.tip th,.tip td{padding:1px 0;border:0;background:none;position:static;font-weight:400}
+.tip th{padding:1px 12px 1px 0;color:var(--muted);text-align:left}
+.tip td:first-child{padding-right:6px;width:12px}
+.tip td.n{font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
+.tip tr.ttot th,.tip tr.ttot td{border-top:1px solid var(--line);padding-top:3px;color:var(--text)}
+.tip .thint{margin-top:6px;color:var(--muted);font-size:var(--t-xs)}
 .vh{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 </style>
 </head>
@@ -252,20 +270,64 @@ function barChart(o){
  const tk=ticks(Math.max(0,...tot,...(o.line?o.line.v.filter(ok):[]))),mx=tk[tk.length-1]||1;
  const y=v=>T+ih-(v/mx)*ih;
  const g=S('svg',{width:W,height:H,viewBox:'0 0 '+W+' '+H,role:'img','aria-label':o.label});
+ g._band=S('rect',{class:'band',y:T,height:ih,x:0,width:0,visibility:'hidden'});g.append(g._band);
  for(const t of tk){g.append(S('line',{x1:L,x2:W-R,y1:y(t),y2:y(t),class:t?'grid':'axis'}));g.append(S('text',{x:L-6,y:y(t)+4,'text-anchor':'end'},o.fmt(t)))}
- const step=Math.max(1,Math.ceil(n/Math.max(1,Math.floor(iw/58))));
+ const step=Math.max(1,Math.ceil(n/Math.max(1,Math.floor(iw/58)))),tf=o.tfmt||o.fmt,items=[];
  o.B.forEach((b,i)=>{
-  const x0=L+i*bw,pad=Math.min(bw*.18,8),inner=Math.max(1,bw-2*pad);
-  if(o.group){const sw=inner/o.ser.length;o.ser.forEach((s,j)=>{const v=val(i,s.k);if(v>0){const r=S('rect',{x:x0+pad+j*sw,y:y(v),width:Math.max(1,sw-1),height:y(0)-y(v),fill:s.c});r.append(S('title',null,b.full+' · '+s.label+': '+o.fmt(v)));g.append(r)}})}
-  else{let acc=0;for(const s of o.ser){const v=val(i,s.k);if(v>0){const r=S('rect',{x:x0+pad,y:y(acc+v),width:inner,height:Math.max(.5,y(acc)-y(acc+v)),fill:s.c,stroke:'var(--surface)','stroke-width':inner>6?.75:0});r.append(S('title',null,b.full+' · '+s.label+': '+o.fmt(v)));g.append(r);acc+=v}}
+  const x0=L+i*bw,pad=Math.min(bw*.18,8),inner=Math.max(1,bw-2*pad),nodes=[];
+  if(o.group){const sw=inner/o.ser.length;o.ser.forEach((s,j)=>{const v=val(i,s.k);if(v>0){const r=S('rect',{x:x0+pad+j*sw,y:y(v),width:Math.max(1,sw-1),height:y(0)-y(v),fill:s.c,class:'mk'});nodes.push(r);g.append(r)}})}
+  else{let acc=0;for(const s of o.ser){const v=val(i,s.k);if(v>0){const r=S('rect',{x:x0+pad,y:y(acc+v),width:inner,height:Math.max(.5,y(acc)-y(acc+v)),fill:s.c,stroke:'var(--surface)','stroke-width':inner>6?.75:0,class:'mk'});nodes.push(r);g.append(r);acc+=v}}
    if(tot[i]>0&&bw>=34)g.append(S('text',{x:x0+bw/2,y:y(tot[i])-4,'text-anchor':'middle',class:'lbl'},o.fmt(tot[i],1)))}
   if(i%step===0)g.append(S('text',{x:x0+bw/2,y:H-Bm+16,'text-anchor':'middle'},b.label));
+  const rows=(o.group?o.ser:o.ser.slice().reverse()).map(s=>({c:s.c,l:s.label,v:tf(val(i,s.k))}));
+  if(!o.group&&o.ser.length>1)rows.push({l:'Total',v:tf(tot[i]),tot:1});
+  items.push({x:x0+bw/2,y:y(tot[i]),band:[x0,bw],nodes,title:b.full,rows});
  });
- if(o.line){const pts=o.line.v.map((v,i)=>ok(v)?[L+i*bw+bw/2,y(v)]:null).filter(Boolean);
-  g.append(S('polyline',{points:pts.map(p=>p.join(',')).join(' '),fill:'none',stroke:o.line.c,'stroke-width':2}));
-  pts.forEach((p,i)=>{const c=S('circle',{cx:p[0],cy:p[1],r:3,fill:o.line.c});c.append(S('title',null,o.B[i].full+' · '+o.line.label+': '+o.fmt(o.line.v[i])));g.append(c)})}
+ if(o.line){const pts=o.line.v.map((v,i)=>ok(v)?[L+i*bw+bw/2,y(v),i]:null).filter(Boolean);
+  g.append(S('polyline',{points:pts.map(p=>p[0]+','+p[1]).join(' '),fill:'none',stroke:o.line.c,'stroke-width':2}));
+  pts.forEach(p=>{const c=S('circle',{cx:p[0],cy:p[1],r:3,fill:o.line.c,class:'mk pt'});g.append(c);const it=items[p[2]];it.nodes.push(c);it.rows.push({c:o.line.c,l:o.line.label,v:tf(o.line.v[p[2]]),ln:1});it.y=Math.min(it.y,p[1])})}
+ return hoverable(g,items,'x',[T,T+ih]);
+}
+/* hover highlight + floating tooltip: one tooltip node, charts register items {x,y,nodes,title,sub,rows,band,open} */
+const tip=el('div',{class:'tip',id:'tip',role:'tooltip',hidden:true});document.body.append(tip);
+let hv=null;
+function hoverable(g,items,mode,py){
+ g._it=items;g._mode=mode;g._py=py;if(!items.length)return g;
+ g.classList.add('hz');g.setAttribute('tabindex','0');g.setAttribute('aria-describedby','tip');
+ g.setAttribute('aria-label',g.getAttribute('aria-label')+'. Arrow keys step through values'+(items.some(i=>i.open)?', Enter opens details':'')+'.');
  return g;
 }
+function pick(g,x,y){
+ const it=g._it;
+ if(g._mode==='x'){if(g._py&&(y<g._py[0]-12||y>g._py[1]+4))return -1;return it.findIndex(i=>x>=i.band[0]&&x<i.band[0]+i.band[1])}
+ let bi=-1,bd=16*16;it.forEach((i,k)=>{const d=(i.x-x)**2+(i.y-y)**2;if(d<bd){bd=d;bi=k}});return bi;
+}
+function unhover(){if(!hv)return;const{g,i}=hv,it=g._it[i];g.classList.remove('hov');if(it)for(const n of it.nodes)n.classList.remove('hl');if(g._band)g._band.setAttribute('visibility','hidden');g.style.cursor='';tip.hidden=true;hv=null}
+function hover(g,i,cx,cy){
+ if(hv&&hv.g===g&&hv.i===i){place(cx,cy);return}
+ unhover();const it=g._it[i];if(!it)return;hv={g,i};
+ g.classList.add('hov');for(const n of it.nodes){n.classList.add('hl');if(g._mode==='xy')n.parentNode.append(n)}
+ if(it.band&&g._band){g._band.setAttribute('x',it.band[0]);g._band.setAttribute('width',it.band[1]);g._band.removeAttribute('visibility')}
+ g.style.cursor=it.open?'pointer':'';
+ tip.textContent='';
+ add(tip,[el('b',{text:it.title}),it.sub?el('div',{class:'tsub',text:it.sub}):null,
+  el('table',null,el('tbody',null,it.rows.map(r=>el('tr',{class:r.tot?'ttot':null},el('td',null,r.c?el('span',{class:'sw'+(r.ln?' ln':'')+(r.ring?' ring':''),style:r.ring?'color:'+r.c:'background:'+r.c,'aria-hidden':'true'}):null),el('th',{scope:'row',text:r.l}),el('td',{class:'n',text:r.v}))))),
+  it.open?el('div',{class:'thint',text:'Click or press Enter for details'}):null]);
+ tip.hidden=false;place(cx,cy);
+}
+function place(cx,cy){const w=tip.offsetWidth,h=tip.offsetHeight,m=8;let l=cx+14,t=cy-h-12;if(l+w>innerWidth-m)l=Math.max(m,cx-14-w);if(t<m)t=Math.min(innerHeight-h-m,cy+18);tip.style.left=l+'px';tip.style.top=t+'px'}
+function svgPt(g,e){const r=g.getBoundingClientRect(),k=(g.viewBox.baseVal.width||r.width)/r.width;return[(e.clientX-r.left)*k,(e.clientY-r.top)*k]}
+function itemClient(g,it){const r=g.getBoundingClientRect(),k=r.width/(g.viewBox.baseVal.width||r.width);return[r.left+it.x*k,r.top+it.y*k]}
+main.addEventListener('pointermove',e=>{const g=e.target.closest&&e.target.closest('svg.hz');if(!g){unhover();return}const[x,y]=svgPt(g,e),i=pick(g,x,y);if(i<0)unhover();else hover(g,i,e.clientX,e.clientY)});
+main.addEventListener('pointerleave',unhover);
+main.addEventListener('click',e=>{const g=e.target.closest&&e.target.closest('svg.hz');if(!g)return;const[x,y]=svgPt(g,e),i=pick(g,x,y),it=i>=0&&g._it[i];if(it&&it.open){unhover();it.open()}});
+main.addEventListener('focusin',e=>{const g=e.target;if(g.classList&&g.classList.contains('hz')){const i=hv&&hv.g===g?hv.i:0;hover(g,i,...itemClient(g,g._it[i]))}});
+main.addEventListener('focusout',e=>{if(hv&&hv.g===e.target)unhover()});
+main.addEventListener('keydown',e=>{const g=e.target;if(!g.classList||!g.classList.contains('hz'))return;const n=g._it.length,c=hv&&hv.g===g?hv.i:0;let i=null;
+ if(e.key==='ArrowRight'||e.key==='ArrowDown')i=Math.min(n-1,c+1);else if(e.key==='ArrowLeft'||e.key==='ArrowUp')i=Math.max(0,c-1);else if(e.key==='Home')i=0;else if(e.key==='End')i=n-1;
+ else if(e.key==='Escape'){unhover();return}else if(e.key==='Enter'&&g._it[c].open){e.preventDefault();unhover();g._it[c].open();return}
+ if(i!=null){e.preventDefault();hover(g,i,...itemClient(g,g._it[i]))}});
+addEventListener('scroll',unhover,{passive:true});
 function dataTable(cols,rows){return el('details',{class:'data'},el('summary',{text:'Show data as table'}),el('div',{class:'tw tall'},el('table',null,el('thead',null,el('tr',null,cols.map(c=>el('th',{class:c.n?'n':null,scope:'col',text:c.l})))),el('tbody',null,rows.map(r=>el('tr',null,cols.map((c,i)=>el('td',{class:c.n?'n':null,text:r[i]}))))))))}
 /* sortable table; first column is a button opening details */
 function sortTable(o){
@@ -318,8 +380,8 @@ function rCost(){
    dataTable(dcols,B.map((b,i)=>[b.full].concat(ser.map(x=>usd(vc[i][x.k]||0)),[usd(ser.reduce((a,x)=>a+(vc[i][x.k]||0),0))])))),
   panel('Tokens per '+(week?'week':'day')+', by model','Cache reads usually dominate the total; pick a token type to compare the others.',el('div',{style:'display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:8px'},el('label',{for:'tk',class:'mut',text:'Show'}),tsel),lg.cloneNode(true),c2,
    dataTable(dcols,B.map((b,i)=>[b.full].concat(ser.map(x=>tok(vt[i][x.k]||0)),[tok(ser.reduce((a,x)=>a+(vt[i][x.k]||0),0))])))));
- SEC.draw.push(()=>{c1.append(barChart({w:cw('ch-cost'),B,ser,v:vc,fmt:(v,t)=>'$'+(v>=100||t?Math.round(v):v.toFixed(v<1&&v>0?2:0)),label:'Estimated cost per '+(week?'week':'day')+' stacked by model'}));
-  c2.append(barChart({w:cw('ch-tok'),B,ser,v:vt,fmt:tok,label:'Tokens per '+(week?'week':'day')+' stacked by model'}))});
+ SEC.draw.push(()=>{c1.append(barChart({w:cw('ch-cost'),B,ser,v:vc,fmt:(v,t)=>'$'+(v>=100||t?Math.round(v):v.toFixed(v<1&&v>0?2:0)),tfmt:usd,label:'Estimated cost per '+(week?'week':'day')+' stacked by model'}));
+  c2.append(barChart({w:cw('ch-tok'),B,ser,v:vt,fmt:tok,tfmt:int,label:'Tokens per '+(week?'week':'day')+' stacked by model'}))});
  // per model table
  const pm={};let all=0;for(const x of F.Sp)for(const[m,v]of Object.entries(sModels(x))){const o=pm[m]||(pm[m]={n:0,turns:0,input:0,cache_write:0,cache_read:0,output:0,cost:0,miss:0});o.n++;o.turns+=v.turns||0;TK.forEach(([k])=>o[k]+=v[k]||0);if(ok(v.cost)){o.cost+=v.cost;all+=v.cost}else o.miss++}
  const ms=Object.keys(pm).sort((a,b)=>(pm[b].miss?-1:pm[b].cost)-(pm[a].miss?-1:pm[a].cost));
@@ -347,11 +409,14 @@ function stripPlot(w,groups){
  const lo=Math.log10(.05),hi=Math.log10(Math.max(1,...vals)*1.1),x=v=>L+(Math.log10(Math.max(v,.05))-lo)/(hi-lo)*(w-L-R);
  const g=S('svg',{width:w,height:H,viewBox:'0 0 '+w+' '+H,role:'img','aria-label':'Cycle time per Done task by size label, log scale'});
  for(const t of[.1,1,10,100,1000])if(Math.log10(t)<=hi){g.append(S('line',{x1:x(t),x2:x(t),y1:T,y2:H-22,class:'grid'}));g.append(S('text',{x:x(t),y:H-6,'text-anchor':'middle'},t<1?'6 min':t+' h'))}
+ const items=[];
  groups.forEach((gr,j)=>{const cy=T+j*46+23;g.append(S('text',{x:0,y:cy+4,class:'lbl'},gr.l));g.append(S('text',{x:0,y:cy+17},'n = '+gr.v.length));
   if(gr.v.length>1){const a=quant(gr.v,.25),b=quant(gr.v,.75);g.append(S('rect',{x:x(a),y:cy-12,width:Math.max(1,x(b)-x(a)),height:24,fill:'var(--accent-weak)',stroke:'var(--line-strong)'}))}
-  gr.v.forEach((v,i)=>{const c=S('circle',{cx:x(v),cy:cy+((i*37)%17-8),r:3,fill:'none',stroke:'var(--s1)','stroke-width':1.4});c.append(S('title',null,gr.ids[i]+': '+hrs(v)));g.append(c)});
-  if(gr.v.length){const m=median(gr.v);g.append(S('line',{x1:x(m),x2:x(m),y1:cy-15,y2:cy+15,stroke:'var(--s3)','stroke-width':3}))}});
- return g;
+  gr.v.forEach((v,i)=>{const px=x(v),py=cy+((i*37)%17-8),c=S('circle',{cx:px,cy:py,r:3,fill:'none',stroke:'var(--s1)','stroke-width':1.4,class:'mk pt'});g.append(c);
+   const t=byId.get(gr.ids[i]);items.push({x:px,y:py,nodes:[c],title:gr.ids[i],sub:t?t.title:null,rows:[{c:'var(--s1)',ring:1,l:'Cycle time',v:hrs(v)},{l:'Size',v:gr.l.replace(/^Size /,'')}],open:t?()=>openTask(t):null})});
+  if(gr.v.length){const m=median(gr.v),q1=quant(gr.v,.25),q3=quant(gr.v,.75),ml=S('line',{x1:x(m),x2:x(m),y1:cy-15,y2:cy+15,stroke:'var(--s3)','stroke-width':3,class:'mk'});g.append(ml);
+   items.push({x:x(m),y:cy-15,nodes:[ml],title:gr.l+': median',rows:[{c:'var(--s3)',ln:1,l:'Median',v:hrs(m)},{l:'Middle 50 %',v:hrs(q1)+' to '+hrs(q3)},{l:'Tasks',v:int(gr.v.length)}]})}});
+ return hoverable(g,items,'xy');
 }
 function ctxChart(w,ss){
  const H=240,L=54,R=10,T=12,B=28,a=F.a,b=F.b;const tk=ticks(Math.max(1,...ss.map(s=>s.peak_ctx||0))),mx=tk[tk.length-1];
@@ -359,10 +424,11 @@ function ctxChart(w,ss){
  const g=S('svg',{width:w,height:H,viewBox:'0 0 '+w+' '+H,role:'img','aria-label':'Context size per session: start to peak, over time'});
  for(const t of tk){g.append(S('line',{x1:L,x2:w-R,y1:y(t),y2:y(t),class:t?'grid':'axis'}));g.append(S('text',{x:L-6,y:y(t)+4,'text-anchor':'end'},tok(t)))}
  const B2=buckets(a,b,(b-a)/DAY>62),step=Math.max(1,Math.ceil(B2.length/Math.floor((w-L-R)/58)));B2.forEach((k,i)=>{if(i%step===0)g.append(S('text',{x:x(k.s),y:H-8,'text-anchor':'middle'},k.label))});
- for(const s of ss){const cx=x(s._t);g.append(S('line',{x1:cx,x2:cx,y1:y(s.start_ctx||0),y2:y(s.peak_ctx||0),stroke:'var(--line-strong)','stroke-width':1}));
-  const c=s.compactions>0?S('rect',{x:cx-4,y:y(s.peak_ctx)-4,width:8,height:8,fill:'var(--s3)'}):S('circle',{cx,cy:y(s.peak_ctx||0),r:3,fill:'var(--s1)'});
-  c.append(S('title',null,'Session '+s.id+' '+dt(s.start)+': start '+tok(s.start_ctx)+', peak '+tok(s.peak_ctx)+', compactions '+s.compactions));g.append(c)}
- return g;
+ const items=[];
+ for(const s of ss){const cx=x(s._t),py=y(s.peak_ctx||0),l=S('line',{x1:cx,x2:cx,y1:y(s.start_ctx||0),y2:py,stroke:'var(--line-strong)','stroke-width':1,class:'mk'});g.append(l);
+  const cp=s.compactions>0,c=cp?S('rect',{x:cx-4,y:py-4,width:8,height:8,fill:'var(--s3)',class:'mk pt'}):S('circle',{cx,cy:py,r:3,fill:'var(--s1)',class:'mk pt'});g.append(c);
+  items.push({x:cx,y:py,nodes:[l,c],title:'Session '+s.id,sub:dt(s.start)+' UTC',rows:[{c:cp?'var(--s3)':'var(--s1)',l:'Peak context',v:int(s.peak_ctx)},{c:'var(--line-strong)',ln:1,l:'Start context',v:int(s.start_ctx)},{l:'Compactions',v:int(s.compactions)}],open:()=>openSess(s)})}
+ return hoverable(g,items,'xy');
 }
 function rQuality(){
  const s=section('quality','Quality & process','Process signals from task files (Outcome line, evidence lines, BLOCKED, Learning notes) and transcripts. Counts, not judgements.');
@@ -446,7 +512,7 @@ const SCOLS=[
 function rTasks(){const s=section('tasks','Tasks','All tasks active in the period (created before its end, not finished before its start). Sort by any column; select a task for details. Session numbers count only sessions in the period.');
  s.append(el('div',{id:'tasks-t'},sortTable({key:'ts',all:'tAll',cols:TCOLS,rows:F.Tp,open:openTask,cap:'Tasks',redraw:()=>redrawPart('tasks',rTasks)})));return s}
 function rSess(){const s=section('sessions','Sessions','One row per transcript (main thread; subagent tokens are included in cost). Select a session for its models and linked tasks.');
- s.append(sortTable({key:'ss',all:'sAll',cols:SCOLS,rows:F.Sp,open:openSess,cap:'Sessions',redraw:()=>redrawPart('sessions',rSess)}));return s}
+ s.append(...sortTable({key:'ss',all:'sAll',cols:SCOLS,rows:F.Sp,open:openSess,cap:'Sessions',redraw:()=>redrawPart('sessions',rSess)}));return s}
 /* ---------- details dialog ---------- */
 const dlg=$('dlg');let back=null;
 function show(title,kids){if(!dlg.open)back=document.activeElement;$('dlg-title').textContent=title;const b=$('dlg-b');b.textContent='';add(b,kids);b.scrollTop=0;dlg.scrollTop=0;if(!dlg.open){if(dlg.showModal)dlg.showModal();else dlg.setAttribute('open','')}$('dlg-x').focus()}
@@ -485,9 +551,9 @@ function summary(){
  document.querySelectorAll('[data-preset]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.preset===String(pr)&&(pr==='all'||st.to===day(DEND-DAY)))));
 }
 function draw(){for(const f of SEC.draw)f()}
-function redrawPart(id,fn){const y=scrollY,old=$(id);SEC.draw=[];old.replaceWith(fn());draw();scrollTo(0,y)}
+function redrawPart(id,fn){unhover();const y=scrollY,old=$(id);SEC.draw=[];old.replaceWith(fn());draw();scrollTo(0,y)}
 function render(){
- const y=scrollY;compute();summary();SEC.draw=[];
+ const y=scrollY;unhover();compute();summary();SEC.draw=[];
  const frag=document.createDocumentFragment();frag.append(rOverview(),rCost(),rQuality(),rRetros(),rTasks(),rSess());
  main.style.minHeight=main.offsetHeight+'px';main.textContent='';main.append(frag);draw();main.style.minHeight='';
  scrollTo(0,y);
