@@ -4,8 +4,10 @@ import os, sys, unittest
 
 
 def main(verbosity=1):
-    suite = unittest.defaultTestLoader.loadTestsFromModule(sys.modules["__main__"])
     spec = os.environ.get("STEM_TEST_SHARD")
+    if not spec:
+        unittest.main(module="__main__", verbosity=verbosity)  # as before: honors test names given on the command line
+    suite = unittest.defaultTestLoader.loadTestsFromModule(sys.modules["__main__"])
     if spec:
         i, n = (int(x) for x in spec.split("/"))
         tests = []
