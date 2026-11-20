@@ -256,11 +256,18 @@ function kpi(a,b){
 function ticks(m){if(!(m>0))return[0,1];const r=m/4,p=10**Math.floor(Math.log10(r)),s=[1,2,2.5,5,10].map(x=>x*p).find(x=>x>=r);const a=[];for(let v=0;v<m-1e-9;v+=s)a.push(+v.toPrecision(6));a.push(+(a[a.length-1]+s).toPrecision(6));return a}
 function legend(items){return el('ul',{class:'legend'},items.map(i=>el('li',null,el('span',{class:'sw'+(i.ln?' ln':'')+(i.ring?' ring':''),style:i.ring?'color:'+i.c:'background:'+i.c,'aria-hidden':'true'}),i.label)))}
 function cw(id){const n=$(id);return n?Math.max(280,n.clientWidth):640}
-function buckets(a,b,week){
- const out=[];let t=a;if(week){const d=new Date(t).getUTCDay();t-=((d+6)%7)*DAY}
+/* bucket size by period length: day up to 62 days, week up to about a year (400 days), month beyond */
+const gran=(a,b)=>(b-a)/DAY>400?'month':(b-a)/DAY>62?'week':'day';
+function buckets(a,b,g){
+ const out=[];let t=a;
+ if(g==='month'){const d=new Date(a);t=Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),1);
+  while(t<b){const d2=new Date(t),e=Date.UTC(d2.getUTCFullYear(),d2.getUTCMonth()+1,1),y=String(d2.getUTCFullYear());out.push({s:t,e,label:MON[d2.getUTCMonth()]+" '"+y.slice(2),full:MON[d2.getUTCMonth()]+' '+y});t=e}
+  return out.slice(0,400)}
+ const week=g==='week';if(week){const d=new Date(t).getUTCDay();t-=((d+6)%7)*DAY}
  for(;t<b;t+=week?7*DAY:DAY)out.push({s:t,e:t+(week?7:1)*DAY,label:(week?'wk ':'')+md(t),full:week?'week of '+day(t):day(t)});
  return out.slice(0,400);
 }
+const gCap=g=>g[0].toUpperCase()+g.slice(1);
 const bIdx=(B,ms)=>{for(let i=0;i<B.length;i++)if(ms>=B[i].s&&ms<B[i].e)return i;return -1};
 /* bar chart: stacked or grouped series per bucket, optional line (same unit, one y-axis) */
 function barChart(o){
@@ -366,7 +373,7 @@ function rOverview(){
 }
 function rCost(){
  const s=section('cost','Cost & resources','Cost is an estimate: token counts times a dated price table (one source: context-report.py). A model without a price shows n/a and is left out of sums, never counted as 0. Times are UTC.');
- const week=(F.b-F.a)/DAY>62,B=buckets(F.a,F.b,week),ser=st.model?SER.filter(x=>x.k===serOf(st.model)):SER;
+ const gr=gran(F.a,F.b),B=buckets(F.a,F.b,gr),ser=st.model?SER.filter(x=>x.k===serOf(st.model)):SER;
  const vc=B.map(()=>({})),vt=B.map(()=>({}));let miss=0;
  const ki=st.tk==='all'?null:TK.findIndex(([k])=>k===st.tk);
  for(const x of F.Sp){const i=bIdx(B,x._t);if(i<0)continue;for(const[m,v]of Object.entries(sModels(x))){const k=serOf(m);if(ok(v.cost))vc[i][k]=(vc[i][k]||0)+v.cost;else miss++;const t=ki==null?TK.reduce((a,[kk])=>a+(v[kk]||0),0):v[TK[ki][0]]||0;vt[i][k]=(vt[i][k]||0)+t}}
@@ -375,13 +382,13 @@ function rCost(){
  const tsel=el('select',{id:'tk','aria-label':'Token type'},[['all','all token types']].concat(TK).map(([k,l])=>el('option',{value:k,selected:st.tk===k},l)));
  tsel.addEventListener('change',()=>{st.tk=tsel.value;render();const n=$('tk');if(n)n.focus()});
  const lg=legend(ser);
- const dcols=[{l:week?'Week':'Day'}].concat(ser.map(x=>({l:x.label,n:1})),[{l:'Total',n:1}]);
- g.append(panel('Est. cost per '+(week?'week':'day')+', by model','Stacked bars; the label on top is the bar total.'+(miss?' '+miss+' model share(s) without a price are left out.':''),lg,c1,
+ const dcols=[{l:gCap(gr)}].concat(ser.map(x=>({l:x.label,n:1})),[{l:'Total',n:1}]);
+ g.append(panel('Est. cost per '+gr+', by model','Stacked bars; the label on top is the bar total.'+(miss?' '+miss+' model share(s) without a price are left out.':''),lg,c1,
    dataTable(dcols,B.map((b,i)=>[b.full].concat(ser.map(x=>usd(vc[i][x.k]||0)),[usd(ser.reduce((a,x)=>a+(vc[i][x.k]||0),0))])))),
-  panel('Tokens per '+(week?'week':'day')+', by model','Cache reads usually dominate the total; pick a token type to compare the others.',el('div',{style:'display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:8px'},el('label',{for:'tk',class:'mut',text:'Show'}),tsel),lg.cloneNode(true),c2,
+  panel('Tokens per '+gr+', by model','Cache reads usually dominate the total; pick a token type to compare the others.',el('div',{style:'display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:8px'},el('label',{for:'tk',class:'mut',text:'Show'}),tsel),lg.cloneNode(true),c2,
    dataTable(dcols,B.map((b,i)=>[b.full].concat(ser.map(x=>tok(vt[i][x.k]||0)),[tok(ser.reduce((a,x)=>a+(vt[i][x.k]||0),0))])))));
- SEC.draw.push(()=>{c1.append(barChart({w:cw('ch-cost'),B,ser,v:vc,fmt:(v,t)=>'$'+(v>=100||t?Math.round(v):v.toFixed(v<1&&v>0?2:0)),tfmt:usd,label:'Estimated cost per '+(week?'week':'day')+' stacked by model'}));
-  c2.append(barChart({w:cw('ch-tok'),B,ser,v:vt,fmt:tok,tfmt:int,label:'Tokens per '+(week?'week':'day')+' stacked by model'}))});
+ SEC.draw.push(()=>{c1.append(barChart({w:cw('ch-cost'),B,ser,v:vc,fmt:(v,t)=>'$'+(v>=100||t?Math.round(v):v.toFixed(v<1&&v>0?2:0)),tfmt:usd,label:'Estimated cost per '+gr+' stacked by model'}));
+  c2.append(barChart({w:cw('ch-tok'),B,ser,v:vt,fmt:tok,tfmt:int,label:'Tokens per '+gr+' stacked by model'}))});
  // per model table
  const pm={};let all=0;for(const x of F.Sp)for(const[m,v]of Object.entries(sModels(x))){const o=pm[m]||(pm[m]={n:0,turns:0,input:0,cache_write:0,cache_read:0,output:0,cost:0,miss:0});o.n++;o.turns+=v.turns||0;TK.forEach(([k])=>o[k]+=v[k]||0);if(ok(v.cost)){o.cost+=v.cost;all+=v.cost}else o.miss++}
  const ms=Object.keys(pm).sort((a,b)=>(pm[b].miss?-1:pm[b].cost)-(pm[a].miss?-1:pm[a].cost));
@@ -423,7 +430,7 @@ function ctxChart(w,ss){
  const x=t=>L+(t-a)/(b-a)*(w-L-R),y=v=>T+(H-T-B)-(v/mx)*(H-T-B);
  const g=S('svg',{width:w,height:H,viewBox:'0 0 '+w+' '+H,role:'img','aria-label':'Context size per session: start to peak, over time'});
  for(const t of tk){g.append(S('line',{x1:L,x2:w-R,y1:y(t),y2:y(t),class:t?'grid':'axis'}));g.append(S('text',{x:L-6,y:y(t)+4,'text-anchor':'end'},tok(t)))}
- const B2=buckets(a,b,(b-a)/DAY>62),step=Math.max(1,Math.ceil(B2.length/Math.floor((w-L-R)/58)));B2.forEach((k,i)=>{if(i%step===0)g.append(S('text',{x:x(k.s),y:H-8,'text-anchor':'middle'},k.label))});
+ const B2=buckets(a,b,gran(a,b)),step=Math.max(1,Math.ceil(B2.length/Math.floor((w-L-R)/58)));B2.forEach((k,i)=>{if(i%step===0)g.append(S('text',{x:x(k.s),y:H-8,'text-anchor':'middle'},k.label))});
  const items=[];
  for(const s of ss){const cx=x(s._t),py=y(s.peak_ctx||0),l=S('line',{x1:cx,x2:cx,y1:y(s.start_ctx||0),y2:py,stroke:'var(--line-strong)','stroke-width':1,class:'mk'});g.append(l);
   const cp=s.compactions>0,c=cp?S('rect',{x:cx-4,y:py-4,width:8,height:8,fill:'var(--s3)',class:'mk pt'}):S('circle',{cx,cy:py,r:3,fill:'var(--s1)',class:'mk pt'});g.append(c);
@@ -486,14 +493,14 @@ function rQuality(){
    drow('Turns per session',cs.map(x=>x.turns||0)),drow('Tool calls per session',cs.map(x=>x.tool_calls||0)),drow('Subagent turns per session',cs.map(x=>x.subagent_turns||0)),drow('User messages per session',cs.map(x=>x.user_msgs||0)),
    drow('Turns per task',tv.map(o=>o.turns)),drow('Tool calls per task',tv.map(o=>o.tools)),drow('Active minutes per task',tv.map(o=>o.act)))))));
  // flow
- const B=buckets(F.a,F.b,true),v=B.map(()=>({c:0,d:0}));
+ const fg=gran(F.a,F.b)==='month'?'month':'week',B=buckets(F.a,F.b,fg),v=B.map(()=>({c:0,d:0}));
  for(const t of F.T){const i=bIdx(B,t._c);if(i>=0)v[i].c++;if(t.status==='Done'){const j=bIdx(B,t._u);if(j>=0)v[j].d++}}
  const open=B.map(b=>F.T.filter(t=>t._c!=null&&t._c<b.e&&!(t.status==='Done'&&t._u!=null&&t._u<b.e)&&!(t.archived&&t.status!=='Done')&&!(t.status==='Done'&&t._u==null)).length);
  const c3=el('div',{class:'chart',id:'ch-flow'}),now=F.T.filter(t=>!t.archived),fser=[{k:'c',label:'created',c:'var(--s2)'},{k:'d',label:'done',c:'var(--s1)'}];
- g2.append(panel('Backlog flow per week','Created vs. done per week (UTC, weeks start Monday); line = open tasks at week end (archived, never-done tasks excluded).',
+ g2.append(panel('Backlog flow per '+fg,'Created vs. done per '+fg+' (UTC'+(fg==='week'?', weeks start Monday':'')+'); line = open tasks at '+fg+' end (archived, never-done tasks excluded).',
   el('div',{class:'facts'},el('div',null,el('span',{text:'Open now: To Do'}),el('b',{text:int(now.filter(t=>t.status==='To Do').length)})),el('div',null,el('span',{text:'In Progress'}),el('b',{text:int(now.filter(t=>t.status==='In Progress').length)})),el('div',null,el('span',{text:'Archived (not done)'}),el('b',{text:int(F.T.filter(t=>t.archived&&t.status!=='Done').length)}))),
-  legend(fser.concat([{label:'open at week end',c:'var(--s3)',ln:1}])),c3,dataTable([{l:'Week'},{l:'Created',n:1},{l:'Done',n:1},{l:'Open at end',n:1}],B.map((b,i)=>[b.full,v[i].c,v[i].d,open[i]]))));
- SEC.draw.push(()=>c3.append(barChart({w:cw('ch-flow'),B,ser:fser,v,group:1,line:{label:'open',c:'var(--s3)',v:open},fmt:int,label:'Tasks created and done per week, open tasks as a line'})));
+  legend(fser.concat([{label:'open at '+fg+' end',c:'var(--s3)',ln:1}])),c3,dataTable([{l:gCap(fg)},{l:'Created',n:1},{l:'Done',n:1},{l:'Open at end',n:1}],B.map((b,i)=>[b.full,v[i].c,v[i].d,open[i]]))));
+ SEC.draw.push(()=>c3.append(barChart({w:cw('ch-flow'),B,ser:fser,v,group:1,line:{label:'open',c:'var(--s3)',v:open},fmt:int,label:'Tasks created and done per '+fg+', open tasks as a line'})));
  s.append(grid,el('div',{style:'height:40px'}),g2);
  return s;
 }
@@ -543,7 +550,7 @@ function openTask(t){
 }
 function openSess(s){
  show('Session '+s.id,[kv([['Start (UTC)',dt(s.start)],['End (UTC)',dt(s.end)],['Wall time',mins(s.wall_min)],['Active time',mins(s.active_min)],['Turns',int(s.turns)],['Subagent turns',int(s.subagent_turns)],['Tool calls',int(s.tool_calls)],['User messages',int(s.user_msgs)],
-  ['Context start / peak',tok(s.start_ctx)+' / '+tok(s.peak_ctx)],['Compactions',int(s.compactions)],['Commits in window',int(s.commits)],['Est. cost (all models)',usd(s.cost)]]),
+  ['Context start / peak',tok(s.start_ctx)+' / '+tok(s.peak_ctx)],['Compactions',int(s.compactions)],['Commits in window',int(s.commits)],['Est. cost (all models)',usd(s.cost)],['Source',s.live===false?'history file (transcript deleted)':'transcript']]),
   el('h3',{text:'Per model'}),el('div',{class:'tw'},el('table',null,el('thead',null,el('tr',null,['Model','Turns','Input','Cache write','Cache read','Output','Est. cost'].map((h,i)=>el('th',{scope:'col',class:i?'n':null,text:h})))),
    el('tbody',null,Object.entries(s.models).map(([m,v])=>el('tr',null,el('td',{text:m}),el('td',{class:'n',text:int(v.turns)}),TK.map(([k])=>el('td',{class:'n',text:tok(v[k])})),el('td',{class:'n',text:usd(v.cost)})))))),
   el('h3',{text:'Linked tasks'}),s.tasks.length?el('ul',{style:'padding-left:1.2em;margin:0'},s.tasks.map(id=>el('li',null,taskBtn(id),' ',el('span',{text:(byId.get(id)||{}).title||''})))):el('p',{class:'empty',text:'No commit during this session names a task.'})]);
@@ -581,7 +588,7 @@ let qt;qI.addEventListener('input',()=>{clearTimeout(qt);qt=setTimeout(()=>{st.q
 $('reset').addEventListener('click',()=>{st.from=st.to=st.ms=st.q=st.model='';sync();render();$('reset').blur();qI.focus()});
 $('ftoggle').addEventListener('click',()=>{const o=$('bar').classList.toggle('open');$('ftoggle').setAttribute('aria-expanded',String(o))});
 let rw=innerWidth,rt;addEventListener('resize',()=>{clearTimeout(rt);rt=setTimeout(()=>{if(Math.abs(innerWidth-rw)>40){rw=innerWidth;render()}},200)});
-$('foot').textContent='Generated '+dt(meta.generated)+' UTC from '+int(meta.transcripts)+' transcript file(s); prices as of '+(meta.prices_date||NA)+'. '+(meta.note||'')+' Presets count back from the generation date. Transcripts exist only for recent weeks, so older tasks have no linked sessions.';
+$('foot').textContent='Generated '+dt(meta.generated)+' UTC from '+int(meta.transcripts)+' transcript file(s); prices as of '+(meta.prices_date||NA)+'. '+(meta.note||'')+' Presets count back from the generation date. '+(meta.history?int(meta.from_history)+' session(s) come only from the history file '+meta.history+' (their transcripts were deleted).':'Transcripts exist only for recent weeks and no history file is used, so older tasks have no linked sessions.');
 sync();render();
 })();
 </script>

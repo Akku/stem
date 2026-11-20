@@ -144,7 +144,7 @@ Based on each project's own documentation as of November 2026; these projects ch
 | `scripts/check-backlog.sh`, `scripts/retro-metrics.sh`, `scripts/promote-check.sh` | Backlog consistency check (also in the pre-commit hook); measured evidence for retros; learnings ready to share with STEM |
 | `docs/agent/stacks/` | Stack-specific notes, loaded only when the stack applies |
 | `scripts/context-report.py` | Optional retro tool (Claude Code): where the context went, longest sessions; numbers only |
-| `scripts/metrics-explorer.py` | Retro tool: writes an offline interactive HTML explorer of cost, time, tokens and quality (`.agent-logs/metrics-explorer.html`, template `metrics-explorer.html`); numbers and task titles only |
+| `scripts/metrics-explorer.py` | Retro tool: writes an offline interactive HTML explorer of cost, time, tokens and quality (`.agent-logs/metrics-explorer.html`, template `metrics-explorer.html`); keeps per-session numbers in `docs/agent/metrics-history.json` (commit it); numbers and task titles only |
 | `scripts/context-check.py` | Claude Code hook: warns when the context is large and a new session is due |
 | `scripts/hooks/manifest.json`, `scripts/hooks-sync.py`, `scripts/hooklib.py`, `docs/agent/HOOKS.md` | One source for the hooks: the manifest names every guard and its wiring per agent; the generator writes the agents' config files and the support table; the shared reader handles each agent's hook input |
 | `scripts/run.sh` | Compact output for tests/CI/CLI (exit code preserved, full log in git-ignored `.agent-logs/`, `evidence:` pointer for task notes; uncited logs older than 30 days are pruned) |
