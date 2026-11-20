@@ -225,7 +225,7 @@ const minT=Math.min(...SS.map(s=>s._t),...TT.map(t=>t._c).filter(ok),gen);
 const D0=Date.parse(day(minT)), DEND=Date.parse(day(gen))+DAY;
 const TK=[['input','input'],['cache_write','cache write'],['cache_read','cache read'],['output','output']];
 /* ---------- state & filters ---------- */
-const st={from:'',to:'',ms:'',q:'',model:'',tk:'all',ts:{k:'id',d:-1},ss:{k:'start',d:-1},tAll:false,sAll:false};
+const st={from:'',to:'',ms:'',q:'',model:'',tk:'all',ts:{k:'id',d:-1},ss:{k:'start',d:-1},rs:{k:'start',d:-1},tAll:false,sAll:false,rAll:false,tsT:'cost',tsS:'cost',tsR:'turns'};
 const F={};
 function compute(){
  const q=st.q.trim().toLowerCase(), tf=!!(st.ms||q);
@@ -288,6 +288,7 @@ function barChart(o){
   if(i%step===0)g.append(S('text',{x:x0+bw/2,y:H-Bm+16,'text-anchor':'middle'},b.label));
   const rows=(o.group?o.ser:o.ser.slice().reverse()).map(s=>({c:s.c,l:s.label,v:tf(val(i,s.k))}));
   if(!o.group&&o.ser.length>1)rows.push({l:'Total',v:tf(tot[i]),tot:1});
+  if(o.extra)rows.push(...o.extra(i));
   items.push({x:x0+bw/2,y:y(tot[i]),band:[x0,bw],nodes,title:b.full,rows});
  });
  if(o.line){const pts=o.line.v.map((v,i)=>ok(v)?[L+i*bw+bw/2,y(v),i]:null).filter(Boolean);
@@ -506,30 +507,56 @@ function rQuality(){
 }
 function rRetros(){
  const s=section('retros','Retros','Retro runs from docs/agent/retro-runs/*.json, filtered by period only (milestone, task and model filters do not apply). Empty fields were not recorded by that run.');
- const rp=RR.filter(r=>r._t==null||F.inP(r._t)).sort((a,b)=>(b._t||0)-(a._t||0));
- const dur=r=>r.created&&r.finished?(Date.parse(r.finished)-Date.parse(r.created))/6e4:null;
- s.append(rp.length?el('div',{class:'tw'},el('table',null,el('thead',null,el('tr',null,['Run','Started (UTC)','Stage','Outcome','Duration','Adopted changes','Open signals','Turns','Tool calls','Cache read','Output','Est. cost'].map((h,i)=>el('th',{scope:'col',class:i>3?'n':null,text:h})))),
-  el('tbody',null,rp.map(r=>el('tr',null,el('td',{text:r.label}),el('td',{text:dt(r.created)}),el('td',{text:r.stage||NA}),el('td',{text:r.outcome||(r.finished?NA:'not finished')}),el('td',{class:'n',text:mins(dur(r))}),
-   [r.adopted,r.open_signals,r.turns,r.tool_calls].map(v=>el('td',{class:'n',text:int(v)})),el('td',{class:'n',text:tok(r.cache_read)}),el('td',{class:'n',text:tok(r.output)}),el('td',{class:'n',text:usd(r.cost)}))))))
-  :el('p',{class:'empty',text:'No retro runs in this period.'}));
+ const rp=RR.filter(r=>r._t==null||F.inP(r._t)),rd=()=>redrawPart('retros',rRetros);
+ if(!rp.length){s.append(el('p',{class:'empty',text:'No retro runs in this period.'}));return s}
+ s.append(tsPanel({key:'tsR',id:'ch-ts-retros',what:'retro runs',cols:RCOLS,rows:rp,time:r=>r._t,redraw:rd,when:'at their start'}),el('div',{style:'height:16px'}),
+  ...sortTable({key:'rs',all:'rAll',cols:RCOLS,rows:rp,open:openRetro,cap:'Retro runs',limit:10,redraw:rd}));
  return s;
 }
+/* time series above a table: one numeric column per bucket (sum, median or count), picked in a selector */
+const AGG={sum:'sum',med:'median',n:'count'};
+const cusd=(v,t)=>'$'+(v>=100||t?Math.round(v):v.toFixed(v<1&&v>0?2:0));
+function tsPanel(o){
+ const opts=[{k:'_n',l:'Number of '+o.what,agg:'n',fmt:int}].concat(o.cols.filter(c=>c.agg));
+ const c=opts.find(x=>x.k===st[o.key])||opts[0],g=gran(F.a,F.b),B=buckets(F.a,F.b,g),vals=B.map(()=>[]);
+ for(const r of o.rows){const i=bIdx(B,o.time(r));if(i<0)continue;const v=c.agg==='n'?1:c.get(r);if(ok(v))vals[i].push(v)}
+ const v=vals.map(a=>({v:!a.length?null:c.agg==='med'?median(a):a.reduce((x,y)=>x+y,0)}));
+ const sid=o.key+'-sel',sel=el('select',{id:sid},opts.map(x=>el('option',{value:x.k,selected:x===c},x.l+(x.agg==='n'?'':' ('+AGG[x.agg]+')'))));
+ sel.addEventListener('change',()=>{st[o.key]=sel.value;o.redraw();const n=$(sid);if(n)n.focus()});
+ const box=el('div',{class:'chart',id:o.id}),tf=c.fmt?x=>c.fmt(x):num,af=c.fmt===usd?cusd:tf;
+ SEC.draw.push(()=>box.append(barChart({w:cw(o.id),B,ser:[{k:'v',label:c.l+(c.agg==='n'?'':' ('+AGG[c.agg]+')'),c:'var(--s1)'}],v,fmt:af,tfmt:tf,
+  label:c.l+' per '+g,extra:i=>c.agg==='n'?[]:[{l:gCap(o.what)+' with a value',v:int(vals[i].length)}]})));
+ const p=panel(c.l+' per '+g,'Over the filtered period, one bar per '+g+' (UTC); '+o.what+' count '+o.when+'. Pick a column of the table below; sums add up, durations and context sizes show the median.',
+  el('div',{style:'display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:8px'},el('label',{for:sid,class:'mut',text:'Show'}),sel),box);
+ p.classList.add('wide');return p;
+}
+const rdur=r=>r.created&&r.finished?(Date.parse(r.finished)-Date.parse(r.created))/6e4:null;
+const RCOLS=[
+ {k:'label',l:'Run',get:r=>r.label},{k:'start',l:'Started (UTC)',get:r=>r._t,fmt:(_,r)=>dt(r.created)},{k:'stage',l:'Stage',get:r=>r.stage},{k:'outcome',l:'Outcome',get:r=>r.outcome||(r.finished?null:'not finished')},
+ {k:'dur',l:'Duration',n:1,get:rdur,fmt:mins,agg:'med'},{k:'ad',l:'Adopted changes',n:1,get:r=>r.adopted,fmt:int,agg:'sum'},{k:'os',l:'Open signals',n:1,get:r=>r.open_signals,fmt:int,agg:'sum'},
+ {k:'turns',l:'Turns',n:1,get:r=>r.turns,fmt:int,agg:'sum'},{k:'tools',l:'Tool calls',n:1,get:r=>r.tool_calls,fmt:int,agg:'sum'},{k:'cr',l:'Cache read',n:1,get:r=>r.cache_read,fmt:tok,agg:'sum'},
+ {k:'out',l:'Output',n:1,get:r=>r.output,fmt:tok,agg:'sum'},{k:'cost',l:'Est. cost',n:1,get:r=>r.cost,fmt:usd,agg:'sum'}];
+function openRetro(r){show('Retro run '+r.label,[kv(RCOLS.map(c=>[c.l,c.fmt?c.fmt(c.get(r),r):c.get(r)]))])}
 const TCOLS=[
  {k:'id',l:'Task',get:t=>tnum(t.id),fmt:(_,t)=>t.id},{k:'title',l:'Title',get:t=>t.title,t:1},{k:'status',l:'Status',get:t=>t.status},{k:'size',l:'Size',get:t=>t.size},
- {k:'ms',l:'Milestone',get:t=>t.milestone},{k:'cyc',l:'Cycle',n:1,get:t=>t.cycle_h,fmt:hrs},
- {k:'ns',l:'Sessions',n:1,get:t=>(F.agg.get(t.id)||{}).n,fmt:int,tip:'Linked sessions in the period'},{k:'cost',l:'Est. cost',n:1,get:t=>(F.agg.get(t.id)||{}).cost,fmt:usd,tip:'Share of linked session cost (split evenly)'},
- {k:'turns',l:'Turns',n:1,get:t=>(F.agg.get(t.id)||{}).turns,fmt:int},
+ {k:'ms',l:'Milestone',get:t=>t.milestone},{k:'cyc',l:'Cycle',n:1,get:t=>t.cycle_h,fmt:hrs,agg:'med'},
+ {k:'ns',l:'Sessions',n:1,get:t=>(F.agg.get(t.id)||{}).n,fmt:int,agg:'sum',tip:'Linked sessions in the period'},{k:'cost',l:'Est. cost',n:1,get:t=>(F.agg.get(t.id)||{}).cost,fmt:usd,agg:'sum',tip:'Share of linked session cost (split evenly)'},
+ {k:'turns',l:'Turns',n:1,get:t=>(F.agg.get(t.id)||{}).turns,fmt:int,agg:'sum'},
  {k:'ev',l:'E2 / E1',n:1,get:t=>(t.e2||0)-(t.e1||0)/100,fmt:(_,t)=>t.e2+' / '+t.e1},{k:'ac',l:'ACs',n:1,get:t=>t.ac_total?t.ac_done/t.ac_total:null,fmt:(_,t)=>t.ac_total?t.ac_done+' / '+t.ac_total:NA},
- {k:'rw',l:'Rework',n:1,get:t=>t.outcome?t.outcome.rework_min:null,fmt:mins}];
+ {k:'rw',l:'Rework',n:1,get:t=>t.outcome?t.outcome.rework_min:null,fmt:mins,agg:'sum'}];
 const SCOLS=[
- {k:'id',l:'Session',get:s=>s.id},{k:'start',l:'Start (UTC)',get:s=>s._t,fmt:(_,s)=>dt(s.start)},{k:'act',l:'Active',n:1,get:s=>s.active_min,fmt:mins},{k:'wall',l:'Wall',n:1,get:s=>s.wall_min,fmt:mins},
- {k:'turns',l:'Turns',n:1,get:s=>s.turns,fmt:int},{k:'tools',l:'Tool calls',n:1,get:s=>s.tool_calls,fmt:int},{k:'models',l:'Models',get:s=>Object.keys(s.models).map(short).join(', ')},
- {k:'cost',l:'Est. cost',n:1,get:sCost,fmt:usd},{k:'sc',l:'Start ctx',n:1,get:s=>s.start_ctx,fmt:tok},{k:'pc',l:'Peak ctx',n:1,get:s=>s.peak_ctx,fmt:tok},{k:'cp',l:'Compactions',n:1,get:s=>s.compactions,fmt:int},
+ {k:'id',l:'Session',get:s=>s.id},{k:'start',l:'Start (UTC)',get:s=>s._t,fmt:(_,s)=>dt(s.start)},{k:'act',l:'Active',n:1,get:s=>s.active_min,fmt:mins,agg:'sum'},{k:'wall',l:'Wall',n:1,get:s=>s.wall_min,fmt:mins,agg:'sum'},
+ {k:'turns',l:'Turns',n:1,get:s=>s.turns,fmt:int,agg:'sum'},{k:'tools',l:'Tool calls',n:1,get:s=>s.tool_calls,fmt:int,agg:'sum'},{k:'models',l:'Models',get:s=>Object.keys(s.models).map(short).join(', ')},
+ {k:'cost',l:'Est. cost',n:1,get:sCost,fmt:usd,agg:'sum'},{k:'sc',l:'Start ctx',n:1,get:s=>s.start_ctx,fmt:tok,agg:'med'},{k:'pc',l:'Peak ctx',n:1,get:s=>s.peak_ctx,fmt:tok,agg:'med'},{k:'cp',l:'Compactions',n:1,get:s=>s.compactions,fmt:int,agg:'sum'},
  {k:'tasks',l:'Tasks',n:1,get:s=>s.tasks.length,fmt:(_,s)=>s.tasks.length?(s.tasks.length>3?s.tasks.slice(0,3).join(', ')+' +'+(s.tasks.length-3):s.tasks.join(', ')):'none'}];
 function rTasks(){const s=section('tasks','Tasks','All tasks active in the period (created before its end, not finished before its start). Sort by any column; select a task for details. Session numbers count only sessions in the period.');
- s.append(el('div',{id:'tasks-t'},sortTable({key:'ts',all:'tAll',cols:TCOLS,rows:F.Tp,open:openTask,cap:'Tasks',redraw:()=>redrawPart('tasks',rTasks)})));return s}
+ const rd=()=>redrawPart('tasks',rTasks);
+ if(F.Tp.length)s.append(tsPanel({key:'tsT',id:'ch-ts-tasks',what:'tasks',cols:TCOLS,rows:F.Tp,time:t=>t.status==='Done'&&t._u!=null?t._u:t._c,redraw:rd,when:'at their last update when Done, else at creation'}),el('div',{style:'height:16px'}));
+ s.append(el('div',{id:'tasks-t'},sortTable({key:'ts',all:'tAll',cols:TCOLS,rows:F.Tp,open:openTask,cap:'Tasks',limit:10,redraw:rd})));return s}
 function rSess(){const s=section('sessions','Sessions','One row per transcript (main thread; subagent tokens are included in cost). Select a session for its models and linked tasks.');
- s.append(...sortTable({key:'ss',all:'sAll',cols:SCOLS,rows:F.Sp,open:openSess,cap:'Sessions',redraw:()=>redrawPart('sessions',rSess)}));return s}
+ const rd=()=>redrawPart('sessions',rSess);
+ if(F.Sp.length)s.append(tsPanel({key:'tsS',id:'ch-ts-sess',what:'sessions',cols:SCOLS,rows:F.Sp,time:x=>x._t,redraw:rd,when:'at their start'}),el('div',{style:'height:16px'}));
+ s.append(...sortTable({key:'ss',all:'sAll',cols:SCOLS,rows:F.Sp,open:openSess,cap:'Sessions',limit:10,redraw:rd}));return s}
 /* ---------- details dialog ---------- */
 const dlg=$('dlg');let back=null;
 function show(title,kids){if(!dlg.open)back=document.activeElement;$('dlg-title').textContent=title;const b=$('dlg-b');b.textContent='';add(b,kids);b.scrollTop=0;dlg.scrollTop=0;if(!dlg.open){if(dlg.showModal)dlg.showModal();else dlg.setAttribute('open','')}$('dlg-x').focus()}
