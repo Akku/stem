@@ -449,6 +449,16 @@ function rQuality(){
   el('div',{class:'facts'},el('div',null,el('span',{text:'Done tasks with Outcome'}),el('b',{text:oc.length+' of '+done.length})),el('div',null,el('span',{text:'Corrections'}),el('b',{text:int(sum('corrections'))})),el('div',null,el('span',{text:'Rework'}),el('b',{text:mins(sum('rework_min'))})),el('div',null,el('span',{text:'Defects'}),el('b',{text:int(sum('defects'))}))),
   bad.length?el('div',{class:'tw tall'},el('table',null,el('thead',null,el('tr',null,['Task','Title','Corrections','Rework','Defects'].map((h,i)=>el('th',{scope:'col',class:i>1?'n':null,text:h})))),el('tbody',null,bad.map(t=>el('tr',null,el('td',null,taskBtn(t.id)),el('td',{class:'t',text:t.title}),el('td',{class:'n',text:int(t.outcome.corrections)}),el('td',{class:'n',text:mins(t.outcome.rework_min)}),el('td',{class:'n',text:int(t.outcome.defects)}))))))
   :el('p',{class:'empty',text:oc.length?'No task in this period reports corrections, rework or defects.':'No Outcome lines in this period.'})));
+ // rework per model: only tasks whose linked sessions (all time, subagents included) used exactly one model
+ const pmR={};let mixed=0,nos=0;
+ for(const t of oc){const ss=tSess.get(t.id)||[];if(!ss.length){nos++;continue}const ms=new Set();for(const x of ss)for(const m of Object.keys(x.models))if(m!=='unknown')ms.add(m);
+  if(ms.size!==1){mixed++;continue}const m=[...ms][0],o=pmR[m]||(pmR[m]={rw:[],co:[],de:0});o.rw.push(t.outcome.rework_min||0);o.co.push(t.outcome.corrections||0);o.de+=t.outcome.defects||0}
+ const avg=a=>a.length?a.reduce((x,y)=>x+y,0)/a.length:null,rms=Object.keys(pmR).sort((a,b)=>pmR[b].rw.length-pmR[a].rw.length);
+ grid.append(panel('Rework per model','Done tasks with an Outcome line whose linked sessions all used one single model (subagents included). Tasks worked on by several models are left out: '+mixed+'; without a linked session: '+nos+'.',
+  rms.length?el('div',{class:'tw'},el('table',null,el('thead',null,el('tr',null,['Model','Tasks','Avg rework','Max rework','Avg corrections','Defects'].map((h,i)=>el('th',{scope:'col',class:i?'n':null,text:h})))),
+   el('tbody',null,rms.map(m=>{const o=pmR[m],sw=SER.find(x=>x.k===serOf(m));return el('tr',null,el('td',{class:'nw'},el('span',{class:'bar-cell'},el('span',{class:'sw',style:'background:'+(sw?sw.c:'var(--s0)'),'aria-hidden':'true'}),m)),
+    el('td',{class:'n',text:int(o.rw.length)}),el('td',{class:'n',text:mins(avg(o.rw))}),el('td',{class:'n',text:mins(Math.max(...o.rw))}),el('td',{class:'n',text:num(avg(o.co))}),el('td',{class:'n',text:int(o.de)}))}))))
+  :el('p',{class:'empty',text:'No Done task with an Outcome line in this period was worked on by a single model.'})));
  // evidence
  const e1=done.reduce((a,t)=>a+(t.e1||0),0),e2=done.reduce((a,t)=>a+(t.e2||0),0),et=e1+e2;
  const weak=done.filter(t=>(t.e1||0)>0||(t.ac_total||0)>(t.ac_done||0));
