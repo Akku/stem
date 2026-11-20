@@ -2,7 +2,7 @@
 """Context watchdog for Claude Code and Codex (UserPromptSubmit hook). Prints a short notice into the agent's context when the
 current context exceeds a threshold, then again every +30k. Threshold = smaller of: first-turn context of the session + 50k (the
 fixed floor of system prompt, tools and instructions is not session growth) and half the model's window (Claude: model read from the
-transcript; Codex: model_context_window from the session log). Without a known first-turn context or model: cap of 100k (env CONTEXT_WARN_TOKENS).
+transcript; Codex: model_context_window from the session log). Without a known model window or first-turn context: cap of 100k (env CONTEXT_WARN_TOKENS).
 Reads the hook JSON from stdin through hooklib.py (transcript_path, session_id); manual use: --transcript FILE; task-end check: --auto finds the current
 session log itself (Codex: CODEX_THREAD_ID; Claude: newest transcript of this directory) and also prints one line below the threshold;
 --auto --notice-only (used by scripts/run.sh, so agents without a prompt hook get the notice too) stays silent below it.
@@ -49,7 +49,7 @@ def scan(path):
 
 def threshold(first, model):
     if model.startswith("codex:"):
-        if not model[6:].isdigit(): return first + GROWTH if first else CAP
+        if not model[6:].isdigit(): return min([CAP] + ([first + GROWTH] if first else []))  # window unknown: cap stays
         window = int(model[6:])
     elif "[1m]" in model: window = 1000000
     elif model.startswith("claude-"): window = WINDOW

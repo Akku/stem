@@ -38,10 +38,10 @@ class ContextCheck(Sandbox):
         self.assertEqual((r.returncode, r.stdout), (0, ""))
 
     def test_notice_above_floor_relative_threshold(self):
-        # first turn 10k -> threshold 50k; current 60k
-        r = self.check([assistant("claude-sonnet-5-5", 10000), assistant("claude-sonnet-5-5", 60000)])
+        # first turn 10k -> threshold 60k (first + 50k); current 70k
+        r = self.check([assistant("claude-sonnet-5-5", 10000), assistant("claude-sonnet-5-5", 70000)])
         self.assertIn("CONTEXT NOTICE", r.stdout)
-        self.assertIn("threshold 50k", r.stdout)
+        self.assertIn("threshold 60k", r.stdout)
 
     def test_subagent_records_are_ignored(self):
         r = self.check([assistant("claude-sonnet-5-5", 10000), assistant("claude-sonnet-5-5", 190000, sidechain=True)])
@@ -60,7 +60,7 @@ class ContextCheck(Sandbox):
         self.assertEqual((r.returncode, r.stdout), (0, ""))
 
     def test_hook_mode_repeats_only_after_step(self):
-        t = self.tmp / "t.jsonl"; write_jsonl(t, [assistant("claude-sonnet-5-5", 10000), assistant("claude-sonnet-5-5", 60000)])
+        t = self.tmp / "t.jsonl"; write_jsonl(t, [assistant("claude-sonnet-5-5", 10000), assistant("claude-sonnet-5-5", 70000)])
         hook = lambda: run([sys.executable, str(SCRIPTS / "context-check.py")], self.tmp, {"TMPDIR": str(self.tmp)}, stdin=json.dumps({"transcript_path": str(t), "session_id": "s1"})).stdout
         self.assertIn("CONTEXT NOTICE", hook())
         self.assertEqual(hook(), "")  # same size: no second notice
@@ -68,10 +68,10 @@ class ContextCheck(Sandbox):
 
     def test_codex_log_uses_window_from_log(self):
         tc = lambda n, w: {"type": "event_msg", "payload": {"type": "token_count", "info": {"last_token_usage": {"input_tokens": n, "total_tokens": n + 5}, "model_context_window": w}}}
-        low = self.check([tc(20000, 475000), tc(55000, 475000)])
-        high = self.check([tc(20000, 475000), tc(70000, 475000)])
+        low = self.check([tc(20000, 475000), tc(65000, 475000)])
+        high = self.check([tc(20000, 475000), tc(80000, 475000)])
         self.assertEqual(low.stdout, "")
-        self.assertIn("threshold 60k", high.stdout)
+        self.assertIn("threshold 70k", high.stdout)
 
     def test_codex_desktop_log_falls_back_to_total_tokens(self):
         r = self.check([{"type": "event_msg", "payload": {"type": "token_count", "info": {"last_token_usage": {"input_tokens": 0, "total_tokens": 127000}, "model_context_window": None}}}])
@@ -81,7 +81,7 @@ class ContextCheck(Sandbox):
         log = self.tmp / "codex" / "sessions" / "2026" / "rollout-x-abc123.jsonl"; log.parent.mkdir(parents=True)
         write_jsonl(log, [{"type": "event_msg", "payload": {"type": "token_count", "info": {"last_token_usage": {"input_tokens": 30000}, "model_context_window": 475000}}}])
         r = run([sys.executable, str(SCRIPTS / "context-check.py"), "--auto"], self.tmp, {"TMPDIR": str(self.tmp), "CODEX_HOME": str(self.tmp / "codex"), "CODEX_THREAD_ID": "abc123"})
-        self.assertIn("context check: about 30k tokens, threshold 70k", r.stdout)
+        self.assertIn("context check: about 30k tokens, threshold 80k", r.stdout)
 
     def test_auto_finds_claude_transcript_of_cwd(self):
         work = self.tmp / "my.proj"; work.mkdir()
