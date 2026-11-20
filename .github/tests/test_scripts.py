@@ -157,7 +157,15 @@ class ContextReport(Sandbox):
                                                    assistant("m", 1, ts="2026-10-20T11:00:01Z", content=tool)])
         write_jsonl(d / "abcdef12-session" / "subagents" / "agent-1.jsonl", [assistant("m", 1, ts="2026-10-20T10:10:00Z", content=tool)])
         r = run([sys.executable, str(SCRIPTS / "context-report.py"), "--cost", "--main-only", "--since", "2026-10-20T10:00:00Z", "--until", "2026-10-20T11:00:00Z", str(d)], self.tmp)
-        self.assertEqual("turns=2 tool_calls=2 cache_read=0 output=20", r.stdout.strip())  # local-time --since would shift this window
+        self.assertTrue(r.stdout.strip().startswith("turns=2 tool_calls=2 cache_read=0 output=20 est_cost_usd="), r.stdout)
+        self.assertRegex(r.stdout.strip(), r"est_cost_usd=(\d+\.\d\d|n/a)$")  # local-time --since would shift this window
+
+    def test_cost_line_has_weighted_estimate_and_n_a_for_unknown_model(self):
+        for model, want in (("claude-sonnet-5-5", "est_cost_usd=3.00"), ("mystery-model", "est_cost_usd=n/a")):
+            d = self.tmp / model; d.mkdir()
+            write_jsonl(d / "abcdef12-session.jsonl", [assistant(model, 1000000)])
+            r = run([sys.executable, str(SCRIPTS / "context-report.py"), "--cost", "--main-only", str(d)], self.tmp)
+            self.assertTrue(r.stdout.strip().endswith(want), r.stdout)
 
     def test_rule_load_via_sed_and_skill_read_are_detected(self):
         cmd = "ID=R-VERIFY; sed -n \"/<!-- RULE:${ID}:START -->/,/<!-- RULE:${ID}:END -->/p\" docs/agent/OPERATING_MODEL.md"

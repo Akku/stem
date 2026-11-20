@@ -2,7 +2,7 @@
 """Where did the context go? Optional retro tool for Claude Code transcripts (R-MEASUREMENT level 2/3).
 Usage: scripts/context-report.py [--since TIME] [--until TIME] [--main-only] [--brief|--cost] [transcript-dir]   (default dir: this project's folder under ~/.claude/projects)
 --brief prints one key=value line (for retro-metrics.sh): sessions, turns, tokens, longest session, user_msgs (typed user messages, effort proxy), models and effort levels seen (confounders).
---cost prints one key=value line for a window: turns, tool_calls, cache_read, output (retro-run.py finish uses it with --since/--until as UTC "YYYY-MM-DDTHH:MM:SSZ" and --main-only).
+--cost prints one key=value line for a window: turns, tool_calls, cache_read, output, est_cost_usd (retro-run.py finish uses it with --since/--until as UTC "YYYY-MM-DDTHH:MM:SSZ" and --main-only).
 --by-model [--tasks N] prints tokens per model (turns, fresh input, cache_write, cache_read, output) and an estimated cost; with --tasks N (accepted tasks) also per accepted task. Records without model info show as "unknown".
 --main-only skips subagent transcripts and sidechain records.
 TIME: YYYY-MM-DD[ HH:MM] is local time; ISO with Z or offset (2026-11-03T15:10Z) is taken as given. --since limits sessions, totals
@@ -21,6 +21,16 @@ def price_of(model):
     for fam, p in PRICES.items():
         if fam in model.lower(): return p
     return None
+
+def est_cost(per_model):
+    """Estimated USD of all models from the price table (TASK-320: weighted cost, cache read 0.1x of input, write 1.25x, output 5x for Sonnet); None when any model is not in the table."""
+    ks = ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens", "output_tokens")
+    total = 0.0
+    for name, (_, u) in per_model.items():
+        p = price_of(name)
+        if not p: return None
+        total += sum(u[k] * c for k, c in zip(ks, p)) / 1e6
+    return total
 
 def by_model_report(per_model, tasks):
     print("tokens per model (cost estimate from the price table in context-report.py, dated %s, USD per MTok; 'n/a' = model not in the table; 'unknown' = records without model info):" % PRICES_DATE)
@@ -129,7 +139,8 @@ def main():
     if by_model:
         by_model_report(per_model, tasks); return 0
     if cost:
-        print("turns=%d tool_calls=%d cache_read=%d output=%d" % (sum(s[1] for s in sess), tool_calls, tot["cache_read_input_tokens"], tot["output_tokens"]))
+        ec = est_cost(per_model)
+        print("turns=%d tool_calls=%d cache_read=%d output=%d est_cost_usd=%s" % (sum(s[1] for s in sess), tool_calls, tot["cache_read_input_tokens"], tot["output_tokens"], "%.2f" % ec if ec is not None else "n/a"))
         return 0
     if brief:
         print("sessions=%d turns=%d cache_read=%d cache_write=%d output=%d max_session_turns=%d user_msgs=%d models=%s effort=%s" % (len(sess), sum(s[1] for s in sess), tot["cache_read_input_tokens"], tot["cache_creation_input_tokens"], tot["output_tokens"], max([s[1] for s in sess] or [0]), user_msgs, ",".join(k for k, _ in models.most_common(3)) or "?", ",".join(k for k, _ in efforts.most_common(3)) or "?"))
@@ -137,6 +148,8 @@ def main():
     if since or until: print("window (UTC): %s .. %s" % (since or "start", until or "now"))
     print("transcripts: %d, assistant turns: %d" % (len(files), sum(s[1] for s in sess)))
     print("tokens: fresh_in %d | cache_write %d | cache_read %d | output %d" % (tot["input_tokens"], tot["cache_creation_input_tokens"], tot["cache_read_input_tokens"], tot["output_tokens"]))
+    ec = est_cost(per_model)
+    print("estimated cost (price table, weights cache read/write/output): %s" % ("$%.2f" % ec if ec is not None else "n/a (model not in table)"))
     turns_all = max(sum(s[1] for s in sess), 1)
     print("avg context carried per turn (cache_read/turn): %dk tokens" % (tot["cache_read_input_tokens"] / turns_all / 1000))
     print("\nlongest sessions by cache_read (session length is usually the biggest lever):")
