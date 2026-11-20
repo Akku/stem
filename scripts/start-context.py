@@ -5,6 +5,8 @@ Usage: scripts/start-context.py <command> [args]
         session: input + cache_read + cache_creation) and trend; --compare compares sessions before/after TIME (local
         'YYYY-MM-DD[ HH:MM]' or ISO with Z). Numbers only. Headless `claude -p` gives lower absolute numbers than the
         desktop app: compare like with like. Transcripts exist only for recent weeks; unknown format -> "not evaluable".
+  mark-headless ID...    mark session ids (transcript file names without .jsonl, prefix ok) as headless one-off runs in
+        .claude/start-context-headless.json; report/--compare skip them and print how many (TASK-329)
   mcp                    list configured MCP servers (user/project config files) and the current deny list
   skills                 list project skills with use counts from transcripts and the current skillOverrides
   new [--threshold BYTES] [--line] [--ack]   report skills/MCP servers not in the known-set (.claude/start-context-known.local.json) with sizes
@@ -30,10 +32,18 @@ def tdirs():
     main = re.sub(r"[^A-Za-z0-9]", "-", os.getcwd()).split("--claude-worktrees-")[0]
     return [base + main] + sorted(glob.glob(glob.escape(base + main) + "--claude-worktrees-*"))
 
-def sessions(dirs, since=""):
-    """[(start timestamp, start context, model)] for main sessions; first non-sidechain assistant record with usage."""
+HEADLESS = ".claude/start-context-headless.json"
+
+def headless_ids(path=HEADLESS):
+    try: v = json.load(open(path))
+    except (OSError, ValueError): return []
+    return [str(x) for x in v] if isinstance(v, list) else []
+
+def sessions(dirs, since="", skip=()):
+    """[(start timestamp, start context, model)] for main sessions; first non-sidechain assistant record with usage. Session ids in skip (prefix match) are left out."""
     out = []
     for f in sorted(f for d in ([dirs] if isinstance(dirs, str) else dirs) for f in glob.glob(glob.escape(d) + "/*.jsonl")):  # top level only: subagent transcripts live in subfolders
+        if any(os.path.basename(f).startswith(x) for x in skip): continue
         try:
             for line in open(f):
                 try: r = json.loads(line)
@@ -54,7 +64,9 @@ def report(args):
     cmp_ = utc(args[args.index("--compare") + 1]) if "--compare" in args else ""
     pos = [a for i, a in enumerate(args) if not a.startswith("--") and (i == 0 or args[i - 1] not in ("--since", "--compare"))]
     d = [pos[0]] if pos else tdirs()
-    s = sessions(d, since)
+    hl = headless_ids()
+    s = sessions(d, since, hl)
+    if hl: print("excluded as headless one-off runs (%d marked ids, %s): %d session(s) skipped" % (len(hl), HEADLESS, len(sessions(d, since)) - len(s)))
     if not s: print("not evaluable: no sessions with usage in", ", ".join(d)); return
     print("start context per session (UTC start | tokens | model):")
     for ts, c, m in s[-15:]: print("  %s | %s | %s" % (ts, k(c), m))
@@ -176,6 +188,9 @@ def main():
     cmd, rest = a[0], a[1:]
     shared = "--shared" in rest; names = [x for x in rest if not x.startswith("--")]
     if cmd == "report": report(rest)
+    elif cmd == "mark-headless" and names:
+        cur = headless_ids(); new_ = [n for n in names if n not in cur]
+        pathlib.Path(HEADLESS).parent.mkdir(exist_ok=True); pathlib.Path(HEADLESS).write_text(json.dumps(cur + new_, indent=2) + "\n"); print("marked headless:", " ".join(new_) or "(already marked)")
     elif cmd == "mcp": mcp()
     elif cmd == "skills": skills()
     elif cmd == "new": new(rest)
