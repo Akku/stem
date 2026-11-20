@@ -345,6 +345,7 @@ class SandboxRepo(Sandbox):
         run(["git", "init", "-q", "-b", "main"], self.repo)
         self.nogh = self.tmp / "bin"; self.nogh.mkdir()  # stub: no network calls from tests
         (self.nogh / "gh").write_text("#!/bin/sh\nexit 1\n"); (self.nogh / "gh").chmod(0o755)
+        (self.nogh / "backlog").write_text("#!/bin/sh\nexit 0\n"); (self.nogh / "backlog").chmod(0o755)  # stub: the real CLI costs 1-5 s per call (TASK-308)
         self.env = {"PATH": f"{self.nogh}{os.pathsep}{os.environ['PATH']}", "TMPDIR": str(self.tmp)}
 
     def task(self, n, status="Done", updated="2026-10-20 10:00", extra=""):
@@ -585,6 +586,12 @@ class SessionStart(SandboxRepo):
         (self.repo / "AGENTS.md").write_text("**Setup status:** DONE\n")
         self.assertIn("PORT CHECK AVAILABLE", self.start(env))               # other OS
         self.assertIn("PORT CHECK AVAILABLE", self.start({**env, "STEM_PORT_OS": "Darwin", "STEM_PORT_AGENT": "codex"}))  # other agent
+
+    def test_port_check_reference_silent_and_declined(self):
+        ref = "version: 1.0.0\nreference-os: Darwin\nreference-agent: claude-code\nreference-model: M\n"
+        (self.repo / "STEM_VERSION").write_text(ref); (self.repo / "docs/agent").mkdir(parents=True)
+        env = {"STEM_OFFLINE": "1", "STEM_PORT_OS": "Linux", "STEM_PORT_AGENT": "claude-code"}
+        (self.repo / "AGENTS.md").write_text("**Setup status:** DONE\n")
         self.assertNotIn("PORT CHECK AVAILABLE", self.start({**env, "STEM_PORT_OS": "Darwin"}))  # reference: silent
         (self.repo / "docs/agent/PORT.md").write_text("status: declined\n")
         out = self.start(env)
@@ -594,16 +601,20 @@ class SessionStart(SandboxRepo):
         (self.repo / "docs/agent").mkdir(parents=True); (self.repo / "docs/agent/HANDOFF.md").write_text("x" * 3000)
         self.assertIn("HANDOFF.md is over 2 KB", self.start())
 
-    def test_handoff_version_mismatch_warns(self):
+    def handoff_version_cases(self, cases):  # split in several tests: one session start costs ~1 s (TASK-308)
         (self.repo / "STEM_VERSION").write_text("version: 1.2.1\n"); (self.repo / "docs/agent").mkdir(parents=True)
-        cases = {"State: stem 1.2.0, main @ abc": True, "State: STEM version: 1.2.1": False,
-                 "State: main @ abc, no version": False, "system 1.2.0 is not stem": False}
         for text, warns in cases.items():
             (self.repo / "docs/agent/HANDOFF.md").write_text(text + "\n")
             out = self.start({"STEM_OFFLINE": "1"})
             self.assertEqual("WARNING: HANDOFF.md names stem" in out, warns, text)
+
+    def test_handoff_version_mismatch_warns(self):
+        self.handoff_version_cases({"State: stem 1.2.0, main @ abc": True, "State: STEM version: 1.2.1": False})
         (self.repo / "docs/agent/HANDOFF.md").write_text("stem 1.2.0\n")
         self.assertIn("names stem 1.2.0 but STEM_VERSION is 1.2.1", self.start({"STEM_OFFLINE": "1"}))
+
+    def test_handoff_version_mismatch_ignores_unrelated_text(self):
+        self.handoff_version_cases({"State: main @ abc, no version": False, "system 1.2.0 is not stem": False})
 
     def test_handoff_is_consumed_by_any_later_commit_and_missing_file_is_clean(self):
         env = {"STEM_OFFLINE": "1"}
@@ -615,6 +626,12 @@ class SessionStart(SandboxRepo):
         out = self.start(env)
         self.assertIn("HANDOFF.md is consumed (1 commits since", out); self.assertNotIn("Retro DUE", out)  # consumed: text hidden
         self.assertNotIn("consumed", self.start({**env, "HANDOFF_STALE_COMMITS": "2"}))  # threshold override
+
+    def test_handoff_rewrite_is_fresh_again(self):
+        env = {"STEM_OFFLINE": "1"}
+        (self.repo / "docs/agent").mkdir(parents=True); (self.repo / "docs/agent/HANDOFF.md").write_text("State: main\nOld\n"); self.commit("handoff")
+        (self.repo / "f0").write_text("x"); self.commit("work 0")
+        self.assertIn("consumed", self.start(env))
         (self.repo / "docs/agent/HANDOFF.md").write_text("State: main\nNew\n"); self.commit("handoff again")
         out = self.start(env)
         self.assertIn("New", out); self.assertNotIn("consumed", out)  # a rewrite is fresh again
@@ -649,10 +666,22 @@ class SessionStart(SandboxRepo):
         (self.repo / "docs/agent/retros").mkdir(parents=True); (self.repo / "docs/agent/retros/2026-10-25.md").write_text("retro\n")
         runs = self.repo / "docs/agent/retro-runs"; runs.mkdir()
         self.assertIn("RETRO DUE: 9 tasks done since 2026-10-25 (threshold 8)", self.start())  # no recorded result
-        for result, due in (({"adopted": 0, "open_signals": 0}, False), ({"adopted": 1, "open_signals": 0}, True),
-                            ({"adopted": 0, "open_signals": 2}, True), (None, True)):
+        for result, due in (({"adopted": 0, "open_signals": 0}, False), ({"adopted": 1, "open_signals": 0}, True)):
             (runs / "2026-10-25.json").write_text(json.dumps({"label": "2026-10-25", "result": result}))
             self.assertEqual("RETRO DUE" in self.start(), due, result)
+
+    def test_retro_due_with_open_signals_or_no_result(self):
+        for n in range(1, 10): self.task(n, updated="2026-10-26 10:00")
+        (self.repo / "docs/agent/retros").mkdir(parents=True); (self.repo / "docs/agent/retros/2026-10-25.md").write_text("retro\n")
+        runs = self.repo / "docs/agent/retro-runs"; runs.mkdir()
+        for result, due in (({"adopted": 0, "open_signals": 2}, True), (None, True)):
+            (runs / "2026-10-25.json").write_text(json.dumps({"label": "2026-10-25", "result": result}))
+            self.assertEqual("RETRO DUE" in self.start(), due, result)
+
+    def test_retro_threshold_doubles_and_override(self):
+        for n in range(1, 10): self.task(n, updated="2026-10-26 10:00")
+        (self.repo / "docs/agent/retros").mkdir(parents=True); (self.repo / "docs/agent/retros/2026-10-25.md").write_text("retro\n")
+        runs = self.repo / "docs/agent/retro-runs"; runs.mkdir()
         (runs / "2026-10-25.json").write_text(json.dumps({"result": {"adopted": 0, "open_signals": 0}}))
         for n in range(10, 17): self.task(n, updated="2026-10-26 10:00")
         self.assertIn("(threshold 16)", self.start())
