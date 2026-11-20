@@ -250,4 +250,4 @@ class RetroRunSince(Sandbox):
         self.assertIn("ARGS ['2026-10-31']", self.rr("run", "m", "--arg", "2026-10-31").stdout)
 
 if __name__ == "__main__":
-    unittest.main()
+    import shard; shard.main()

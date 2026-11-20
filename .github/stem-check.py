@@ -111,11 +111,17 @@ if hs.returncode: err(hs.stdout.strip() or "hooks-sync --check failed")
 rr = subprocess.run([sys.executable, str(root / ".github/rule-reach.py"), str(root)], capture_output=True, text=True)
 if rr.returncode: err(rr.stdout.strip())
 
-# fixture tests for the scripts (.github/tests/test_scripts.py)
-tr = subprocess.run([sys.executable, str(root / ".github/tests/test_scripts.py")], capture_output=True, text=True)
-if tr.returncode: err("script fixture tests failed:\n" + "\n".join(tr.stderr.strip().splitlines()[-15:]))
-rr = subprocess.run([sys.executable, str(root / ".github/tests/test_retro_run.py")], capture_output=True, text=True)
-if rr.returncode: err("retro-run fixture tests failed:\n" + "\n".join(rr.stderr.strip().splitlines()[-15:]))
+# fixture tests (.github/tests): shards of all test files run in parallel (TASK-308); each shard is one process
+import os
+SHARDS = (("test_scripts.py", "script fixture tests", 3), ("test_retro_run.py", "retro-run fixture tests", 1))
+jobs = []
+for fname, label, n in SHARDS:
+    for i in range(n):
+        env = dict(os.environ, STEM_TEST_SHARD=f"{i}/{n}")
+        jobs.append((label, subprocess.Popen([sys.executable, str(root / ".github/tests" / fname)], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)))
+for label, proc in jobs:
+    se = proc.communicate()[1]
+    if proc.returncode: err(f"{label} failed:\n" + "\n".join(se.strip().splitlines()[-15:]))
 
 print("\n".join(errors) if errors else f"stem-check OK (version {v})")
 sys.exit(1 if errors else 0)
