@@ -1,0 +1,513 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:">
+<title>STEM metrics explorer</title>
+<style>
+/* Token plan: 1 accent, 5 categorical series (+ grey "other") that differ in hue and lightness; type roles; 4px spacing scale. */
+:root{
+ --bg:#fafaf8;--surface:#fff;--text:#1b1d22;--muted:#565c6b;--line:#dcdfe5;--line-strong:#848a96;
+ --accent:#2a56c0;--accent-weak:#e9eefa;
+ --s1:#1f3c88;--s2:#5d8ee8;--s3:#b35f0c;--s4:#7d4cb8;--s5:#1d7f72;--s0:#7f8693;
+ --font:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+ --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+ --t-xs:.75rem;--t-sm:.8125rem;--t-md:.9375rem;--t-lg:1.125rem;--t-xl:1.5rem;
+ --sp1:4px;--sp2:8px;--sp3:12px;--sp4:16px;--sp5:24px;--sp6:40px;--sp7:64px;
+ color-scheme:light dark;
+}
+@media (prefers-color-scheme:dark){:root{
+ --bg:#131519;--surface:#1a1d22;--text:#e6e8ec;--muted:#a3a9b6;--line:#2e323a;--line-strong:#6c7380;
+ --accent:#8aaaff;--accent-weak:#232b40;
+ --s1:#b3c8ff;--s2:#5b88ec;--s3:#f0a252;--s4:#b892f2;--s5:#3fbfad;--s0:#8b919d;
+}}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+@media (prefers-reduced-motion:no-preference){html{scroll-behavior:smooth}}
+body{margin:0;background:var(--bg);color:var(--text);font:var(--t-md)/1.5 var(--font)}
+.num,td.n,th.n,.kpi b,svg text{font-variant-numeric:tabular-nums}
+h1{font-size:var(--t-lg);margin:0;font-weight:650}
+h2{font-size:var(--t-xl);font-weight:600;margin:0 0 var(--sp1)}
+h3{font-size:var(--t-lg);font-weight:600;margin:0 0 var(--sp1)}
+p{margin:0}
+.note{color:var(--muted);font-size:var(--t-sm);max-width:75ch}
+a{color:var(--accent)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+.btn,select,input[type=date],input[type=search]{min-height:40px;padding:6px 10px;border:1px solid var(--line-strong);border-radius:6px;background:var(--surface)}
+.btn[aria-pressed=true]{background:var(--accent-weak);border-color:var(--accent);font-weight:600}
+.link{white-space:nowrap;background:none;border:0;padding:2px 0;color:var(--accent);text-decoration:underline;text-underline-offset:2px;min-height:28px;text-align:left}
+@media (pointer:coarse){.link{min-height:44px}.btn,select,input{min-height:44px}}
+/* header / filters */
+header.bar{position:sticky;top:0;z-index:5;background:var(--bg);border-bottom:1px solid var(--line)}
+.bar-in{max-width:1240px;margin:0 auto;padding:var(--sp3) var(--sp4);display:grid;gap:var(--sp2)}
+.row1{display:flex;flex-wrap:wrap;gap:var(--sp2) var(--sp4);align-items:center}
+#summary{flex:1 1 320px;font-size:var(--t-sm);color:var(--muted)}
+#summary strong{color:var(--text);font-weight:600}
+#controls{display:flex;flex-wrap:wrap;gap:var(--sp2) var(--sp4);align-items:end}
+#controls label,.fld>span{display:block;font-size:var(--t-xs);color:var(--muted);margin-bottom:2px}
+.fld{display:flex;flex-direction:column}
+.seg{display:flex;gap:var(--sp1)}
+#q{width:15rem;max-width:100%}
+#ftoggle{display:none}
+nav.toc{display:flex;gap:var(--sp4);overflow-x:auto;font-size:var(--t-sm);padding-bottom:2px}
+nav.toc a{white-space:nowrap;padding:4px 0}
+@media (max-width:760px){
+ #ftoggle{display:inline-block}
+ header.bar:not(.open) #controls{display:none}
+ #controls>*{flex:1 1 140px}#q{width:100%}
+ nav.toc{display:none}
+}
+/* layout */
+main{max-width:1240px;margin:0 auto;padding:var(--sp5) var(--sp4) var(--sp7)}
+section{margin-top:var(--sp7);scroll-margin-top:170px}
+section:first-child{margin-top:var(--sp4)}
+.sec-head{margin-bottom:var(--sp5);border-bottom:1px solid var(--line);padding-bottom:var(--sp3)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,520px),1fr));gap:var(--sp6) var(--sp6)}
+.panel{min-width:0}
+.panel>.note{margin-bottom:var(--sp3)}
+.chart{width:100%;min-height:40px}
+.chart svg{display:block;overflow:visible}
+svg text{fill:var(--muted);font-size:11px;font-family:var(--font)}
+svg .lbl{fill:var(--text)}
+svg .grid{stroke:var(--line);stroke-width:1}
+svg .axis{stroke:var(--line-strong);stroke-width:1}
+.legend{display:flex;flex-wrap:wrap;gap:var(--sp1) var(--sp4);list-style:none;margin:0 0 var(--sp2);padding:0;font-size:var(--t-sm)}
+.legend li{display:flex;align-items:center;gap:6px}
+.sw{display:inline-block;width:12px;height:12px;border-radius:2px;flex:none}
+.sw.ln{height:3px;border-radius:0}
+.sw.ring{border:2px solid currentColor;border-radius:50%;background:none}
+details.data{margin-top:var(--sp2);font-size:var(--t-sm)}
+details.data summary{cursor:pointer;color:var(--accent);min-height:28px}
+.empty{color:var(--muted);font-style:italic;padding:var(--sp3) 0}
+/* KPIs: a quiet strip, not a card grid */
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr));border-top:1px solid var(--line)}
+.kpi{padding:var(--sp4) var(--sp4) var(--sp4) 0;border-bottom:1px solid var(--line)}
+.kpi>span{display:block;font-size:var(--t-sm);color:var(--muted)}
+.kpi b{display:block;font-size:var(--t-xl);font-weight:600;line-height:1.25;margin:2px 0}
+.kpi small{display:block;font-size:var(--t-xs);color:var(--muted);line-height:1.45}
+.kpi small.cmp{color:var(--text)}
+/* tables */
+.tw{overflow-x:auto;border:1px solid var(--line);border-radius:6px;background:var(--surface)}
+.tw.tall{max-height:22rem;overflow-y:auto}
+table{border-collapse:collapse;width:100%;font-size:var(--t-sm)}
+th,td{padding:6px 10px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-weight:600;background:var(--surface);position:sticky;top:0;z-index:1;white-space:nowrap}
+td.n,th.n{text-align:right}
+th.n .sort{justify-content:flex-end}
+td.t{min-width:16rem;max-width:34rem}
+tbody tr:last-child td{border-bottom:0}
+tbody tr.click{cursor:pointer}
+tbody tr.click:hover{background:var(--accent-weak)}
+.sort{all:unset;display:flex;gap:4px;align-items:center;cursor:pointer;width:100%;min-height:28px}
+.sort:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.sort .ar{font-size:.7em;color:var(--muted);min-width:1em}
+.bar-cell{display:flex;align-items:center;gap:8px}
+.hb{height:10px;background:var(--s1);border-radius:1px}
+.more{margin-top:var(--sp2)}
+.mut{color:var(--muted)}
+/* stacked evidence bar */
+.sbar{display:flex;height:28px;border-radius:3px;overflow:hidden;margin:var(--sp2) 0}
+.sbar>div{display:flex;align-items:center;padding:0 8px;font-size:var(--t-sm);white-space:nowrap;color:#fff}
+@media (prefers-color-scheme:dark){.sbar>div{color:var(--bg)}}
+.panel.wide{grid-column:1/-1}
+td.nw{white-space:nowrap}
+.facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:var(--sp3) var(--sp5);margin:var(--sp3) 0;font-size:var(--t-sm)}
+.facts div span{display:block;color:var(--muted);font-size:var(--t-xs)}
+.facts div b{font-weight:600;font-size:var(--t-lg)}
+/* details dialog */
+dialog{border:0;padding:0;margin:0 0 0 auto;height:100%;max-height:100%;width:min(640px,100%);max-width:100%;background:var(--surface);color:var(--text);border-left:1px solid var(--line-strong)}
+dialog::backdrop{background:rgba(10,12,16,.45)}
+.dlg-h{position:sticky;top:0;background:var(--surface);display:flex;gap:var(--sp3);align-items:flex-start;padding:var(--sp4);border-bottom:1px solid var(--line)}
+.dlg-h h2{font-size:var(--t-lg);flex:1;margin:0}
+.dlg-b{padding:var(--sp4) var(--sp4) var(--sp6)}
+.dlg-b h3{margin-top:var(--sp5);font-size:var(--t-md)}
+dl.kv{display:grid;grid-template-columns:minmax(9rem,auto) 1fr;gap:4px var(--sp4);margin:0;font-size:var(--t-sm)}
+dl.kv dt{color:var(--muted)}dl.kv dd{margin:0}
+.close{min-width:44px;min-height:44px}
+footer{max-width:1240px;margin:0 auto;padding:var(--sp4);font-size:var(--t-xs);color:var(--muted);border-top:1px solid var(--line)}
+.vh{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+</style>
+</head>
+<body>
+<header class="bar" id="bar">
+ <div class="bar-in">
+  <div class="row1">
+   <h1>Metrics explorer</h1>
+   <p id="summary" aria-live="polite"></p>
+   <button class="btn" id="ftoggle" aria-expanded="false" aria-controls="controls">Filters</button>
+   <button class="btn" id="reset">Reset filters</button>
+  </div>
+  <div id="controls" role="group" aria-label="Filters (apply to every section)">
+   <div class="fld"><span id="plbl">Period</span>
+    <div class="seg" role="group" aria-labelledby="plbl">
+     <button class="btn" data-preset="7">7d</button><button class="btn" data-preset="30">30d</button><button class="btn" data-preset="all">All</button>
+    </div></div>
+   <div class="fld"><label for="from">From</label><input type="date" id="from"></div>
+   <div class="fld"><label for="to">To (inclusive)</label><input type="date" id="to"></div>
+   <div class="fld"><label for="ms">Milestone</label><select id="ms"></select></div>
+   <div class="fld"><label for="q">Task (ID or title)</label><input type="search" id="q" placeholder="e.g. TASK-311 or retro" autocomplete="off"></div>
+   <div class="fld"><label for="model">Model</label><select id="model"></select></div>
+  </div>
+  <nav class="toc" aria-label="Sections"><a href="#overview">Overview</a><a href="#cost">Cost &amp; resources</a><a href="#quality">Quality &amp; process</a><a href="#retros">Retros</a><a href="#tasks">Tasks</a><a href="#sessions">Sessions</a></nav>
+ </div>
+</header>
+<main id="main"></main>
+<footer id="foot"></footer>
+<dialog id="dlg" aria-labelledby="dlg-title"><div class="dlg-h"><h2 id="dlg-title"></h2><button class="btn close" id="dlg-x" aria-label="Close details">Close</button></div><div class="dlg-b" id="dlg-b"></div></dialog>
+<script>
+const DATA = /*__STEM_DATA__*/null;
+(function(){
+'use strict';
+const $=id=>document.getElementById(id), NA='n/a', DAY=864e5, NS='http'+'://www.w3.org/2000/svg';
+const main=$('main');
+function add(e,k){for(const c of k.flat(9)){if(c==null||c===false)continue;e.append(c instanceof Node?c:String(c))}return e}
+function el(t,a,...k){const e=document.createElement(t);for(const[n,v]of Object.entries(a||{})){if(v==null||v===false)continue;if(n==='text')e.textContent=v;else if(n==='class')e.className=v;else if(n.slice(0,2)==='on')e.addEventListener(n.slice(2),v);else e.setAttribute(n,v===true?'':v)}return add(e,k)}
+function S(t,a,txt){const e=document.createElementNS(NS,t);for(const[n,v]of Object.entries(a||{}))if(v!=null)e.setAttribute(n,v);if(txt!=null)e.textContent=txt;return e}
+if(!DATA||typeof DATA!=='object'){
+ $('controls').hidden=true;$('reset').hidden=true;$('ftoggle').hidden=true;document.querySelector('nav.toc').hidden=true;
+ main.append(el('p',{class:'empty',text:'No data: run scripts/metrics-explorer.py to generate this report (it writes a copy of this file with the data embedded).'}));
+ return;
+}
+/* ---------- formatting ---------- */
+const nf=new Intl.NumberFormat('en-US');
+const ok=v=>v!=null&&!Number.isNaN(v);
+const usd=v=>!ok(v)?NA:'$'+(Math.abs(v)<1000?v.toFixed(2):nf.format(Math.round(v)));
+const tok=v=>!ok(v)?NA:v>=1e9?(v/1e9).toFixed(2)+'B':v>=1e6?(v/1e6).toFixed(v>=1e8?0:1)+'M':v>=1e3?Math.round(v/1e3)+'k':String(Math.round(v));
+const num=v=>!ok(v)?NA:nf.format(Math.round(v*10)/10);
+const int=v=>!ok(v)?NA:nf.format(Math.round(v));
+const hrs=v=>!ok(v)?NA:v<1?Math.round(v*60)+' min':v<10?v.toFixed(1)+' h':nf.format(Math.round(v))+' h';
+const mins=v=>!ok(v)?NA:hrs(v/60);
+const pct=v=>!ok(v)?NA:v>0&&v<.005?'<1%':Math.round(v*100)+'%';
+const day=ms=>new Date(ms).toISOString().slice(0,10);
+const dt=s=>s?String(s).slice(0,16).replace('T',' '):NA;
+const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const md=ms=>{const d=new Date(ms);return MON[d.getUTCMonth()]+' '+d.getUTCDate()};
+const short=m=>String(m).replace(/^claude-/,'');
+const tnum=id=>parseInt(String(id).replace(/\D+/g,''),10)||0;
+function quant(a,q){if(!a.length)return null;const s=a.slice().sort((x,y)=>x-y),i=(s.length-1)*q,lo=Math.floor(i),hi=Math.ceil(i);return s[lo]+(s[hi]-s[lo])*(i-lo)}
+const median=a=>quant(a,.5);
+/* ---------- data prep ---------- */
+const meta=DATA.meta||{}, MS=DATA.milestones||{};
+const gen=Date.parse(meta.generated)||Date.now();
+const SS=(DATA.sessions||[]).map(s=>Object.assign({},s,{_t:Date.parse(s.start),tasks:s.tasks||[],models:s.models||{}})).filter(s=>ok(s._t));
+const TT=(DATA.tasks||[]).map(t=>Object.assign({},t,{id:String(t.id||''),title:String(t.title||''),_c:t.created?Date.parse(t.created):null,_u:t.updated?Date.parse(t.updated):null}));
+const RR=(DATA.retros||[]).map(r=>Object.assign({},r,{_t:r.created?Date.parse(r.created):null}));
+const byId=new Map(TT.map(t=>[t.id,t])), sById=new Map(SS.map(s=>[s.id,s]));
+const tSess=new Map();for(const s of SS)for(const id of s.tasks){if(!tSess.has(id))tSess.set(id,[]);tSess.get(id).push(s)}
+const mTot={};for(const s of SS)for(const[m,v]of Object.entries(s.models)){const o=mTot[m]||(mTot[m]={c:0,t:0});o.c+=v.cost||0;o.t+=v.turns||0}
+const MODELS=Object.keys(mTot).sort((a,b)=>mTot[b].c-mTot[a].c||mTot[b].t-mTot[a].t);
+const TOP=MODELS.filter(m=>m!=='unknown').slice(0,5);
+const SER=TOP.map((m,i)=>({k:m,label:short(m),c:'var(--s'+(i+1)+')'}));
+if(MODELS.some(m=>!TOP.includes(m)))SER.push({k:'other',label:'other models',c:'var(--s0)'});
+const serOf=m=>TOP.includes(m)?m:'other';
+const minT=Math.min(...SS.map(s=>s._t),...TT.map(t=>t._c).filter(ok),gen);
+const D0=Date.parse(day(minT)), DEND=Date.parse(day(gen))+DAY;
+const TK=[['input','input'],['cache_write','cache write'],['cache_read','cache read'],['output','output']];
+/* ---------- state & filters ---------- */
+const st={from:'',to:'',ms:'',q:'',model:'',tk:'all',ts:{k:'id',d:-1},ss:{k:'start',d:-1},tAll:false,sAll:false};
+const F={};
+function compute(){
+ const q=st.q.trim().toLowerCase(), tf=!!(st.ms||q);
+ const m0=t=>(!st.ms||(st.ms==='_none'?!t.milestone:t.milestone===st.ms))&&(!q||t.id.toLowerCase().includes(q)||t.title.toLowerCase().includes(q));
+ const T0=new Set(TT.filter(m0).map(t=>t.id));
+ F.S=SS.filter(s=>(!st.model||s.models[st.model])&&(!tf||s.tasks.some(id=>T0.has(id))));
+ F.T=TT.filter(t=>T0.has(t.id)&&(!st.model||(tSess.get(t.id)||[]).some(s=>s.models[st.model])));
+ F.Tset=new Set(F.T.map(t=>t.id));
+ F.a=st.from?Date.parse(st.from+'T00:00:00Z'):D0;
+ F.b=st.to?Date.parse(st.to+'T00:00:00Z')+DAY:DEND;
+ if(!(F.b>F.a))F.b=F.a+DAY;
+ F.inP=ms=>ms!=null&&ms>=F.a&&ms<F.b;
+ F.Sp=F.S.filter(s=>F.inP(s._t));
+ F.Tp=F.T.filter(t=>(t._c==null||t._c<F.b)&&((t._u!=null?t._u:t.status==='Done'?t._c:gen)>=F.a));
+ F.agg=taskAgg(F.Sp);
+}
+const sModels=s=>st.model?(s.models[st.model]?{[st.model]:s.models[st.model]}:{}):s.models;
+function sCost(s){if(!st.model)return ok(s.cost)?s.cost:null;const m=s.models[st.model];return m&&ok(m.cost)?m.cost:null}
+function sTok(s){const r=[0,0,0,0];for(const v of Object.values(sModels(s)))TK.forEach(([k],i)=>r[i]+=v[k]||0);return r}
+function taskAgg(Sp){const m=new Map();for(const s of Sp){const k=s.tasks.length;if(!k)continue;const c=sCost(s);for(const id of s.tasks){if(!F.Tset.has(id))continue;const o=m.get(id)||{cost:0,miss:0,turns:0,tools:0,act:0,n:0};o.n++;if(c==null)o.miss++;else o.cost+=c/k;o.turns+=(s.turns||0)/k;o.tools+=(s.tool_calls||0)/k;o.act+=(s.active_min||0)/k;m.set(id,o)}}for(const o of m.values())if(o.miss===o.n)o.cost=null;return m}
+function kpi(a,b){
+ const s=F.S.filter(x=>x._t>=a&&x._t<b);let cost=0,miss=0,act=0,wall=0;const tk=[0,0,0,0];
+ for(const x of s){const c=sCost(x);if(c==null)miss++;else cost+=c;sTok(x).forEach((v,i)=>tk[i]+=v);act+=x.active_min||0;wall+=x.wall_min||0}
+ const done=F.T.filter(t=>t.status==='Done'&&t._u!=null&&t._u>=a&&t._u<b);
+ return{n:s.length,cost:s.length&&miss<s.length?cost:null,miss,tk,tt:tk.reduce((x,y)=>x+y,0),act:s.length?act/60:null,wall:s.length?wall/60:null,done:done.length,cyc:median(done.map(t=>t.cycle_h).filter(ok)),D:done}
+}
+/* ---------- generic pieces ---------- */
+function ticks(m){if(!(m>0))return[0,1];const r=m/4,p=10**Math.floor(Math.log10(r)),s=[1,2,2.5,5,10].map(x=>x*p).find(x=>x>=r);const a=[];for(let v=0;v<m-1e-9;v+=s)a.push(+v.toPrecision(6));a.push(+(a[a.length-1]+s).toPrecision(6));return a}
+function legend(items){return el('ul',{class:'legend'},items.map(i=>el('li',null,el('span',{class:'sw'+(i.ln?' ln':'')+(i.ring?' ring':''),style:i.ring?'color:'+i.c:'background:'+i.c,'aria-hidden':'true'}),i.label)))}
+function cw(id){const n=$(id);return n?Math.max(280,n.clientWidth):640}
+function buckets(a,b,week){
+ const out=[];let t=a;if(week){const d=new Date(t).getUTCDay();t-=((d+6)%7)*DAY}
+ for(;t<b;t+=week?7*DAY:DAY)out.push({s:t,e:t+(week?7:1)*DAY,label:(week?'wk ':'')+md(t),full:week?'week of '+day(t):day(t)});
+ return out.slice(0,400);
+}
+const bIdx=(B,ms)=>{for(let i=0;i<B.length;i++)if(ms>=B[i].s&&ms<B[i].e)return i;return -1};
+/* bar chart: stacked or grouped series per bucket, optional line (same unit, one y-axis) */
+function barChart(o){
+ const W=o.w,H=o.h||230,L=54,R=10,T=18,Bm=30,n=o.B.length,iw=W-L-R,ih=H-T-Bm,bw=iw/Math.max(n,1);
+ const val=(i,k)=>o.v[i][k]||0;
+ const tot=o.B.map((_,i)=>o.group?Math.max(0,...o.ser.map(s=>val(i,s.k))):o.ser.reduce((a,s)=>a+val(i,s.k),0));
+ const tk=ticks(Math.max(0,...tot,...(o.line?o.line.v.filter(ok):[]))),mx=tk[tk.length-1]||1;
+ const y=v=>T+ih-(v/mx)*ih;
+ const g=S('svg',{width:W,height:H,viewBox:'0 0 '+W+' '+H,role:'img','aria-label':o.label});
+ for(const t of tk){g.append(S('line',{x1:L,x2:W-R,y1:y(t),y2:y(t),class:t?'grid':'axis'}));g.append(S('text',{x:L-6,y:y(t)+4,'text-anchor':'end'},o.fmt(t)))}
+ const step=Math.max(1,Math.ceil(n/Math.max(1,Math.floor(iw/58))));
+ o.B.forEach((b,i)=>{
+  const x0=L+i*bw,pad=Math.min(bw*.18,8),inner=Math.max(1,bw-2*pad);
+  if(o.group){const sw=inner/o.ser.length;o.ser.forEach((s,j)=>{const v=val(i,s.k);if(v>0){const r=S('rect',{x:x0+pad+j*sw,y:y(v),width:Math.max(1,sw-1),height:y(0)-y(v),fill:s.c});r.append(S('title',null,b.full+' · '+s.label+': '+o.fmt(v)));g.append(r)}})}
+  else{let acc=0;for(const s of o.ser){const v=val(i,s.k);if(v>0){const r=S('rect',{x:x0+pad,y:y(acc+v),width:inner,height:Math.max(.5,y(acc)-y(acc+v)),fill:s.c,stroke:'var(--surface)','stroke-width':inner>6?.75:0});r.append(S('title',null,b.full+' · '+s.label+': '+o.fmt(v)));g.append(r);acc+=v}}
+   if(tot[i]>0&&bw>=34)g.append(S('text',{x:x0+bw/2,y:y(tot[i])-4,'text-anchor':'middle',class:'lbl'},o.fmt(tot[i],1)))}
+  if(i%step===0)g.append(S('text',{x:x0+bw/2,y:H-Bm+16,'text-anchor':'middle'},b.label));
+ });
+ if(o.line){const pts=o.line.v.map((v,i)=>ok(v)?[L+i*bw+bw/2,y(v)]:null).filter(Boolean);
+  g.append(S('polyline',{points:pts.map(p=>p.join(',')).join(' '),fill:'none',stroke:o.line.c,'stroke-width':2}));
+  pts.forEach((p,i)=>{const c=S('circle',{cx:p[0],cy:p[1],r:3,fill:o.line.c});c.append(S('title',null,o.B[i].full+' · '+o.line.label+': '+o.fmt(o.line.v[i])));g.append(c)})}
+ return g;
+}
+function dataTable(cols,rows){return el('details',{class:'data'},el('summary',{text:'Show data as table'}),el('div',{class:'tw tall'},el('table',null,el('thead',null,el('tr',null,cols.map(c=>el('th',{class:c.n?'n':null,scope:'col',text:c.l})))),el('tbody',null,rows.map(r=>el('tr',null,cols.map((c,i)=>el('td',{class:c.n?'n':null,text:r[i]}))))))))}
+/* sortable table; first column is a button opening details */
+function sortTable(o){
+ const s=st[o.key],col=o.cols.find(c=>c.k===s.k)||o.cols[0];
+ const rows=o.rows.slice().sort((a,b)=>{const x=col.get(a),y=col.get(b);if(x==null||x==='')return y==null||y===''?0:1;if(y==null||y==='')return -1;return(typeof x==='string'?x.localeCompare(y):x-y)*s.d});
+ const lim=st[o.all]?rows.length:Math.min(rows.length,o.limit||50);
+ const head=el('tr',null,o.cols.map(c=>{const on=c.k===s.k;return el('th',{scope:'col',class:c.n?'n':null,'aria-sort':on?(s.d>0?'ascending':'descending'):null,title:c.tip||null},
+  el('button',{class:'sort','data-t':o.key,'data-k':c.k,onclick:()=>{if(s.k===c.k)s.d=-s.d;else{s.k=c.k;s.d=c.n?-1:1}o.redraw();const b=document.querySelector('[data-t="'+o.key+'"][data-k="'+c.k+'"]');if(b)b.focus()}},c.l,el('span',{class:'ar','aria-hidden':'true',text:on?(s.d>0?'▲':'▼'):''})))}));
+ const body=el('tbody',null,rows.slice(0,lim).map(r=>el('tr',{class:'click',onclick:e=>{if(e.target.closest('button'))return;o.open(r)}},o.cols.map((c,i)=>{const v=c.fmt?c.fmt(c.get(r),r):c.get(r);
+  return el('td',{class:c.n?'n':c.t?'t':null},i===0?el('button',{class:'link',onclick:()=>o.open(r),'aria-label':'Details for '+v},v):v==null?NA:String(v))}))));
+ const out=[el('div',{class:'tw'},el('table',null,o.cap?el('caption',{class:'vh',text:o.cap}):null,el('thead',null,head),body))];
+ if(!rows.length)out.push(el('p',{class:'empty',text:'No rows match the current filters.'}));
+ if(rows.length>lim||st[o.all]&&rows.length>(o.limit||50))out.push(el('p',{class:'more'},el('span',{class:'mut',text:'Showing '+lim+' of '+rows.length+'. '}),el('button',{class:'btn',onclick:()=>{st[o.all]=!st[o.all];o.redraw()}},st[o.all]?'Show fewer':'Show all '+rows.length)));
+ return out;
+}
+const taskBtn=id=>byId.has(id)?el('button',{class:'link',onclick:()=>openTask(byId.get(id))},id):el('span',{class:'mut',text:id+' (no task file)'});
+const sessBtn=s=>el('button',{class:'link',onclick:()=>openSess(s)},s.id);
+function panel(title,note,...kids){return el('div',{class:'panel'},el('h3',{text:title}),el('p',{class:'note',text:note}),kids)}
+function section(id,title,note){const s=el('section',{id,'aria-labelledby':id+'-h'},el('div',{class:'sec-head'},el('h2',{id:id+'-h',text:title}),el('p',{class:'note',text:note})));return s}
+/* ---------- sections ---------- */
+const SEC={};
+function periodText(){return day(F.a)+' to '+day(F.b-DAY)}
+function rOverview(){
+ const s=section('overview','Overview','Totals for the filtered period. Comparison is against the previous period of equal length (only when a period is set).');
+ const k=kpi(F.a,F.b),hasP=!!st.from,len=F.b-F.a,p=hasP?kpi(F.a-len,F.a):null,nd=Math.round(len/DAY);
+ const cmp=(cur,prev,f)=>{if(!p)return null;if(!ok(cur)||!ok(prev))return el('small',{class:'cmp',text:'previous '+nd+' d: '+f(prev)});if(!prev)return el('small',{class:'cmp',text:'previous '+nd+' d: '+f(prev)});const d=(cur-prev)/prev;return el('small',{class:'cmp',text:(d>=0?'+':'−')+Math.abs(Math.round(d*100))+'% vs previous '+nd+' d ('+f(prev)+')'})};
+ const K=(label,val,sub,c)=>el('div',{class:'kpi'},el('span',{text:label}),el('b',{text:val}),sub.map(x=>el('small',{text:x})),c);
+ s.append(el('div',{class:'kpis'},
+  K('Est. cost (USD)',usd(k.cost),[k.miss?k.miss+' session(s) without a price excluded':'all sessions priced','prices as of '+(meta.prices_date||NA)],cmp(k.cost,p&&p.cost,usd)),
+  K('Tokens',tok(k.tt),TK.map(([,l],i)=>l+': '+tok(k.tk[i])),cmp(k.tt,p&&p.tt,tok)),
+  K('Active hours',hrs(k.act),['of '+hrs(k.wall)+' wall time'+(k.wall?' ('+pct(k.act/k.wall)+' active)':''),'active = gaps under '+Math.round((meta.idle_gap_s||300)/60)+' min'],cmp(k.act,p&&p.act,hrs)),
+  K('Sessions',int(k.n),['transcripts started in the period'],cmp(k.n,p&&p.n,int)),
+  K('Tasks done',int(k.done),['status Done, last update in period'],cmp(k.done,p&&p.done,int)),
+  K('Median cycle time',hrs(k.cyc),['created to last update, Done tasks','n = '+k.D.filter(t=>ok(t.cycle_h)).length],cmp(k.cyc,p&&p.cyc,hrs))));
+ return s;
+}
+function rCost(){
+ const s=section('cost','Cost & resources','Cost is an estimate: token counts times a dated price table (one source: context-report.py). A model without a price shows n/a and is left out of sums, never counted as 0. Times are UTC.');
+ const week=(F.b-F.a)/DAY>62,B=buckets(F.a,F.b,week),ser=st.model?SER.filter(x=>x.k===serOf(st.model)):SER;
+ const vc=B.map(()=>({})),vt=B.map(()=>({}));let miss=0;
+ const ki=st.tk==='all'?null:TK.findIndex(([k])=>k===st.tk);
+ for(const x of F.Sp){const i=bIdx(B,x._t);if(i<0)continue;for(const[m,v]of Object.entries(sModels(x))){const k=serOf(m);if(ok(v.cost))vc[i][k]=(vc[i][k]||0)+v.cost;else miss++;const t=ki==null?TK.reduce((a,[kk])=>a+(v[kk]||0),0):v[TK[ki][0]]||0;vt[i][k]=(vt[i][k]||0)+t}}
+ const g=el('div',{class:'grid'});
+ const c1=el('div',{class:'chart',id:'ch-cost'}),c2=el('div',{class:'chart',id:'ch-tok'});
+ const tsel=el('select',{id:'tk','aria-label':'Token type'},[['all','all token types']].concat(TK).map(([k,l])=>el('option',{value:k,selected:st.tk===k},l)));
+ tsel.addEventListener('change',()=>{st.tk=tsel.value;render();const n=$('tk');if(n)n.focus()});
+ const lg=legend(ser);
+ const dcols=[{l:week?'Week':'Day'}].concat(ser.map(x=>({l:x.label,n:1})),[{l:'Total',n:1}]);
+ g.append(panel('Est. cost per '+(week?'week':'day')+', by model','Stacked bars; the label on top is the bar total.'+(miss?' '+miss+' model share(s) without a price are left out.':''),lg,c1,
+   dataTable(dcols,B.map((b,i)=>[b.full].concat(ser.map(x=>usd(vc[i][x.k]||0)),[usd(ser.reduce((a,x)=>a+(vc[i][x.k]||0),0))])))),
+  panel('Tokens per '+(week?'week':'day')+', by model','Cache reads usually dominate the total; pick a token type to compare the others.',el('div',{style:'display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:8px'},el('label',{for:'tk',class:'mut',text:'Show'}),tsel),lg.cloneNode(true),c2,
+   dataTable(dcols,B.map((b,i)=>[b.full].concat(ser.map(x=>tok(vt[i][x.k]||0)),[tok(ser.reduce((a,x)=>a+(vt[i][x.k]||0),0))])))));
+ SEC.draw.push(()=>{c1.append(barChart({w:cw('ch-cost'),B,ser,v:vc,fmt:(v,t)=>'$'+(v>=100||t?Math.round(v):v.toFixed(v<1&&v>0?2:0)),label:'Estimated cost per '+(week?'week':'day')+' stacked by model'}));
+  c2.append(barChart({w:cw('ch-tok'),B,ser,v:vt,fmt:tok,label:'Tokens per '+(week?'week':'day')+' stacked by model'}))});
+ // per model table
+ const pm={};let all=0;for(const x of F.Sp)for(const[m,v]of Object.entries(sModels(x))){const o=pm[m]||(pm[m]={n:0,turns:0,input:0,cache_write:0,cache_read:0,output:0,cost:0,miss:0});o.n++;o.turns+=v.turns||0;TK.forEach(([k])=>o[k]+=v[k]||0);if(ok(v.cost)){o.cost+=v.cost;all+=v.cost}else o.miss++}
+ const ms=Object.keys(pm).sort((a,b)=>(pm[b].miss?-1:pm[b].cost)-(pm[a].miss?-1:pm[a].cost));
+ const mx=Math.max(0,...ms.map(m=>pm[m].miss?0:pm[m].cost));
+ const mt=el('div',{class:'tw'},el('table',null,el('thead',null,el('tr',null,['Model','Sessions','Turns','Input','Cache write','Cache read','Output','Est. cost','Share'].map((h,i)=>el('th',{scope:'col',class:i?'n':null,text:h})))),
+  el('tbody',null,ms.map(m=>{const o=pm[m],c=o.miss?null:o.cost;const sw=SER.find(x=>x.k===serOf(m));return el('tr',null,el('td',{class:'nw'},el('span',{class:'bar-cell'},el('span',{class:'sw',style:'background:'+(sw?sw.c:'var(--s0)'),'aria-hidden':'true'}),m)),
+   el('td',{class:'n',text:int(o.n)}),el('td',{class:'n',text:int(o.turns)}),TK.map(([k])=>el('td',{class:'n',text:tok(o[k])})),el('td',{class:'n',text:usd(c)}),
+   el('td',{class:'n'},el('span',{class:'bar-cell',style:'justify-content:flex-end'},el('span',{text:c==null||!all?NA:pct(c/all)}),el('span',{class:'hb',style:'width:'+(c&&mx?Math.max(1,Math.round(60*c/mx)):0)+'px;background:'+(sw?sw.c:'var(--s0)'),'aria-hidden':'true'}))))}))));
+ const g2=el('div',{class:'grid'});
+ const pmp=panel('Cost per model','Sessions = sessions that used the model (also via subagents). Share is of the priced total.',ms.length?mt:el('p',{class:'empty',text:'No sessions in this period.'}));pmp.classList.add('wide');g2.append(pmp);
+ // per task cost
+ const rows=[...F.agg.entries()].filter(([,o])=>ok(o.cost)).sort((a,b)=>b[1].cost-a[1].cost);
+ const linked=rows.reduce((a,[,o])=>a+o.cost,0),tot=F.Sp.reduce((a,x)=>a+(sCost(x)||0),0),top=rows.slice(0,15),tmx=top.length?top[0][1].cost:0;
+ g2.append(panel('Est. cost per task (top 15)','A session is linked to the tasks named in commits during its time; its cost is split evenly across those tasks. '+(tot?pct(linked/tot)+' of the period cost is linked to a task; the rest has no task commit.':''),
+  top.length?el('div',{class:'tw'},el('table',null,el('thead',null,el('tr',null,el('th',{scope:'col',text:'Task'}),el('th',{scope:'col',text:'Title'}),el('th',{scope:'col',class:'n',text:'Sessions'}),el('th',{scope:'col',class:'n',text:'Est. cost'}))),
+   el('tbody',null,top.map(([id,o])=>el('tr',null,el('td',null,taskBtn(id)),el('td',{class:'t',text:(byId.get(id)||{}).title||''}),el('td',{class:'n',text:int(o.n)}),el('td',{class:'n'},el('span',{class:'bar-cell',style:'justify-content:flex-end'},el('span',{text:usd(o.cost)}),el('span',{class:'hb',style:'width:'+Math.max(1,Math.round(60*o.cost/tmx))+'px','aria-hidden':'true'})))))))):el('p',{class:'empty',text:'No session in this period is linked to a task.'})));
+ // retro cost
+ const rp=RR.filter(r=>F.inP(r._t)),rc=rp.filter(r=>ok(r.cost));
+ g2.append(panel('Est. cost per retro run','From the cost line each retro run records; details in the Retros section.',rc.length?el('div',{class:'tw'},el('table',null,el('tbody',null,rc.map(r=>el('tr',null,el('td',{text:r.label}),el('td',{class:'n',text:usd(r.cost)})))))):el('p',{class:'empty',text:rp.length?'n/a: none of the '+rp.length+' retro run(s) in this period recorded a cost.':'No retro runs in this period.'})));
+ s.append(g,el('div',{style:'height:40px'}),g2);
+ return s;
+}
+function stripPlot(w,groups){
+ const vals=groups.flatMap(g=>g.v);const H=groups.length*46+30,L=92,R=14,T=8;
+ const lo=Math.log10(.05),hi=Math.log10(Math.max(1,...vals)*1.1),x=v=>L+(Math.log10(Math.max(v,.05))-lo)/(hi-lo)*(w-L-R);
+ const g=S('svg',{width:w,height:H,viewBox:'0 0 '+w+' '+H,role:'img','aria-label':'Cycle time per Done task by size label, log scale'});
+ for(const t of[.1,1,10,100,1000])if(Math.log10(t)<=hi){g.append(S('line',{x1:x(t),x2:x(t),y1:T,y2:H-22,class:'grid'}));g.append(S('text',{x:x(t),y:H-6,'text-anchor':'middle'},t<1?'6 min':t+' h'))}
+ groups.forEach((gr,j)=>{const cy=T+j*46+23;g.append(S('text',{x:0,y:cy+4,class:'lbl'},gr.l));g.append(S('text',{x:0,y:cy+17},'n = '+gr.v.length));
+  if(gr.v.length>1){const a=quant(gr.v,.25),b=quant(gr.v,.75);g.append(S('rect',{x:x(a),y:cy-12,width:Math.max(1,x(b)-x(a)),height:24,fill:'var(--accent-weak)',stroke:'var(--line-strong)'}))}
+  gr.v.forEach((v,i)=>{const c=S('circle',{cx:x(v),cy:cy+((i*37)%17-8),r:3,fill:'none',stroke:'var(--s1)','stroke-width':1.4});c.append(S('title',null,gr.ids[i]+': '+hrs(v)));g.append(c)});
+  if(gr.v.length){const m=median(gr.v);g.append(S('line',{x1:x(m),x2:x(m),y1:cy-15,y2:cy+15,stroke:'var(--s3)','stroke-width':3}))}});
+ return g;
+}
+function ctxChart(w,ss){
+ const H=240,L=54,R=10,T=12,B=28,a=F.a,b=F.b;const tk=ticks(Math.max(1,...ss.map(s=>s.peak_ctx||0))),mx=tk[tk.length-1];
+ const x=t=>L+(t-a)/(b-a)*(w-L-R),y=v=>T+(H-T-B)-(v/mx)*(H-T-B);
+ const g=S('svg',{width:w,height:H,viewBox:'0 0 '+w+' '+H,role:'img','aria-label':'Context size per session: start to peak, over time'});
+ for(const t of tk){g.append(S('line',{x1:L,x2:w-R,y1:y(t),y2:y(t),class:t?'grid':'axis'}));g.append(S('text',{x:L-6,y:y(t)+4,'text-anchor':'end'},tok(t)))}
+ const B2=buckets(a,b,(b-a)/DAY>62),step=Math.max(1,Math.ceil(B2.length/Math.floor((w-L-R)/58)));B2.forEach((k,i)=>{if(i%step===0)g.append(S('text',{x:x(k.s),y:H-8,'text-anchor':'middle'},k.label))});
+ for(const s of ss){const cx=x(s._t);g.append(S('line',{x1:cx,x2:cx,y1:y(s.start_ctx||0),y2:y(s.peak_ctx||0),stroke:'var(--line-strong)','stroke-width':1}));
+  const c=s.compactions>0?S('rect',{x:cx-4,y:y(s.peak_ctx)-4,width:8,height:8,fill:'var(--s3)'}):S('circle',{cx,cy:y(s.peak_ctx||0),r:3,fill:'var(--s1)'});
+  c.append(S('title',null,'Session '+s.id+' '+dt(s.start)+': start '+tok(s.start_ctx)+', peak '+tok(s.peak_ctx)+', compactions '+s.compactions));g.append(c)}
+ return g;
+}
+function rQuality(){
+ const s=section('quality','Quality & process','Process signals from task files (Outcome line, evidence lines, BLOCKED, Learning notes) and transcripts. Counts, not judgements.');
+ const done=F.T.filter(t=>t.status==='Done'&&F.inP(t._u));
+ const grid=el('div',{class:'grid'});
+ // cycle
+ const sizes=[['S','Size S'],['M','Size M'],['L','Size L'],[null,'No size']];
+ const groups=sizes.map(([k,l])=>{const ts=done.filter(t=>(t.size||null)===k&&ok(t.cycle_h));return{l,v:ts.map(t=>t.cycle_h),ids:ts.map(t=>t.id)}}).filter(g=>g.v.length);
+ const c1=el('div',{class:'chart',id:'ch-cyc'});
+ grid.append(panel('Cycle time by size label','Created to last update of Done tasks closed in the period (log scale). Box = middle 50 %, thick mark = median. "Last update" can be later than the real finish.',
+  groups.length?[legend([{label:'task',c:'var(--s1)',ring:1},{label:'median',c:'var(--s3)',ln:1},{label:'middle 50 %',c:'var(--accent-weak)'}]),c1,
+  el('div',{class:'tw'},el('table',null,el('thead',null,el('tr',null,['Size','n','Median','25 %','75 %','Max'].map((h,i)=>el('th',{scope:'col',class:i?'n':null,text:h})))),el('tbody',null,groups.map(g=>el('tr',null,el('td',{text:g.l}),el('td',{class:'n',text:g.v.length}),[.5,.25,.75,1].map(q=>el('td',{class:'n',text:hrs(quant(g.v,q))}))))))) ]:el('p',{class:'empty',text:'No Done tasks with a cycle time in this period.'})));
+ if(groups.length)SEC.draw.push(()=>c1.append(stripPlot(cw('ch-cyc'),groups)));
+ // outcome
+ const oc=done.filter(t=>t.outcome),sum=k=>{const v=oc.map(t=>t.outcome[k]).filter(ok);return v.length?v.reduce((a,b)=>a+b,0):null};
+ const bad=oc.filter(t=>(t.outcome.corrections||0)+(t.outcome.rework_min||0)+(t.outcome.defects||0)>0).sort((a,b)=>(b.outcome.rework_min||0)-(a.outcome.rework_min||0)||(b.outcome.corrections||0)-(a.outcome.corrections||0));
+ grid.append(panel('Outcome per task','From the "Outcome:" line written at close (corrections by the user, rework minutes, defects). Tasks without the line are not counted.',
+  el('div',{class:'facts'},el('div',null,el('span',{text:'Done tasks with Outcome'}),el('b',{text:oc.length+' of '+done.length})),el('div',null,el('span',{text:'Corrections'}),el('b',{text:int(sum('corrections'))})),el('div',null,el('span',{text:'Rework'}),el('b',{text:mins(sum('rework_min'))})),el('div',null,el('span',{text:'Defects'}),el('b',{text:int(sum('defects'))}))),
+  bad.length?el('div',{class:'tw tall'},el('table',null,el('thead',null,el('tr',null,['Task','Title','Corrections','Rework','Defects'].map((h,i)=>el('th',{scope:'col',class:i>1?'n':null,text:h})))),el('tbody',null,bad.map(t=>el('tr',null,el('td',null,taskBtn(t.id)),el('td',{class:'t',text:t.title}),el('td',{class:'n',text:int(t.outcome.corrections)}),el('td',{class:'n',text:mins(t.outcome.rework_min)}),el('td',{class:'n',text:int(t.outcome.defects)}))))))
+  :el('p',{class:'empty',text:oc.length?'No task in this period reports corrections, rework or defects.':'No Outcome lines in this period.'})));
+ // evidence
+ const e1=done.reduce((a,t)=>a+(t.e1||0),0),e2=done.reduce((a,t)=>a+(t.e2||0),0),et=e1+e2;
+ const weak=done.filter(t=>(t.e1||0)>0||(t.ac_total||0)>(t.ac_done||0));
+ grid.append(panel('Evidence level mix','Per-AC evidence lines in Done tasks of the period: E2 = reproducible proof, E1 = weaker (e.g. stated, not re-run). Weak evidence = Done with any E1 line or unchecked ACs.',
+  et?el('div',{class:'sbar',role:'img','aria-label':'E2 '+e2+' lines, E1 '+e1+' lines'},e2?el('div',{style:'background:var(--s1);flex:'+e2,text:'E2 '+e2+' ('+pct(e2/et)+')'}):null,e1?el('div',{style:'background:var(--s3);flex:'+e1+';min-width:5.5rem',text:'E1 '+e1}):null):el('p',{class:'empty',text:'No evidence lines in this period.'}),
+  el('p',{class:'note',text:'Weak evidence: '+weak.length+' of '+done.length+' Done tasks.',style:'margin:8px 0'}),
+  weak.length?el('div',{class:'tw tall'},el('table',null,el('thead',null,el('tr',null,['Task','Title','E1','E2','ACs checked'].map((h,i)=>el('th',{scope:'col',class:i>1?'n':null,text:h})))),el('tbody',null,weak.map(t=>el('tr',null,el('td',null,taskBtn(t.id)),el('td',{class:'t',text:t.title}),el('td',{class:'n',text:int(t.e1)}),el('td',{class:'n',text:int(t.e2)}),el('td',{class:'n',text:int(t.ac_done)+' / '+int(t.ac_total)})))))):null));
+ // blocked & learnings
+ const bl=F.Tp.filter(t=>t.blocked),ln=done.filter(t=>t.learnings>0);
+ grid.append(panel('Blocked tasks and learnings','Blocked = the word BLOCKED appears in the task file (any status, active in period). Learnings = "Learning:" notes in Done tasks of the period.',
+  el('div',{class:'facts'},el('div',null,el('span',{text:'Tasks mentioning BLOCKED'}),el('b',{text:int(bl.length)})),el('div',null,el('span',{text:'Learning notes'}),el('b',{text:int(ln.reduce((a,t)=>a+t.learnings,0))})),el('div',null,el('span',{text:'Tasks with a learning'}),el('b',{text:int(ln.length)}))),
+  bl.length?el('div',{class:'tw'},el('table',null,el('tbody',null,bl.map(t=>el('tr',null,el('td',null,taskBtn(t.id)),el('td',{class:'t',text:t.title}),el('td',{text:t.status})))))):null));
+ // context
+ const c2=el('div',{class:'chart',id:'ch-ctx'}),cs=F.Sp,comp=cs.filter(x=>x.compactions>0);
+ const g2=el('div',{class:'grid'});
+ g2.append(panel('Context per session','Each line runs from the context size at the first turn to the peak (input + cache tokens of one turn). Squares = sessions with a compaction.',
+  el('div',{class:'facts'},el('div',null,el('span',{text:'Median start'}),el('b',{text:tok(median(cs.map(x=>x.start_ctx).filter(ok)))})),el('div',null,el('span',{text:'Median peak'}),el('b',{text:tok(median(cs.map(x=>x.peak_ctx).filter(ok)))})),el('div',null,el('span',{text:'90th pct. peak'}),el('b',{text:tok(quant(cs.map(x=>x.peak_ctx).filter(ok),.9))})),el('div',null,el('span',{text:'Sessions with compaction'}),el('b',{text:comp.length+' ('+comp.reduce((a,x)=>a+x.compactions,0)+' total)'}))),
+  cs.length?[legend([{label:'peak',c:'var(--s1)'},{label:'peak, compacted',c:'var(--s3)'},{label:'start to peak',c:'var(--line-strong)',ln:1}]),c2]:el('p',{class:'empty',text:'No sessions in this period.'})));
+ if(cs.length)SEC.draw.push(()=>c2.append(ctxChart(cw('ch-ctx'),cs)));
+ // turns/tools
+ const tv=[...F.agg.values()];
+ const drow=(l,a)=>el('tr',null,el('td',{text:l}),el('td',{class:'n',text:int(a.length)}),[.5,.9,1].map(q=>el('td',{class:'n',text:num(quant(a,q))})));
+ g2.append(panel('Turns and tool calls','Per session: main thread only (subagent turns listed apart). Per task: linked sessions split evenly across their tasks, like cost.',
+  el('div',{class:'tw'},el('table',null,el('thead',null,el('tr',null,['Measure','n','Median','90th pct.','Max'].map((h,i)=>el('th',{scope:'col',class:i?'n':null,text:h})))),el('tbody',null,
+   drow('Turns per session',cs.map(x=>x.turns||0)),drow('Tool calls per session',cs.map(x=>x.tool_calls||0)),drow('Subagent turns per session',cs.map(x=>x.subagent_turns||0)),drow('User messages per session',cs.map(x=>x.user_msgs||0)),
+   drow('Turns per task',tv.map(o=>o.turns)),drow('Tool calls per task',tv.map(o=>o.tools)),drow('Active minutes per task',tv.map(o=>o.act)))))));
+ // flow
+ const B=buckets(F.a,F.b,true),v=B.map(()=>({c:0,d:0}));
+ for(const t of F.T){const i=bIdx(B,t._c);if(i>=0)v[i].c++;if(t.status==='Done'){const j=bIdx(B,t._u);if(j>=0)v[j].d++}}
+ const open=B.map(b=>F.T.filter(t=>t._c!=null&&t._c<b.e&&!(t.status==='Done'&&t._u!=null&&t._u<b.e)&&!(t.archived&&t.status!=='Done')&&!(t.status==='Done'&&t._u==null)).length);
+ const c3=el('div',{class:'chart',id:'ch-flow'}),now=F.T.filter(t=>!t.archived),fser=[{k:'c',label:'created',c:'var(--s2)'},{k:'d',label:'done',c:'var(--s1)'}];
+ g2.append(panel('Backlog flow per week','Created vs. done per week (UTC, weeks start Monday); line = open tasks at week end (archived, never-done tasks excluded).',
+  el('div',{class:'facts'},el('div',null,el('span',{text:'Open now: To Do'}),el('b',{text:int(now.filter(t=>t.status==='To Do').length)})),el('div',null,el('span',{text:'In Progress'}),el('b',{text:int(now.filter(t=>t.status==='In Progress').length)})),el('div',null,el('span',{text:'Archived (not done)'}),el('b',{text:int(F.T.filter(t=>t.archived&&t.status!=='Done').length)}))),
+  legend(fser.concat([{label:'open at week end',c:'var(--s3)',ln:1}])),c3,dataTable([{l:'Week'},{l:'Created',n:1},{l:'Done',n:1},{l:'Open at end',n:1}],B.map((b,i)=>[b.full,v[i].c,v[i].d,open[i]]))));
+ SEC.draw.push(()=>c3.append(barChart({w:cw('ch-flow'),B,ser:fser,v,group:1,line:{label:'open',c:'var(--s3)',v:open},fmt:int,label:'Tasks created and done per week, open tasks as a line'})));
+ s.append(grid,el('div',{style:'height:40px'}),g2);
+ return s;
+}
+function rRetros(){
+ const s=section('retros','Retros','Retro runs from docs/agent/retro-runs/*.json, filtered by period only (milestone, task and model filters do not apply). Empty fields were not recorded by that run.');
+ const rp=RR.filter(r=>r._t==null||F.inP(r._t)).sort((a,b)=>(b._t||0)-(a._t||0));
+ const dur=r=>r.created&&r.finished?(Date.parse(r.finished)-Date.parse(r.created))/6e4:null;
+ s.append(rp.length?el('div',{class:'tw'},el('table',null,el('thead',null,el('tr',null,['Run','Started (UTC)','Stage','Outcome','Duration','Adopted changes','Open signals','Turns','Tool calls','Cache read','Output','Est. cost'].map((h,i)=>el('th',{scope:'col',class:i>3?'n':null,text:h})))),
+  el('tbody',null,rp.map(r=>el('tr',null,el('td',{text:r.label}),el('td',{text:dt(r.created)}),el('td',{text:r.stage||NA}),el('td',{text:r.outcome||(r.finished?NA:'not finished')}),el('td',{class:'n',text:mins(dur(r))}),
+   [r.adopted,r.open_signals,r.turns,r.tool_calls].map(v=>el('td',{class:'n',text:int(v)})),el('td',{class:'n',text:tok(r.cache_read)}),el('td',{class:'n',text:tok(r.output)}),el('td',{class:'n',text:usd(r.cost)}))))))
+  :el('p',{class:'empty',text:'No retro runs in this period.'}));
+ return s;
+}
+const TCOLS=[
+ {k:'id',l:'Task',get:t=>tnum(t.id),fmt:(_,t)=>t.id},{k:'title',l:'Title',get:t=>t.title,t:1},{k:'status',l:'Status',get:t=>t.status},{k:'size',l:'Size',get:t=>t.size},
+ {k:'ms',l:'Milestone',get:t=>t.milestone},{k:'cyc',l:'Cycle',n:1,get:t=>t.cycle_h,fmt:hrs},
+ {k:'ns',l:'Sessions',n:1,get:t=>(F.agg.get(t.id)||{}).n,fmt:int,tip:'Linked sessions in the period'},{k:'cost',l:'Est. cost',n:1,get:t=>(F.agg.get(t.id)||{}).cost,fmt:usd,tip:'Share of linked session cost (split evenly)'},
+ {k:'turns',l:'Turns',n:1,get:t=>(F.agg.get(t.id)||{}).turns,fmt:int},
+ {k:'ev',l:'E2 / E1',n:1,get:t=>(t.e2||0)-(t.e1||0)/100,fmt:(_,t)=>t.e2+' / '+t.e1},{k:'ac',l:'ACs',n:1,get:t=>t.ac_total?t.ac_done/t.ac_total:null,fmt:(_,t)=>t.ac_total?t.ac_done+' / '+t.ac_total:NA},
+ {k:'rw',l:'Rework',n:1,get:t=>t.outcome?t.outcome.rework_min:null,fmt:mins}];
+const SCOLS=[
+ {k:'id',l:'Session',get:s=>s.id},{k:'start',l:'Start (UTC)',get:s=>s._t,fmt:(_,s)=>dt(s.start)},{k:'act',l:'Active',n:1,get:s=>s.active_min,fmt:mins},{k:'wall',l:'Wall',n:1,get:s=>s.wall_min,fmt:mins},
+ {k:'turns',l:'Turns',n:1,get:s=>s.turns,fmt:int},{k:'tools',l:'Tool calls',n:1,get:s=>s.tool_calls,fmt:int},{k:'models',l:'Models',get:s=>Object.keys(s.models).map(short).join(', ')},
+ {k:'cost',l:'Est. cost',n:1,get:sCost,fmt:usd},{k:'sc',l:'Start ctx',n:1,get:s=>s.start_ctx,fmt:tok},{k:'pc',l:'Peak ctx',n:1,get:s=>s.peak_ctx,fmt:tok},{k:'cp',l:'Compactions',n:1,get:s=>s.compactions,fmt:int},
+ {k:'tasks',l:'Tasks',n:1,get:s=>s.tasks.length,fmt:(_,s)=>s.tasks.length?(s.tasks.length>3?s.tasks.slice(0,3).join(', ')+' +'+(s.tasks.length-3):s.tasks.join(', ')):'none'}];
+function rTasks(){const s=section('tasks','Tasks','All tasks active in the period (created before its end, not finished before its start). Sort by any column; select a task for details. Session numbers count only sessions in the period.');
+ s.append(el('div',{id:'tasks-t'},sortTable({key:'ts',all:'tAll',cols:TCOLS,rows:F.Tp,open:openTask,cap:'Tasks',redraw:()=>redrawPart('tasks',rTasks)})));return s}
+function rSess(){const s=section('sessions','Sessions','One row per transcript (main thread; subagent tokens are included in cost). Select a session for its models and linked tasks.');
+ s.append(sortTable({key:'ss',all:'sAll',cols:SCOLS,rows:F.Sp,open:openSess,cap:'Sessions',redraw:()=>redrawPart('sessions',rSess)}));return s}
+/* ---------- details dialog ---------- */
+const dlg=$('dlg');let back=null;
+function show(title,kids){if(!dlg.open)back=document.activeElement;$('dlg-title').textContent=title;const b=$('dlg-b');b.textContent='';add(b,kids);b.scrollTop=0;dlg.scrollTop=0;if(!dlg.open){if(dlg.showModal)dlg.showModal();else dlg.setAttribute('open','')}$('dlg-x').focus()}
+dlg.addEventListener('close',()=>{if(back&&back.isConnected)back.focus()});
+$('dlg-x').addEventListener('click',()=>dlg.close());
+dlg.addEventListener('click',e=>{if(e.target===dlg)dlg.close()});
+const kv=pairs=>el('dl',{class:'kv'},pairs.map(([k,v])=>[el('dt',{text:k}),el('dd',null,v==null||v===''?NA:v)]));
+function openTask(t){
+ const ss=(tSess.get(t.id)||[]).slice().sort((a,b)=>a._t-b._t);let c=0,miss=0,tu=0,ac=0;
+ for(const s of ss){const k=s.tasks.length,x=sCost(s);if(x==null)miss++;else c+=x/k;tu+=(s.turns||0)/k;ac+=(s.active_min||0)/k}
+ const o=t.outcome;
+ show(t.id+' · '+t.title,[kv([['Status',t.status+(t.archived?' (archived)':'')],['Size',t.size],['Milestone',t.milestone?t.milestone+' · '+(MS[t.milestone]||''):null],['Created',dt(t.created)],['Last update',dt(t.updated)],['Cycle time',hrs(t.cycle_h)],
+  ['ACs checked',t.ac_total?t.ac_done+' of '+t.ac_total:'no ACs'],['Evidence lines','E2: '+t.e2+', E1: '+t.e1],['Outcome',o?'corrections '+int(o.corrections)+', rework '+mins(o.rework_min)+', defects '+int(o.defects):'no Outcome line'],
+  ['Learning notes',int(t.learnings)],['BLOCKED mentioned',t.blocked?'yes':'no'],
+  ['Linked sessions',int(ss.length)+' (all time, '+(st.model?'model filter applied to cost':'all models')+')'],['Est. cost share',ss.length&&miss<ss.length?usd(c)+(miss?' ('+miss+' unpriced session(s) left out)':''):NA],['Turns share',ss.length?num(tu):NA],['Active time share',ss.length?mins(ac):NA]]),
+  el('h3',{text:'Linked sessions'}),ss.length?el('div',{class:'tw'},el('table',null,el('thead',null,el('tr',null,['Session','Start (UTC)','Active','Est. cost','Tasks in session'].map((h,i)=>el('th',{scope:'col',class:i>1?'n':null,text:h})))),
+   el('tbody',null,ss.map(s=>el('tr',null,el('td',null,sessBtn(s)),el('td',{text:dt(s.start)}),el('td',{class:'n',text:mins(s.active_min)}),el('td',{class:'n',text:usd(sCost(s))}),el('td',{class:'n',text:s.tasks.length})))))):el('p',{class:'empty',text:'No session commit names this task (or its transcripts are older than the kept window).'})]);
+}
+function openSess(s){
+ show('Session '+s.id,[kv([['Start (UTC)',dt(s.start)],['End (UTC)',dt(s.end)],['Wall time',mins(s.wall_min)],['Active time',mins(s.active_min)],['Turns',int(s.turns)],['Subagent turns',int(s.subagent_turns)],['Tool calls',int(s.tool_calls)],['User messages',int(s.user_msgs)],
+  ['Context start / peak',tok(s.start_ctx)+' / '+tok(s.peak_ctx)],['Compactions',int(s.compactions)],['Commits in window',int(s.commits)],['Est. cost (all models)',usd(s.cost)]]),
+  el('h3',{text:'Per model'}),el('div',{class:'tw'},el('table',null,el('thead',null,el('tr',null,['Model','Turns','Input','Cache write','Cache read','Output','Est. cost'].map((h,i)=>el('th',{scope:'col',class:i?'n':null,text:h})))),
+   el('tbody',null,Object.entries(s.models).map(([m,v])=>el('tr',null,el('td',{text:m}),el('td',{class:'n',text:int(v.turns)}),TK.map(([k])=>el('td',{class:'n',text:tok(v[k])})),el('td',{class:'n',text:usd(v.cost)})))))),
+  el('h3',{text:'Linked tasks'}),s.tasks.length?el('ul',{style:'padding-left:1.2em;margin:0'},s.tasks.map(id=>el('li',null,taskBtn(id),' ',el('span',{text:(byId.get(id)||{}).title||''})))):el('p',{class:'empty',text:'No commit during this session names a task.'})]);
+}
+/* ---------- render ---------- */
+function summary(){
+ const p=$('summary');p.textContent='';const parts=[];
+ parts.push(el('strong',{text:st.from||st.to?periodText():'All data ('+periodText()+')'}));
+ if(st.ms)parts.push(' · milestone ',el('strong',{text:st.ms==='_none'?'none':st.ms}));
+ if(st.q.trim())parts.push(' · task ',el('strong',{text:'“'+st.q.trim()+'”'}));
+ if(st.model)parts.push(' · model ',el('strong',{text:short(st.model)}));
+ parts.push(' — '+F.Sp.length+' sessions, '+F.Tp.length+' tasks');add(p,parts);
+ $('reset').disabled=!(st.from||st.to||st.ms||st.q||st.model);
+ const pr=st.from?Math.round((F.b-F.a)/DAY):'all';
+ document.querySelectorAll('[data-preset]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.preset===String(pr)&&(pr==='all'||st.to===day(DEND-DAY)))));
+}
+function draw(){for(const f of SEC.draw)f()}
+function redrawPart(id,fn){const y=scrollY,old=$(id);SEC.draw=[];old.replaceWith(fn());draw();scrollTo(0,y)}
+function render(){
+ const y=scrollY;compute();summary();SEC.draw=[];
+ const frag=document.createDocumentFragment();frag.append(rOverview(),rCost(),rQuality(),rRetros(),rTasks(),rSess());
+ main.style.minHeight=main.offsetHeight+'px';main.textContent='';main.append(frag);draw();main.style.minHeight='';
+ scrollTo(0,y);
+}
+/* ---------- controls ---------- */
+const fromI=$('from'),toI=$('to'),msS=$('ms'),qI=$('q'),moS=$('model');
+fromI.min=toI.min=day(D0);fromI.max=toI.max=day(DEND-DAY);
+add(msS,[el('option',{value:'',text:'All milestones'}),Object.entries(MS).sort((a,b)=>a[0].localeCompare(b[0],'en',{numeric:true})).map(([k,v])=>el('option',{value:k,text:k+' · '+v})),el('option',{value:'_none',text:'No milestone'})]);
+add(moS,[el('option',{value:'',text:'All models'}),MODELS.map(m=>el('option',{value:m,text:m}))]);
+function sync(){fromI.value=st.from;toI.value=st.to;msS.value=st.ms;qI.value=st.q;moS.value=st.model}
+document.querySelectorAll('[data-preset]').forEach(b=>b.addEventListener('click',()=>{const p=b.dataset.preset;if(p==='all'){st.from=st.to=''}else{st.to=day(DEND-DAY);st.from=day(Math.max(D0,DEND-p*DAY))}sync();render()}));
+fromI.addEventListener('change',()=>{st.from=fromI.value;render()});toI.addEventListener('change',()=>{st.to=toI.value;render()});
+msS.addEventListener('change',()=>{st.ms=msS.value;render()});moS.addEventListener('change',()=>{st.model=moS.value;render()});
+let qt;qI.addEventListener('input',()=>{clearTimeout(qt);qt=setTimeout(()=>{st.q=qI.value;render()},250)});
+$('reset').addEventListener('click',()=>{st.from=st.to=st.ms=st.q=st.model='';sync();render();$('reset').blur();qI.focus()});
+$('ftoggle').addEventListener('click',()=>{const o=$('bar').classList.toggle('open');$('ftoggle').setAttribute('aria-expanded',String(o))});
+let rw=innerWidth,rt;addEventListener('resize',()=>{clearTimeout(rt);rt=setTimeout(()=>{if(Math.abs(innerWidth-rw)>40){rw=innerWidth;render()}},200)});
+$('foot').textContent='Generated '+dt(meta.generated)+' UTC from '+int(meta.transcripts)+' transcript file(s); prices as of '+(meta.prices_date||NA)+'. '+(meta.note||'')+' Presets count back from the generation date. Transcripts exist only for recent weeks, so older tasks have no linked sessions.';
+sync();render();
+})();
+</script>
+</body>
+</html>

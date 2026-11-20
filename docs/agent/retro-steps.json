@@ -8,6 +8,7 @@
     {"id": "context-report", "title": "Context report", "stage": "base", "kind": "tech", "ref": "retro#measure", "command": ["python3", "scripts/context-report.py"], "skill": ["retro/SKILL.md"]},
     {"id": "start-context", "title": "Start context per session and trend (dialog in retro 2 or 3)", "stage": "base", "kind": "tech", "ref": "retro#start-context", "command": ["python3", "scripts/start-context.py", "report"], "skill": ["retro/SKILL.md", "retro/start-context.md"]},
     {"id": "metrics", "title": "Retro metrics", "stage": "base", "kind": "tech", "ref": "retro#measure", "command": ["bash", "scripts/retro-metrics.sh"], "since": "last-retro", "value_flags": ["--repo"], "skill": ["retro/SKILL.md"]},
+    {"id": "metrics-explorer", "title": "Write the interactive metrics explorer (offline HTML, local only)", "stage": "base", "kind": "tech", "ref": "retro#measure", "command": ["python3", "scripts/metrics-explorer.py"], "skill": ["retro/SKILL.md"]},
     {"id": "measure-read", "title": "Read NEXT_RETRO, Learning lines, recent log; silent inefficiency, unverified evidence, unrecorded decisions, cost series", "stage": "base", "kind": "analysis", "ref": "retro#measure", "skill": ["retro/SKILL.md"]},
     {"id": "check-last-changes", "title": "Check last changes against their metrics", "stage": "base", "kind": "analysis", "ref": "retro#check-last-changes", "skill": ["retro/SKILL.md"]},
     {"id": "skill-review", "title": "Skill review", "stage": "base", "kind": "analysis", "ref": "retro#skill-review", "skill": ["retro/SKILL.md"]},
