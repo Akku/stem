@@ -230,6 +230,44 @@ class MetricsExplorer(Sandbox):
         self.assertEqual(out.read_text().count("<script"), html.count("<script"), "a title cannot open a script tag")
         self.assertIsNone(re.search(r"(src|href)=[\"']?(https?:)?//|@import|fetch\(|XMLHttpRequest", html), "no network references")
 
+    def test_history_merges_without_duplicates_and_keeps_deleted_sessions(self):
+        """TASK-325: numbers survive transcript cleanup; no message text; a rerun adds no duplicate."""
+        root, d = self.build()
+        cmd = [sys.executable, str(SCRIPTS / "metrics-explorer.py"), "--out", str(self.tmp / "x.html"), str(d)]
+        self.assertEqual(run(cmd, root).returncode, 0)
+        hist = root / "docs/agent/metrics-history.json"
+        first = hist.read_text()
+        self.assertEqual(list(json.loads(first)["sessions"]), ["abcdef12-s"])
+        self.assertNotIn("SECRET-MESSAGE-TEXT", first)
+        run(cmd, root)
+        self.assertEqual(hist.read_text(), first, "a rerun with the same data changes nothing")
+        (d / "abcdef12-s.jsonl").unlink()  # transcript cleanup
+        write_jsonl(d / "99999999-n.jsonl", [assistant("claude-sonnet-5-5", 10, ts="2026-10-22T10:00:00Z")])
+        run(cmd, root)
+        self.assertEqual(sorted(json.loads(hist.read_text())["sessions"]), ["99999999-n", "abcdef12-s"])
+        data = json.loads(run([sys.executable, str(SCRIPTS / "metrics-explorer.py"), "--json", str(d)], root).stdout)
+        old = next(s for s in data["sessions"] if s["id"] == "abcdef12")
+        self.assertEqual((old["live"], old["turns"], old["tasks"]), (False, 3, ["TASK-7"]))
+        self.assertEqual(data["meta"]["from_history"], 1)
+        nohist = json.loads(run([sys.executable, str(SCRIPTS / "metrics-explorer.py"), "--json", "--no-history", str(d)], root).stdout)
+        self.assertEqual([s["id"] for s in nohist["sessions"]], ["99999999"])
+
+    @unittest.skipUnless(shutil.which("node"), "node not installed")
+    def test_template_script_parses_and_buckets_by_month(self):
+        """TASK-325/326: a syntax error blanks the page but passes the other tests; month buckets for periods over ~a year."""
+        html = (SCRIPTS / "metrics-explorer.html").read_text()
+        js = re.search(r"<script>(.*?)</script>", html, re.S).group(1)
+        f = self.tmp / "t.js"; f.write_text(js)
+        r = run(["node", "--check", str(f)], self.tmp)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        fn = re.search(r"const gran=.*?\nconst gCap", html, re.S).group(0)[:-len("const gCap")]
+        probe = ("const DAY=864e5,MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];"
+                 "const day=ms=>new Date(ms).toISOString().slice(0,10),md=ms=>{const d=new Date(ms);return MON[d.getUTCMonth()]+' '+d.getUTCDate()};" + fn +
+                 "const a=Date.parse('2025-01-15'),b=Date.parse('2026-03-02');const B=buckets(a,b,gran(a,b));"
+                 "console.log(JSON.stringify([gran(a,b),B.length,B[0].full,B[B.length-1].full,gran(a,a+30*DAY),gran(a,a+90*DAY)]))")
+        r = run(["node", "-e", probe], self.tmp)
+        self.assertEqual(json.loads(r.stdout), ["month", 15, "Jan 2025", "Mar 2026", "day", "week"])
+
 
 class WorktreeTranscripts(Sandbox):
     """TASK-220: main and worktree transcript folders of one project are counted, from the main checkout or from a worktree."""

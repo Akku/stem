@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """Interactive metrics explorer for a retro (TASK-311): one self-contained offline HTML file from this project's current data.
-Usage: scripts/metrics-explorer.py [--out FILE] [--json] [--now ISO] [transcript-dir ...]
+Usage: scripts/metrics-explorer.py [--out FILE] [--json] [--now ISO] [--history FILE | --no-history] [transcript-dir ...]
   default out: .agent-logs/metrics-explorer.html (git-ignored, local only); --json prints the collected data instead of writing HTML.
+  history: docs/agent/metrics-history.json (commit it): per-session numbers keyed by transcript id, so sessions survive
+  Claude Code's transcript cleanup (~30 days). Each HTML run merges the current transcripts into it (current values win);
+  --json only reads it; --no-history neither reads nor writes it.
   default transcript dirs: this project's folders under ~/.claude/projects (main checkout and its worktrees, as context-report.py).
 Sources (numbers and IDs only, never message text): transcripts (time, turns, tool calls, tokens per model, compactions, context size),
 backlog task files (id, title, status, size label, milestone, dates, Outcome line, evidence levels, Learning count),
@@ -16,6 +19,8 @@ TEMPLATE = HERE / "metrics-explorer.html"
 KEYS = ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens", "output_tokens")
 TASK = re.compile(r"\bTASK-(\d+)\b", re.I)
 IDLE = 300  # seconds: longer gaps between records count as idle, not active time
+HISTORY = "docs/agent/metrics-history.json"
+LINKS = ("tasks", "commits", "live")  # recomputed per run, never stored in the history
 
 def load_context_report():
     spec = importlib.util.spec_from_file_location("context_report", HERE / "context-report.py")
@@ -90,7 +95,7 @@ def parse_session(path, cr):
         out_models[name] = {"turns": c["turns"], "input": c[KEYS[0]], "cache_write": c[KEYS[1]], "cache_read": c[KEYS[2]], "output": c[KEYS[3]],
                             "cost": round(cost, 4) if cost is not None else None}
     costs = [m["cost"] for m in out_models.values()]
-    return {"id": os.path.basename(path)[:8], "start": iso(times[0]), "end": iso(times[-1]),
+    return {"key": os.path.basename(path)[:-6], "id": os.path.basename(path)[:8], "start": iso(times[0]), "end": iso(times[-1]),
             "wall_min": round((times[-1] - times[0]).total_seconds() / 60, 1), "active_min": round(active / 60, 1),
             "turns": turns, "subagent_turns": sub_turns, "tool_calls": tools, "user_msgs": users, "compactions": compactions,
             "start_ctx": start_ctx, "peak_ctx": peak_ctx, "models": out_models,
@@ -166,10 +171,36 @@ def retros():
                     "cost": c.get("est_cost_usd")})
     return res
 
-def collect(dirs, now):
+def load_history(path):
+    """{session key: numbers} from the history file; an unreadable file counts as empty (a broken file never stops the explorer)."""
+    try: d = json.load(open(path, encoding="utf-8"))
+    except (OSError, ValueError): return {}
+    ss = d.get("sessions") if isinstance(d, dict) else None
+    return {k: v for k, v in ss.items() if isinstance(v, dict) and v.get("start")} if isinstance(ss, dict) else {}
+
+def write_history(path, hist):
+    """One session per line, sorted by key: small, stable diffs; numbers and IDs only (same fields as the explorer data)."""
+    lines = ['  %s: %s' % (json.dumps(k), json.dumps(hist[k], sort_keys=True, separators=(",", ":"))) for k in sorted(hist)]
+    text = '{\n "version": 1,\n "note": "Numbers only, written by scripts/metrics-explorer.py; keeps sessions after transcript cleanup.",\n "sessions": {\n%s\n }\n}\n' % ",\n".join(lines)
+    p = pathlib.Path(path)
+    if p.exists() and p.read_text(encoding="utf-8") == text: return False
+    p.parent.mkdir(parents=True, exist_ok=True); p.write_text(text, encoding="utf-8"); return True
+
+def merge_history(hist, current):
+    """History plus current sessions; a current transcript replaces its stored numbers (it may have grown since)."""
+    out = dict(hist)
+    for s in current: out[s["key"]] = {k: v for k, v in s.items() if k not in LINKS and k != "key"}
+    return out
+
+def collect(dirs, now, history=None, write=False):
     cr = load_context_report()
     files = sorted(f for d in dirs for f in glob.glob(glob.escape(d) + "/*.jsonl"))
-    sessions = [s for s in (parse_session(f, cr) for f in files) if s]
+    current = [s for s in (parse_session(f, cr) for f in files) if s]
+    hist = load_history(history) if history else {}
+    merged = merge_history(hist, current)
+    if history and write: write_history(history, merged)
+    live = {s["key"] for s in current}
+    sessions = sorted((dict(v, key=k, live=k in live) for k, v in merged.items()), key=lambda s: (s["start"], s["key"]))
     cs = commits()
     for s in sessions:
         a, b = ts(s["start"]), ts(s["end"]) + dt.timedelta(minutes=10)
@@ -178,6 +209,7 @@ def collect(dirs, now):
     paths = glob.glob("backlog/tasks/*.md") + glob.glob("backlog/completed/*.md") + glob.glob("backlog/archive/tasks/*.md")
     tasks = [t for t in (dict(parse_task(p), archived="/archive/" in p) for p in sorted(paths)) if t["id"]]
     return {"meta": {"generated": iso(now), "prices_date": cr.PRICES_DATE, "transcripts": len(files), "idle_gap_s": IDLE,
+                     "history": (HISTORY if history == HISTORY else os.path.basename(history)) if history else None, "from_history": len(sessions) - len(live),
                      "note": "Numbers and IDs only; estimates, not invoices."},
             "milestones": milestones(), "sessions": sessions, "tasks": tasks, "retros": retros()}
 
@@ -190,10 +222,13 @@ def main(argv):
     out = os.path.abspath(opt("--out")) if "--out" in args else ".agent-logs/metrics-explorer.html"
     now = ts(opt("--now") or "") or dt.datetime.now(dt.timezone.utc)
     as_json = "--json" in args
+    history = None if "--no-history" in args else (opt("--history") or HISTORY)
+    if "--no-history" in args: args.remove("--no-history")
+    if history and history != HISTORY: history = os.path.abspath(history)
     try: os.chdir(subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True, timeout=10).stdout.strip() or ".")
     except (OSError, subprocess.SubprocessError): pass
     dirs = [os.path.abspath(a) for a in args if not a.startswith("--")] or load_context_report().project_dirs()
-    data = collect(dirs, now)
+    data = collect(dirs, now, history, write=not as_json)
     if as_json:
         print(json.dumps(data, indent=1)); return 0
     if not TEMPLATE.exists(): sys.exit("metrics-explorer: template missing: %s" % TEMPLATE)
@@ -201,7 +236,8 @@ def main(argv):
     html = TEMPLATE.read_text(encoding="utf-8").replace("/*__STEM_DATA__*/null", blob, 1)
     pathlib.Path(out).parent.mkdir(parents=True, exist_ok=True)
     pathlib.Path(out).write_text(html, encoding="utf-8")
-    print("metrics-explorer: wrote %s (%d sessions, %d tasks, %d retros; open it in a browser, works offline)" % (out, len(data["sessions"]), len(data["tasks"]), len(data["retros"])))
+    print("metrics-explorer: wrote %s (%d sessions, %d of them only in %s; %d tasks, %d retros; open it in a browser, works offline)"
+          % (out, len(data["sessions"]), data["meta"]["from_history"], data["meta"]["history"] or "no history", len(data["tasks"]), len(data["retros"])))
     return 0
 
 if __name__ == "__main__":
