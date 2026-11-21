@@ -26,9 +26,9 @@ if [ -f STEM_VERSION ]; then
   lv=$(sed -n 's/^version: *//p' STEM_VERSION | head -1); repo=$(sed -n 's/^repo: *//p' STEM_VERSION | head -1)
   echo "stem version: ${lv:-unknown}"
   cache="${TMPDIR:-/tmp}/agent-logs/stem-check-$(printf %s "$PWD" | cksum | cut -d' ' -f1)"; mkdir -p "$(dirname "$cache")"
-  if [ -z "${STEM_OFFLINE:-}" ] && [ -n "$repo" ] && command -v curl >/dev/null 2>&1 && { [ ! -f "$cache" ] || [ -n "$(find "$cache" -mtime +0 2>/dev/null)" ]; }; then
-    raw="${repo/github.com/raw.githubusercontent.com}/main/STEM_VERSION"
-    rv=$(curl -fsSL --max-time 3 "$raw" 2>/dev/null | sed -n 's/^version: *//p' | head -1)
+  if [ -z "${STEM_OFFLINE:-}" ] && [ -n "$repo" ] && command -v git >/dev/null 2>&1 && { [ ! -f "$cache" ] || [ -n "$(find "$cache" -mtime +0 2>/dev/null)" ]; }; then
+    # newest release tag (vX.Y.Z), not main: main may hold unreleased work or lag a release
+    rv=$(GIT_TERMINAL_PROMPT=0 GIT_HTTP_LOW_SPEED_LIMIT=1000 GIT_HTTP_LOW_SPEED_TIME=3 git ls-remote --tags --refs "$repo" 'v*' 2>/dev/null | sed -n 's#.*refs/tags/v\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)$#\1#p' | sort -V | tail -1)
     [ -n "$rv" ] && printf '%s\n' "$rv" >"$cache"
   fi
   rv=$(cat "$cache" 2>/dev/null)

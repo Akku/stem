@@ -657,6 +657,22 @@ class SessionStart(SandboxRepo):
         cache = self.tmp / "agent-logs" / f"stem-check-{pwd}"; cache.parent.mkdir(exist_ok=True); cache.write_text(remote + "\n")
         return self.start({"STEM_OFFLINE": "1"})
 
+    def tag_remote(self, tags):
+        bare = self.tmp / "remote.git"; run(["git", "init", "--bare", "-q", str(bare)], self.tmp)
+        (self.repo / "STEM_VERSION").write_text("version: 1.0.0\nrepo: " + str(bare) + "\n"); self.commit("init")
+        for t in tags:
+            run(["git", "tag", t], self.repo)
+        run(["git", "push", "-q", str(bare), "HEAD:refs/heads/main", "--tags"], self.repo)
+        return self.start({})
+
+    def test_update_check_uses_newest_release_tag_not_main(self):
+        # main says 1.0.0 (STEM_VERSION on the remote), the newest tag is v1.10.0 (sort -V, not string order)
+        out = self.tag_remote(["v1.2.0", "v1.10.0", "v1.9.0", "nightly"])
+        self.assertIn("STEM UPDATE AVAILABLE: 1.0.0 -> 1.10.0", out)
+
+    def test_update_check_equal_or_no_tags_stays_quiet(self):
+        self.assertNotIn("STEM UPDATE AVAILABLE", self.tag_remote(["v1.0.0"]))
+
     def test_far_behind_stem_version_warns(self):
         out = self.lag_start("1.3.0", "1.16.0")
         self.assertIn("STEM UPDATE AVAILABLE: 1.3.0 -> 1.16.0", out)
@@ -833,8 +849,9 @@ class SessionStart(SandboxRepo):
 
     def test_offline_opt_out_skips_version_check(self):
         (self.repo / "STEM_VERSION").write_text("version: 1.0.0\nrepo: https://github.com/x/stem\n")
-        marker = self.tmp / "curl-called"
-        (self.nogh / "curl").write_text(f"#!/bin/sh\ntouch '{marker}'\nexit 1\n"); (self.nogh / "curl").chmod(0o755)
+        marker = self.tmp / "ls-remote-called"
+        real_git = shutil.which("git")  # stub only the network call, pass everything else through
+        (self.nogh / "git").write_text(f"#!/bin/sh\n[ \"$1\" = ls-remote ] && {{ touch '{marker}'; exit 1; }}\nexec '{real_git}' \"$@\"\n"); (self.nogh / "git").chmod(0o755)
         self.start({"STEM_OFFLINE": "1"})
         self.assertFalse(marker.exists())
         self.start()

@@ -92,6 +92,19 @@ class RetroRun(Sandbox):
         rec = json.loads((self.tmp / "docs/agent/retro-runs/2026-10-30.json").read_text())["version_check"]
         self.assertEqual(rec["status"], "blocked"); self.assertTrue(rec["error"]); self.assertTrue(rec["source"])
 
+    def test_version_comes_from_newest_release_tag(self):
+        bare = self.tmp / "remote.git"; subprocess.run(["git", "init", "--bare", "-q", str(bare)], check=True)
+        w = self.tmp / "w"; w.mkdir()
+        for c in (["init", "-q"], ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "x"],
+                  ["tag", "v1.9.0"], ["tag", "v1.10.0"], ["tag", "other"], ["push", "-q", str(bare), "HEAD:refs/heads/main", "--tags"]):
+            subprocess.run(["git", *c], cwd=w, check=True)
+        (self.tmp / "STEM_VERSION").write_text(f"version: 1.0.0\nrepo: {bare}\n")
+        env = {"STEM_RETRO_VERSION_URL": ""}  # rr() merges over self.env; empty disables the seam
+        self.rr("start", "--not-first", env=env)
+        self.assertEqual(self.rr("version-check", env=env).returncode, 0)
+        rec = json.loads((self.tmp / "docs/agent/retro-runs/2026-10-30.json").read_text())["version_check"]
+        self.assertEqual((rec["status"], rec["remote"]), ("newer", "1.10.0"))
+
     def test_newer_version_needs_author_choice_and_updates_nothing(self):
         (self.tmp / "remote").write_text("version: 1.1.0\n")
         self.rr("start", "--not-first")
