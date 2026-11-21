@@ -767,6 +767,11 @@ class SessionStart(SandboxRepo):
             (runs / "2026-10-25.json").write_text(json.dumps({"label": "2026-10-25", "result": result}))
             self.assertEqual("RETRO DUE" in self.start(), due, result)
 
+    def test_retro_threshold_grows_by_one_per_50_done_tasks(self):
+        for n in range(1, 101): self.task(n, updated="2026-10-26 10:00")
+        (self.repo / "docs/agent/retros").mkdir(parents=True); (self.repo / "docs/agent/retros/2026-10-25.md").write_text("retro\n")
+        self.assertIn("RETRO DUE: 100 tasks done since 2026-10-25 (threshold 10)", self.start())  # 8 + 100 // 50
+
     def test_retro_due_with_open_signals_or_no_result(self):
         for n in range(1, 10): self.task(n, updated="2026-10-26 10:00")
         (self.repo / "docs/agent/retros").mkdir(parents=True); (self.repo / "docs/agent/retros/2026-10-25.md").write_text("retro\n")
