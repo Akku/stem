@@ -221,12 +221,22 @@ def cmd_status(root, args):
 
 
 def fetch_version(repo):
-    raw = os.environ.get("STEM_RETRO_VERSION_URL") or repo.replace("github.com", "raw.githubusercontent.com") + "/main/STEM_VERSION"
-    with urllib.request.urlopen(raw, timeout=5) as r:
-        m = re.search(r"^version: *(\S+)", r.read().decode(), re.M)
-    if not m:
-        raise ValueError("no version line")
-    return raw, m.group(1)
+    """Newest release tag vX.Y.Z of the repo (not main's STEM_VERSION: main may be ahead of or behind a release).
+    STEM_RETRO_VERSION_URL is a test seam: a file or URL with a `version:` line."""
+    raw = os.environ.get("STEM_RETRO_VERSION_URL")
+    if raw:
+        with urllib.request.urlopen(raw, timeout=5) as r:
+            m = re.search(r"^version: *(\S+)", r.read().decode(), re.M)
+        if not m:
+            raise ValueError("no version line")
+        return raw, m.group(1)
+    out = subprocess.run(["git", "ls-remote", "--tags", "--refs", repo, "v*"], capture_output=True, text=True, timeout=10)
+    if out.returncode:
+        raise ValueError("git ls-remote failed: " + out.stderr.strip()[:100])
+    tags = re.findall(r"refs/tags/v(\d+\.\d+\.\d+)$", out.stdout, re.M)
+    if not tags:
+        raise ValueError("no release tag")
+    return repo + " (newest tag)", max(tags, key=vkey)
 
 
 def vkey(v):
