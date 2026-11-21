@@ -2,6 +2,9 @@
 
 Newest first. Projects read the entries newer than their `STEM_VERSION` (see `stem-update` skill). Each entry: what changed and who benefits; renames and removals get a `Migration:` line (what to rename or delete) that `stem-update` carries out.
 
+## Unreleased
+- **Handoff: work named with the handoff runs in the fresh session:** the `handoff` skill does work in the current chat only when the user orders it before the handoff ("do X, then handoff, then Y": X here, Y in the new session); everything named for after the handoff goes into the fresh session's brief with full context. Removed the sentence that kept the session when follow-up work was named. Migration: copy `.claude/skills/handoff/SKILL.md`.
+
 ## Next major (not in any 1.x release, decision-21)
 - **Tron mode (optional module, off by default for small projects):** hands one approved milestone to unattended agent sessions. `scripts/tron.py` (`run`, `check`, `report`) runs one session per task on a run branch, gates each task (verification, evidence lines, frozen acceptance criteria, protected files), enforces limits and a stop file, resumes after a stop, lets an independent `evaluator` agent judge, and writes a report; the `tron` skill guides preparation and reading the report; rule `R-TRON` in `docs/agent/ADVANCED.md`, templates `DECISION_FRAME.md` and `INVARIANTS.md`. It never pushes, tags or merges. Setup offers it in the module table (step 1b); `stem-check` fails when a Tron file is missing or the README inventory differs. Migration: projects that want it copy `scripts/tron.py`, `.claude/agents/evaluator.md`, `.claude/skills/tron/`, `docs/agent/DECISION_FRAME.md`, `docs/agent/INVARIANTS.md`, the `R-TRON` section and index row of `docs/agent/ADVANCED.md`, add `tron` to the `Skills` line of `AGENTS.md` and a `tron` block to `docs/agent/stem-config.json` (see the `tron` skill); projects that do not want it do nothing (`stem-update` offers it as a choice).
 

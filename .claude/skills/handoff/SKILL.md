@@ -7,6 +7,8 @@ description: End-of-session command ("Handoff" instead of "commit"): put notes i
 
 Rules: `R-STATE`, `R-STATE-COHERENCE`. The handoff holds only what git and the backlog cannot tell the next session: what waits for the user. Branch, commits, active and ready tasks, `RETRO DUE` and versions come from the session-start script and never go into it.
 
+**Who does the work named with a handoff.** Only work the user places *before* the handoff by an explicit order ("do X, then handoff, then Y and Z") is done in this session: X first, then the handoff steps. Everything named for after the handoff (Y, Z) is done by the fresh session, never here. A mention without an order ("handoff, X is next", "X is still open") is not an instruction to do X here; when unsure which side a task belongs to, it goes to the fresh session.
+
 ## 1. Notes into the tasks
 Each unfinished task gets a concrete continuation point in its notes (open criterion, next action as `Next:`), hard-won context (ruled-out hypotheses), evidence with the SHA it verified (`R-STATE-COHERENCE`), and `Learning:` only if a detour happened (`R-LEARNING`).
 
@@ -35,7 +37,7 @@ Commit the handoff last (a later commit marks it consumed). The session that set
 ## 5. Push, then start the fresh session
 **Push** (`git push`, normal fast-forward only) finished commits automatically, without asking. Skip the push silently, and propose it with the reason in the final message, if you judge the unpushed commits may be unwanted (WIP, experimental, unreviewed, sensitive content, a branch the user did not intend to publish). Never force push; tags and releases stay a separate decision. Never put the push into the handoff file.
 
-**Start the fresh session** per `R-BATCHING` "A handoff always opens a fresh session": `start_session` with context `fresh`, then `detach_session` on it; the brief says not to report back, then continues the approved batch or unfinished task (per `docs/agent/HANDOFF.md` / task notes), or tells the new session to run session start and propose the next steps. Do not mention the handoff or ask to read it: session start loads it automatically. Then end with one line (handed off to <link>, open: ...) and stop. If no tool can start a session, end with one ready-to-paste prompt instead. If the user names follow-up work in the same message, skip the fresh session and continue here.
+**Start the fresh session** per `R-BATCHING` "A handoff always opens a fresh session": `start_session` with context `fresh`, then `detach_session` on it; the brief says not to report back, then continues the approved batch or unfinished task (per `docs/agent/HANDOFF.md` / task notes), or tells the new session to run session start and propose the next steps. Do not mention the handoff or ask to read it: session start loads it automatically. Then end with one line (handed off to <link>, open: ...) and stop. If no tool can start a session, end with one ready-to-paste prompt instead. Work the user names for after the handoff goes into the brief in full, because the new session cannot see this chat: goal, task IDs, file paths, decisions made, ruled-out ideas, and where details live (task notes). Do not start that work here.
 
 ## 6. Optional: hand over to a larger model (an offer, never automatic)
 Rules: `R-DELEGATION` (another session is delegated work: narrow contract, one source), `R-PARALLEL` (own worktree, parallel work only when independent), `R-ROUTING`.
