@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tron mode runner (R-TRON, docs/agent/ADVANCED.md): hands one approved milestone to unattended agent sessions.
+"""Tron mode runner (R-TRON, docs/agent/TRON.md): hands one approved milestone to unattended agent sessions.
 
   scripts/tron.py run --milestone m-4 [--dry-run] [--run-id ID] [--max-tasks N] [--config FILE]
 

@@ -13,7 +13,7 @@ One brief file (path in the prompt): run summary, per-task states, gate failures
 ## Rules
 - Every failure (each blocked task, each gate failure, each evaluator fail, each Doctor call) gets exactly one layer: `task_quality` (task or AC wording, size), `rule` (a project rule or skill text), `environment` (tools, setup), `model` (capability, effort), `evaluator_miss` (the evaluator passed what later failed, or failed what was fine). Pick the layer that, if fixed, would have prevented the failure.
 - Every failure carries an evidence pointer: a file path from the brief, a task id with a log, or a verdict file.
-- At most three proposals. Each names the target file, the tier as defined in `R-TRON` 'Retro changes in tiers' (`docs/agent/ADVANCED.md`), one metric from the metrics table and the expected effect on it. Protected files are always tier 3. No waivers (`decision-11`), no new rules that only restate an existing one.
+- At most three proposals. Each names the target file, the tier as defined in `R-TRON` 'Retro changes in tiers' (`docs/agent/TRON.md`), one metric from the metrics table and the expected effect on it. Protected files are always tier 3. No waivers (`decision-11`), no new rules that only restate an existing one.
 - Check the previous retro: for each of its proposals name the metric, its previous and its current value and one of `effective`, `indication`, `no effect`, `not measurable`. No previous retro: say so.
 
 ## Output

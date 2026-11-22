@@ -89,12 +89,13 @@ agents = (root / "AGENTS.md").read_text()
 for d in (root / ".claude/skills").iterdir():
     if f"`{d.name}`" not in agents: err(f"AGENTS.md does not mention skill {d.name}")
 
-# Tron mode module: all its files ship together (SETUP.md lists them for removal; TASK-273)
-for rel in ("scripts/tron.py", ".claude/agents/evaluator.md", ".claude/agents/doctor.md", ".claude/agents/retro-analyst.md", ".claude/skills/tron/SKILL.md", "docs/agent/DECISION_FRAME.md", "docs/agent/INVARIANTS.md", "docs/agent/PRECEDENTS.md", ".claude/agents/planner.md"):
-    if not (root / rel).is_file(): err(f"Tron mode file missing: {rel}")
-adv_t = (root / "docs/agent/ADVANCED.md").read_text()
-if "<!-- RULE:R-TRON:START -->" not in adv_t or "| `R-TRON` |" not in adv_t: err("ADVANCED.md: R-TRON rule or index row missing")
-if len((root / ".claude/skills/tron/SKILL.md").read_text().splitlines()) >= 60: err("tron skill must stay under 60 lines")
+# Tron mode module (module.py): when on, all its files ship together and the rule file carries its markers (TASK-352)
+_idx = (root / "docs/agent/modules/INDEX.md").read_text() if (root / "docs/agent/modules/INDEX.md").exists() else ""
+if "- tron: on - " in _idx:
+    for rel in ("scripts/tron.py", ".claude/agents/evaluator.md", ".claude/agents/doctor.md", ".claude/agents/retro-analyst.md", ".claude/skills/tron/SKILL.md", "docs/agent/DECISION_FRAME.md", "docs/agent/INVARIANTS.md", "docs/agent/PRECEDENTS.md", ".claude/agents/planner.md", "docs/agent/TRON.md"):
+        if not (root / rel).is_file(): err(f"Tron mode file missing: {rel}")
+    if "<!-- RULE:R-TRON:START -->" not in (root / "docs/agent/TRON.md").read_text(): err("TRON.md: R-TRON rule missing")
+    if len((root / ".claude/skills/tron/SKILL.md").read_text().splitlines()) >= 60: err("tron skill must stay under 60 lines")
 
 # README inventories list exactly the shipped skills and agents
 shipped = {"skills": {d.name for d in (root / ".claude/skills").iterdir() if d.is_dir()},
@@ -121,7 +122,7 @@ if rr.returncode: err(rr.stdout.strip())
 # fixture tests (.github/tests): shards of all test files run in parallel (TASK-308); each shard is one process
 import os
 TRON_FILES = ("scripts/tron.py", ".github/tests/test_tron.py", ".github/tests/shard.py", ".claude/agents/", ".claude/skills/tron/",
-              "docs/agent/DECISION_FRAME.md", "docs/agent/INVARIANTS.md", "docs/agent/PRECEDENTS.md")
+              "docs/agent/DECISION_FRAME.md", "docs/agent/INVARIANTS.md", "docs/agent/PRECEDENTS.md", "docs/agent/TRON.md")
 def tron_changed():
     """True when a Tron module file differs from origin/main (committed, staged or untracked); True when unsure."""
     out = []

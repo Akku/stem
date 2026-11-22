@@ -149,5 +149,5 @@ case "$mc" in lean\ *)
   mm=${mc#lean }; echo; echo "MODEL CLASS lean (${mm% *}; \`R-ROUTING\`, Model classes): the size-S fast path (core rule 1a) also covers size-M tasks, but a point the task leaves undecided is settled with the user before implementing (core rule 1d); core rule 3 applies only when instruction files are edited; core rule 5 and the tool-proposal sentence of rule 4 need no reminder. Everything else applies unchanged, including security, stop conditions and evidence." ;;
 esac
 [ "${STEM_TRON:-}" = 1 ] && [ "${STEM_TRON_ROLE:-}" = evaluator ] && { echo; echo "TRON MODE evaluator: you judge a finished task or milestone and change nothing; follow .claude/agents/evaluator.md and the brief named in the prompt (R-TRON)"; }
-[ "${STEM_TRON:-}" = 1 ] && [ "${STEM_TRON_ROLE:-}" != evaluator ] && { echo; echo "TRON MODE: unattended run, one task per session, no questions to the user: duties in R-TRON (sed -n \"/<!-- RULE:R-TRON:START -->/,/<!-- RULE:R-TRON:END -->/p\" docs/agent/ADVANCED.md)"; }
+[ "${STEM_TRON:-}" = 1 ] && [ "${STEM_TRON_ROLE:-}" != evaluator ] && { echo; echo "TRON MODE: unattended run, one task per session, no questions to the user: duties in R-TRON (sed -n \"/<!-- RULE:R-TRON:START -->/,/<!-- RULE:R-TRON:END -->/p\" docs/agent/TRON.md)"; }
 echo; echo "Rules: see AGENTS.md; further rules by ID via docs/agent/OPERATING_MODEL.md"

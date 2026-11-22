@@ -392,7 +392,7 @@ class TronMode(Sandbox):
         self.assertNotIn("TRON", self.start({"STEM_TRON": "0"}))
 
     def test_rule_and_templates_are_short(self):
-        adv = (ROOT / "docs/agent/ADVANCED.md").read_text()
+        adv = (ROOT / "docs/agent/TRON.md").read_text()
         rule = re.search(r"<!-- RULE:R-TRON:START -->(.*?)<!-- RULE:R-TRON:END -->", adv, re.S).group(1)
         self.assertLessEqual(len(rule.strip().splitlines()), 40)
         self.assertIn("R-ROUTING", rule)
@@ -400,19 +400,17 @@ class TronMode(Sandbox):
             self.assertLess(len((ROOT / "docs/agent" / f).read_text().splitlines()), 25)
 
     def test_module_off_leaves_no_reference(self):
-        """TASK-273: follow the SETUP.md removal list for Tron mode off on a copy; no remaining file names a deleted one."""
-        setup = (ROOT / "SETUP.md").read_text()
-        sent = re.search(r"Tron mode off: delete exactly (.*?), remove the `R-TRON` section", setup, re.S).group(1)
-        gone = re.findall(r"`([^`]+)`", sent)
-        self.assertEqual(len(gone), 9)
+        """TASK-273/352: `module.py disable tron` on a copy archives all files; no remaining file names an archived one."""
         copy = self.tmp / "copy"
         shutil.copytree(ROOT, copy, symlinks=True, ignore=shutil.ignore_patterns(".git", "__pycache__", "local", ".agent-logs"))
+        r = run([sys.executable, str(SCRIPTS / "module.py"), "disable", "tron", "--root", str(copy)], copy)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        man = (copy / "docs/agent/modules/tron/MODULE.md").read_text()
+        gone = re.findall(r"^  - (\S+)$", man.split("---")[1], re.M)
+        self.assertEqual(len(gone), 10)
         for rel in gone:
-            p = copy / rel
-            shutil.rmtree(p) if p.is_dir() else p.unlink()
-        adv = copy / "docs/agent/ADVANCED.md"
-        t = re.sub(r"<!-- RULE:R-TRON:START -->.*?<!-- RULE:R-TRON:END -->\n?", "", adv.read_text(), flags=re.S)
-        adv.write_text(re.sub(r"^\| `R-TRON` \|.*\n", "", t, flags=re.M))
+            self.assertFalse((copy / rel).exists(), rel)
+            self.assertTrue((copy / "docs/agent/modules/tron/files" / rel).is_file(), rel)
         ag = copy / "AGENTS.md"
         ag.write_text(ag.read_text().replace("`tron` (Tron mode), ", ""))
         skip = ("CHANGELOG.md", "SETUP.md", "README.md", "README.de.md", "scripts/session-start.sh")
@@ -420,7 +418,7 @@ class TronMode(Sandbox):
         hits = []
         for f in copy.rglob("*"):
             rel = str(f.relative_to(copy))
-            if not f.is_file() or rel in skip or rel.startswith((".github/", "docs/assets/")):
+            if not f.is_file() or rel in skip or rel.startswith((".github/", "docs/assets/", "docs/agent/modules/")):
                 continue
             try:
                 text = f.read_text()
