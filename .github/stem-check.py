@@ -17,6 +17,7 @@ for f in ("docs/agent/OPERATING_MODEL.md", "docs/agent/ADVANCED.md"):
     table = idx.group(1) if idx else re.search(r"\| Rule ID.*?\n\n", t, re.S).group(0)
     indexed = set(re.findall(r"\| `(R-[A-Z-]+)` \|", table))
     rules = set(starts) - {"R-INDEX"}
+    if f.endswith("ADVANCED.md"): indexed -= {"R-TRON"}  # pointer row of the tron module (rule lives in TRON.md)
     if indexed != rules: err(f"{f}: index mismatch: {sorted(indexed ^ rules)}")
 
 # shell scripts parse
