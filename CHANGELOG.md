@@ -3,6 +3,7 @@
 Newest first. Projects read the entries newer than their `STEM_VERSION` (see `stem-update` skill). Each entry: what changed and who benefits; renames and removals get a `Migration:` line (what to rename or delete) that `stem-update` carries out.
 
 ## Unreleased
+- **Optional modules (first: `ux-designer`):** `docs/agent/modules/<name>/MODULE.md` (manifest) plus `INDEX.md` (one line per module, on/off). `python3 scripts/module.py list|enable|disable NAME` moves a module's files between their active place and `docs/agent/modules/<name>/files/` and keeps reference lines; nothing is deleted, so off modules stay findable. `SETUP.md` step 1b uses it; `stem-update` respects the status and offers new modules as off. Migration: on the first update, mark modules `on` when their files exist, else archive them as `off`; ask only when files are partial.
 - **Handoff: work named with the handoff runs in the fresh session:** the `handoff` skill does work in the current chat only when the user orders it before the handoff ("do X, then handoff, then Y": X here, Y in the new session); everything named for after the handoff goes into the fresh session's brief with full context. Removed the sentence that kept the session when follow-up work was named. Migration: copy `.claude/skills/handoff/SKILL.md`.
 
 ## Next major (not in any 1.x release, decision-21)

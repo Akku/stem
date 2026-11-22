@@ -18,6 +18,7 @@ Local Claude Code and Codex startup hooks provide this output where supported an
 - **Code the user must run** (you may not, or should not, run it): show it complete and ready to paste in a fenced code block. **Whenever a draft is named in a message, link it** (clickable relative path; full path where links are not clickable). **Draft content is written in the user's language** (not English). After the decision record the result and archive the draft.
 
 **Skills** (`.claude/skills/<name>/SKILL.md`; other tools read the file): `retro`, `alignment`, `handoff`, `promote-learning`, `market-analysis`, `tron` (Tron mode), `stem-update`, `port-check`.
+**Modules:** optional functions (on or off, off ones stay findable): `docs/agent/modules/INDEX.md`; switch with `python3 scripts/module.py`.
 
 ## Core rules (full text by ID: `docs/agent/OPERATING_MODEL.md`)
 1. **Task first** (`R-LIFECYCLE`): every change is a Backlog.md task (label `size-S|M|L` at creation, `R-LIFECYCLE` 1.2): task → plan → implement → verify → evidence → done. Use the `backlog` CLI only (`R-BACKLOG`); for an unknown command run `backlog <cmd> --help` (the `backlog instructions <guide>` texts are long: read one only when `--help` does not answer, never by default).

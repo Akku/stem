@@ -1642,5 +1642,47 @@ class HooksSync(Sandbox):
         self.assertIn("no hook", doc); self.assertIn("one user run on 2026-11-11", doc)
 
 
+class ModuleTests(Sandbox):
+    def make(self):
+        r = self.tmp
+        (r / "docs/agent/modules/demo").mkdir(parents=True)
+        (r / "x").mkdir(); (r / "x/a.md").write_text("A")
+        (r / "AGENTS.md").write_text("top\n**Skills**: s\nrest\n")
+        (r / "docs/agent/modules/demo/MODULE.md").write_text("---\nname: demo\npurpose: Demo module\nwhen_useful: never\nversion: 1\nfiles:\n  - x/a.md\nrefs:\n  - file: AGENTS.md\n    after: \"**Skills**\"\n    line: \"**Demo**: yes\"\n---\n# demo\n")
+        (r / "docs/agent/modules/INDEX.md").write_text("# idx\n\n- demo: on - Demo module\n")
+        (r / "AGENTS.md").write_text("top\n**Skills**: s\n**Demo**: yes\nrest\n")
+        return r
+
+    def mod(self, *a):
+        return run([sys.executable, str(SCRIPTS / "module.py"), *a, "--root", str(self.tmp)], self.tmp)
+
+    def test_disable_archives_and_enable_restores(self):
+        r = self.make()
+        self.assertEqual(self.mod("disable", "demo").returncode, 0)
+        self.assertFalse((r / "x/a.md").exists())
+        self.assertEqual((r / "docs/agent/modules/demo/files/x/a.md").read_text(), "A")
+        self.assertNotIn("Demo", (r / "AGENTS.md").read_text())
+        self.assertIn("- demo: off - Demo module", (r / "docs/agent/modules/INDEX.md").read_text())
+        self.assertIn("demo: off", self.mod("list").stdout)
+        self.assertEqual(self.mod("enable", "demo").returncode, 0)
+        self.assertEqual((r / "x/a.md").read_text(), "A")
+        self.assertEqual((r / "AGENTS.md").read_text(), "top\n**Skills**: s\n**Demo**: yes\nrest\n")
+        self.assertIn("- demo: on - ", (r / "docs/agent/modules/INDEX.md").read_text())
+
+    def test_partial_state_and_unknown_module_stop(self):
+        self.make(); (self.tmp / "x/a.md").unlink()
+        (self.tmp / "docs/agent/modules/demo/MODULE.md").write_text((self.tmp / "docs/agent/modules/demo/MODULE.md").read_text().replace("  - x/a.md\n", "  - x/a.md\n  - x/b.md\n"))
+        (self.tmp / "x/b.md").write_text("B")
+        self.assertEqual(self.mod("enable", "demo").returncode, 1)
+        self.assertEqual(self.mod("enable", "nope").returncode, 1)
+
+    def test_shipped_modules_have_valid_manifests(self):
+        sys.path.insert(0, str(SCRIPTS)); import module
+        for p in (ROOT / "docs/agent/modules").glob("*/MODULE.md"):
+            man = module.parse(p.read_text())
+            self.assertEqual(man["name"], p.parent.name)
+            self.assertIn("- %s: " % man["name"], (ROOT / "docs/agent/modules/INDEX.md").read_text())
+
+
 if __name__ == "__main__":
     import shard; shard.main()
