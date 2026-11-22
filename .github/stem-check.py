@@ -98,8 +98,11 @@ if "- tron: on - " in _idx:
     if len((root / ".claude/skills/tron/SKILL.md").read_text().splitlines()) >= 60: err("tron skill must stay under 60 lines")
 
 # README inventories list exactly the shipped skills and agents
-shipped = {"skills": {d.name for d in (root / ".claude/skills").iterdir() if d.is_dir()},
+shipped = {"skills": {d.name for d in (root / ".claude/skills").glob("*") if d.is_dir()},
            "agents": {a.stem for a in (root / ".claude/agents").glob("*.md")}}
+for _m in (root / "docs/agent/modules").glob("*/files/.claude"):  # archived (off) modules stay listed
+    shipped["skills"] |= {d.name for d in (_m / "skills").glob("*") if d.is_dir()}
+    shipped["agents"] |= {a.stem for a in (_m / "agents").glob("*.md")}
 for f in ("README.md", "README.de.md"):
     t = (root / f).read_text()
     for kind, names in shipped.items():
@@ -131,7 +134,7 @@ def tron_changed():
         if r.returncode: return True
         out += r.stdout.split()
     return any(f.startswith(TRON_FILES) for f in out)
-skip_tron = not os.environ.get("CI") and not os.environ.get("STEM_CHECK_ALL") and not tron_changed()
+skip_tron = "- tron: on - " not in _idx or not os.environ.get("CI") and not os.environ.get("STEM_CHECK_ALL") and not tron_changed()
 if skip_tron: print("stem-check: test_tron.py skipped (no Tron file changed since origin/main; CI or STEM_CHECK_ALL=1 runs it)")
 SHARDS = (("test_scripts.py", "script fixture tests", 3), ("test_retro_run.py", "retro-run fixture tests", 1), ("test_tron.py", "tron fixture tests", 4))
 jobs = []

@@ -92,7 +92,7 @@ class Mods:
             t.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(str(s), str(t))
             d = s.parent
-            while d != self.root and d.is_dir() and not any(d.iterdir()):
+            while d.parent != self.root and d.parent.parent != self.root and d.is_dir() and not any(d.iterdir()):
                 d.rmdir(); d = d.parent
 
     def refs(self, man, add):
@@ -117,6 +117,7 @@ class Mods:
         if state == "partial":
             raise ValueError(f"{name}: only part of its files exist; ask the user")
         if state == ("on" if enable else "off"):
+            self.set_status(name, state, man["purpose"])
             print(f"{name}: already {state}")
             return
         arch = lambda f: self.dir / name / "files" / f

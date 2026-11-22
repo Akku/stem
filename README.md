@@ -153,6 +153,7 @@ Based on each project's own documentation as of November 2026; these projects ch
 | `docs/agent/OPERATING_MODEL.md` | Rules with stable IDs (`R-*`), loaded selectively |
 | `docs/agent/model-classes.json` | Which model families get the shorter `lean` reminders at session start; every other model gets the full rules |
 | `docs/agent/ADVANCED.md` | Rarely needed rules (parallelism, measurement, routing, local models) |
+| `docs/agent/TRON.md` | Tron mode rule `R-TRON` (module `tron`) |
 | `docs/agent/EXPERIMENTS.md` | Hypotheses, metrics, baselines and evidence grades for cost-carrying rules |
 | `docs/agent/NEXT_RETRO.md` | Everything the next retro needs in one place: due checks, observations, first-retro items |
 | `docs/agent/RETRO_TOPICS.md` | The reflection questions each retro takes from the catalog, how they are picked and how to change them |

@@ -4,7 +4,7 @@ Every operating-model rule must be reachable: its ID is named outside docs/agent
 (AGENTS.md, a skill, a script hint), not only in the index. A rule the agent never hears of cannot help (TASK-210)."""
 import pathlib, re, sys
 
-RULE_FILES = ("docs/agent/OPERATING_MODEL.md", "docs/agent/ADVANCED.md")
+RULE_FILES = ("docs/agent/OPERATING_MODEL.md", "docs/agent/ADVANCED.md", "docs/agent/TRON.md")
 SKIP_PARTS = {".git", ".agent-logs", "__pycache__", "tests", "node_modules"}
 SKIP_FILES = set(RULE_FILES) | {"CHANGELOG.md"}
 

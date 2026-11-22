@@ -7,6 +7,7 @@ Same ID mechanism as `OPERATING_MODEL.md`: `sed -n "/<!-- RULE:${ID}:START -->/,
 | `R-PARALLEL` | running coding agents in parallel |
 | `R-MEASUREMENT` | measuring process cost/effectiveness |
 | `R-ROUTING` | choosing provider/model or local worker |
+| `R-TRON` | Tron mode (optional module): rule is in `docs/agent/TRON.md`, not here |
 
 <!-- RULE:R-PARALLEL:START -->
 ## 14. Parallelism and worktrees

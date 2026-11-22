@@ -5,7 +5,7 @@ description: Guide the interactive parts of a Tron mode run (unattended build of
 
 # Tron mode: before and after a run
 
-Rules: `R-TRON` (session duties, role tiers), `R-BATCHING` (approval of a batch), `R-DESIGN` (alignment). Do not repeat them here. The runner is `scripts/tron.py`; this skill never starts a run by itself.
+Rules: `R-TRON` in `docs/agent/TRON.md` (session duties, role tiers), `R-BATCHING` (approval of a batch), `R-DESIGN` (alignment). Do not repeat them here. The runner is `scripts/tron.py`; this skill never starts a run by itself.
 
 ## 1. Prepare the milestone with the user (one question at a time, recommendation each)
 1. Milestone and tasks: every task has acceptance criteria and a `size-*` label; list the ready tasks in order.

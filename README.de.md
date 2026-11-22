@@ -152,6 +152,7 @@ Stand laut eigener Dokumentation der Projekte, November 2026; diese Projekte än
 | `docs/agent/OPERATING_MODEL.md` | Regeln mit stabilen IDs (`R-*`), gezielt per ID geladen |
 | `docs/agent/model-classes.json` | Welche Modellfamilien beim Sitzungsstart die kürzeren `lean`-Hinweise bekommen; jedes andere Modell bekommt die vollen Regeln |
 | `docs/agent/ADVANCED.md` | Selten gebrauchte Regeln (Parallelität, Messung, Routing, lokale Modelle) |
+| `docs/agent/TRON.md` | Tron-Modus-Regel `R-TRON` (Modul `tron`) |
 | `docs/agent/EXPERIMENTS.md` | Hypothesen, Messgrößen, Basislinien und Evidenzgrade für dauerhaft kostenwirksame Regeln |
 | `docs/agent/NEXT_RETRO.md` | Alles für die nächste Retro an einem Ort: fällige Prüfungen, Beobachtungen, Punkte für die erste Retro |
 | `docs/agent/PITFALLS.md` | Wachsende Liste technischer Stolperfallen |

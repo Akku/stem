@@ -3,6 +3,10 @@ name: tron
 purpose: Tron mode: build one approved milestone unattended with runner, gate and independent evaluator
 when_useful: Projects with a prepared milestone, clear acceptance criteria and budget for unattended agent sessions; not for small projects
 version: 1
+refs:
+  - file: docs/agent/ADVANCED.md
+    after: "| `R-ROUTING` |"
+    line: "| `R-TRON` | Tron mode (optional module): rule is in `docs/agent/TRON.md`, not here |"
 files:
   - scripts/tron.py
   - .claude/agents/evaluator.md

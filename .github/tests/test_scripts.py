@@ -380,6 +380,7 @@ class StartContext(Sandbox):
         self.assertIn("foo [project (.mcp.json)] DENIED", r.stdout)
 
 
+@unittest.skipUnless((ROOT / "docs/agent/TRON.md").exists(), "tron module is off")
 class TronMode(Sandbox):
     """TASK-266: session start names R-TRON only when STEM_TRON=1; rule and templates stay short."""
     def start(self, env):

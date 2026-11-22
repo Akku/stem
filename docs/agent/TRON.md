@@ -4,7 +4,7 @@ Load rule `R-TRON` with the ID mechanism of `OPERATING_MODEL.md`, on this file. 
 
 
 <!-- RULE:R-TRON:START -->
-## 19. Tron mode: duties of a session the runner started
+## Tron mode: duties of a session the runner started
 
 Applies when session start prints the Tron mode line (`STEM_TRON=1`). An unattended run hands one approved milestone to `scripts/tron.py`; nobody answers questions during the run.
 
