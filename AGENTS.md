@@ -17,7 +17,7 @@ Local Claude Code and Codex startup hooks provide this output where supported an
 - **Whenever the user should test, review or decide something, put the direct way in the same message:** for a running app the full URL with port and route (start the server yourself if needed), for files a clickable relative path, for PRs/CI the full URL, otherwise the exact command; plus what to check (2-4 bullets) and which answer you need.
 - **Code the user must run** (you may not, or should not, run it): show it complete and ready to paste in a fenced code block. **Whenever a draft is named in a message, link it** (clickable relative path; full path where links are not clickable). **Draft content is written in the user's language** (not English). After the decision record the result and archive the draft.
 
-**Skills** (`.claude/skills/<name>/SKILL.md`; other tools read the file): `retro`, `alignment`, `handoff`, `promote-learning`, `market-analysis`, `tron` (Tron mode), `stem-update`, `port-check`.
+**Skills** (`.claude/skills/<name>/SKILL.md`; other tools read the file): `retro`, `alignment`, `handoff`, `promote-learning`, `stem-update`, `port-check`; optional skills (`market-analysis`, `tron`) are listed by the tools themselves while active.
 **Modules:** optional functions (on or off, off ones stay findable): `docs/agent/modules/INDEX.md`; switch with `python3 scripts/module.py`.
 
 ## Core rules (full text by ID: `docs/agent/OPERATING_MODEL.md`)
