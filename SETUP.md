@@ -120,4 +120,4 @@ Finish all project files first, then commit once, so the setup commit is the com
 
 ## Later
 - First retro: run `R-RETRO`; it works through the `First retro` section of `docs/agent/NEXT_RETRO.md`.
-- Valuable, validated learnings can go back into the STEM repository via pull request (`docs/agent/PROCESS_IMPROVEMENTS.md`, "Cross-project promotion").
+- Valuable, validated learnings can go back into the STEM repository via pull request (`promote-learning` skill).

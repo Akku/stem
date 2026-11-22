@@ -15,6 +15,8 @@ Placeholders: {prompt} {session_id} {task_id} {run_id} {milestone}. Roles: worke
 (key <role>_cmd; a missing one falls back to worker_cmd).
 Python standard library only (macOS and Linux)."""
 import argparse, datetime, fnmatch, hashlib, json, os, pathlib, re, subprocess, sys, time, uuid
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # sibling module also when loaded by path
+import transcripts
 
 ROLES = ("worker", "evaluator", "doctor", "planner", "retro", "applier")
 DEFAULT_PROMPT = ("Work on backlog task {task_id} following AGENTS.md. This is an unattended Tron mode session "
@@ -162,7 +164,7 @@ def prepare_branch(root, milestone, dry):
 def transcript_path(cwd, session_id, home=None):
     """Claude Code keeps transcripts at ~/.claude/projects/<cwd with non-alphanumerics as '-'>/<session>.jsonl."""
     home = pathlib.Path(home or os.path.expanduser("~"))
-    return home / ".claude/projects" / re.sub(r"[^A-Za-z0-9]", "-", str(cwd)) / f"{session_id}.jsonl"
+    return home / ".claude/projects" / transcripts.slug(cwd) / f"{session_id}.jsonl"
 
 
 def parse_output(text):

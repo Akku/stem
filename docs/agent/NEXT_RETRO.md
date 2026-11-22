@@ -2,7 +2,7 @@
 
 The one place for what the next retro needs. Read only in retros (`R-RETRO`) or when investigating process efficiency; not normal task context.
 Point to the evidence (task ID, `EXPERIMENTS.md` row, commit) instead of copying it. Format: `- [TASK-ID or STEM / YYYY-MM-DD] observation or check → possible improvement`.
-Add here what a later retro must look at: observations that matter beyond one task (`R-LEARNING`), checks due at a retro, questions for the user. Handling: `docs/agent/PROCESS_IMPROVEMENTS.md`.
+Add here what a later retro must look at: observations that matter beyond one task (`R-LEARNING`), checks due at a retro, questions for the user. Handling: `R-LEARNING`.
 
 ## Due checks
 

@@ -157,13 +157,12 @@ Based on each project's own documentation as of November 2026; these projects ch
 | `docs/agent/NEXT_RETRO.md` | Everything the next retro needs in one place: due checks, observations, first-retro items |
 | `docs/agent/RETRO_TOPICS.md` | The reflection questions each retro takes from the catalog, how they are picked and how to change them |
 | `docs/agent/PITFALLS.md` | Growing list of technical pitfalls |
-| `docs/agent/PROCESS_IMPROVEMENTS.md` | Retro handling and feeding learnings back into STEM |
 
 </details>
 
 ## Contributing
 
-Please contribute proven learnings via pull request (pattern: problem, pattern, applicability, evidence – see `docs/agent/PROCESS_IMPROVEMENTS.md` or the `promote-learning` skill). No project or company internals, no credentials – this repository is public. Details and checklist: [CONTRIBUTING.md](CONTRIBUTING.md).
+Please contribute proven learnings via pull request (pattern: problem, pattern, applicability, evidence – see the `promote-learning` skill). No project or company internals, no credentials – this repository is public. Details and checklist: [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Credits and license
 

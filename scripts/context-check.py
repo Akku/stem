@@ -9,7 +9,7 @@ session log itself (Codex: CODEX_THREAD_ID; Claude: newest transcript of this di
 Switched off per project with "context_warning": false in docs/agent/stem-config.json (the hook entry stays).
 Silent and exit 0 on any problem or below the threshold (hook mode). Numbers only, no transcript content is printed."""
 import glob, json, os, re, sys
-import hooklib
+import hooklib, transcripts
 
 CAP = int(os.environ.get("CONTEXT_WARN_TOKENS", "100000"))
 GROWTH = 50000
@@ -63,7 +63,7 @@ def current_log():
         home = os.environ.get("CODEX_HOME") or os.path.expanduser("~/.codex")
         hits = glob.glob(os.path.join(home, "sessions", "**", "*%s*.jsonl" % tid), recursive=True)
         if hits: return max(hits, key=os.path.getmtime)
-    slug = re.sub(r"[^A-Za-z0-9]", "-", os.getcwd())
+    slug = transcripts.slug(os.getcwd())
     hits = glob.glob(os.path.join(os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude"), "projects", slug, "*.jsonl"))
     return max(hits, key=os.path.getmtime) if hits else ""
 

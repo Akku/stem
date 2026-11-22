@@ -20,17 +20,12 @@ Usage: scripts/start-context.py <command> [args]
   undo-mcp NAME... [--shared] | skills-on NAME...    remove the entries again
 Each server in the context costs its instructions/tool names in every session; each listed skill ~0.1-0.3k tokens."""
 import datetime as dt, glob, json, os, pathlib, re, shlex, statistics, subprocess, sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # sibling module also when loaded by path
+import transcripts
 
-def utc(t):
-    try: d = dt.datetime.fromisoformat(re.sub(r"Z$", "+00:00", t.strip()))
-    except ValueError: sys.exit("start-context: cannot parse time %r" % t)
-    return d.astimezone(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+def utc(t): return transcripts.utc_since(t, "start-context")
 
-def tdirs():
-    """This project's transcript folders: main checkout plus its worktrees (<main>--claude-worktrees-*), also when run from a worktree. TASK-220."""
-    base = os.path.expanduser("~/.claude/projects/")
-    main = re.sub(r"[^A-Za-z0-9]", "-", os.getcwd()).split("--claude-worktrees-")[0]
-    return [base + main] + sorted(glob.glob(glob.escape(base + main) + "--claude-worktrees-*"))
+def tdirs(): return transcripts.project_dirs()
 
 HEADLESS = ".claude/start-context-headless.json"
 

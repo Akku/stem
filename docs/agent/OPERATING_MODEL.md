@@ -537,7 +537,9 @@ Learning: <observation> → <possible process improvement or question>
 
 Skills get feedback the same way: when a step of a skill did not fit or the run deviated from it, write `Learning: skill <name>: <what> -> <change>`; the retro's skill review reads these lines. Only when it happened, not after every run.
 
-Task-local notes preserve evidence and context. Cross-task or reusable observations, and checks a later retro must make, go additionally into the one project-local retro inbox `docs/agent/NEXT_RETRO.md` (as a pointer to the evidence, not a copy). It is not another policy document and not normal implementation context; the retro prunes it after triage. Handling: `docs/agent/PROCESS_IMPROVEMENTS.md`.
+Task-local notes preserve evidence and context. Cross-task or reusable observations, and checks a later retro must make, go additionally into the one project-local retro inbox `docs/agent/NEXT_RETRO.md` (as a pointer to the evidence, not a copy). It is not another policy document and not normal implementation context; the retro prunes it after triage. Typical candidates: repeated manual work or review findings, hard-to-discover context, missing or flaky verification, repeated or excessive command output, drifting rules, a batching decision that worked especially well or badly, a candidate automation, a disproportionate agent or tool, a misunderstood proof boundary.
+
+Retro handling: classify each observation as adopt (implement or create a task), experiment (narrow evidence first), defer (only while the question stays relevant), discard, or promote (generalized pattern into the STEM repository by pull request, see the `promote-learning` skill). Keep implementation and demonstrated effect separate and set an observable success criterion for a later retro. Resolved observations leave `NEXT_RETRO.md`. A promoted pattern states: problem, pattern, when it applies, when it does not, evidence and source projects, confidence.
 
 Do not use raw project observations directly as universal rules for other projects. During a retro, a validated project learning may be promoted one step further into a separate cross-project pattern library maintained with the shared harness/template. That promotion should preserve the evidence and applicability limits.
 
@@ -563,7 +565,6 @@ Inputs should remain bounded:
 
 - the current STEM version (every retro, light too) and new findings in the central STEM repository from other projects (first input of every retro; procedure in the `retro` skill);
 - notable task-local `Learning:` observations;
-- `PROCESS_IMPROVEMENTS.md`, if used;
 - a representative sample of completed tasks/batches;
 - relevant commits and CI runs;
 - recurring review findings and failed checks;
@@ -669,6 +670,7 @@ Generated code is cheap to produce and expensive to change; without deliberate d
 - **Feedback rate is the speed limit:** produce small increments and run the cheapest check after each (type check, linter, test, looking at the UI). Do not write large amounts of code before the first check. For UI work give the agent a way to see the result (browser tool or screenshots).
 - **Deep modules:** prefer few modules with a simple interface and much behavior behind it over many shallow ones; they are easier to test and to navigate (read the interface, not the internals).
 - **Propose missing tools:** when work would clearly benefit from a tool or framework that is not set up yet (the same browser, API or UI check done by hand a second time, recurring style fixes, no test runner for new logic), propose it unasked before continuing by hand: what it is, why, cost (install, setup time, maintenance) and a recommendation. Installing it is the user's decision; until then continue with what exists.
+- **Check for overlap first:** before adding a new script, skill, agent or rule, check whether an existing system can absorb it (TASK-345); note the result in one sentence in the task (`Overlap: none` or `Overlap: merged into X`).
 - **No speculative structure:** introduce an abstraction only for two real uses, and no dependency for about 20 lines of code.
 - **Owned interfaces:** a new or changed public interface or module boundary is a decision for the user (propose, then agree); the inside of a module can be delegated. Treat low-risk modules as gray boxes tested from outside; money, security and personal data get closer scrutiny and review (`R-REVIEW`).
 - **Module map (`docs/ARCHITECTURE.md`, create once the project has about three modules):** one page: module, purpose, public interface, gray box or scrutinized, how it is tested. Update it in the task that changes a boundary. Load it instead of reading code to orient.

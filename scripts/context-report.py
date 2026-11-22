@@ -11,6 +11,8 @@ Prints numbers only. Labels may contain tool names, file base names and the firs
 review before copying anything into notes. The transcript format is undocumented; unknown format -> "not evaluable".
 Estimates are rough (characters / 4; assumes a result stays in context until the session ends, so compaction makes it an upper bound)."""
 import collections, datetime as dt, glob, json, os, re, sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # sibling module also when loaded by path
+import transcripts
 
 # Price table (USD per million tokens), the one place for cost estimates. Estimate from public list prices, dated; check before relying on it.
 # Matched by family name in the model id; a model without a match shows cost "n/a", never 0. Order: input, cache_write, cache_read, output.
@@ -49,18 +51,9 @@ def by_model_report(per_model, tasks):
 
 RULE_ID = re.compile(r"\bR-[A-Z][A-Z-]+[A-Z]\b")
 
-def utc_since(since):
-    """--since/--until: ISO time; without offset it is local time (date only = local midnight), Z or +HH:MM marks the zone.
-    Returns "YYYY-MM-DDTHH:MM:SS" UTC to compare with transcript timestamps; unparsable input stops the run."""
-    try: t = dt.datetime.fromisoformat(re.sub(r"Z$", "+00:00", since.strip()))  # Z: Python < 3.11
-    except ValueError: sys.exit("context-report: cannot parse time %r (use YYYY-MM-DD[ HH:MM] local or ISO with Z/offset)" % since)
-    return t.astimezone(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+def utc_since(since): return transcripts.utc_since(since, "context-report")
 
-def project_dirs():
-    """This project's transcript folders: the main checkout's plus its worktrees' (<main>--claude-worktrees-*); also when run from a worktree. TASK-220."""
-    base = os.path.expanduser("~/.claude/projects/")
-    main = re.sub(r"[^A-Za-z0-9]", "-", os.getcwd()).split("--claude-worktrees-")[0]
-    return [base + main] + sorted(glob.glob(glob.escape(base + main) + "--claude-worktrees-*"))
+def project_dirs(): return transcripts.project_dirs()
 
 def main():
     args = sys.argv[1:]
