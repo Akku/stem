@@ -91,6 +91,9 @@ class Mods:
             s, t = src(f), dst(f)
             t.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(str(s), str(t))
+            d = s.parent
+            while d != self.root and d.is_dir() and not any(d.iterdir()):
+                d.rmdir(); d = d.parent
 
     def refs(self, man, add):
         for r in man.get("refs", []):
