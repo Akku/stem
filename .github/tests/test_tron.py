@@ -1252,6 +1252,14 @@ class Tron(unittest.TestCase):
         for role in ("doctor", "planner", "retro", "worker"):
             self.assertEqual(tron.command_for(cfg, role), ["w"])
 
+    def test_default_prompt_explains_allowlisted_bash(self):
+        """TASK-368 (automations TASK-40): a worker read one denied chained call as 'Bash denied'."""
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import tron
+        p = tron.DEFAULT_PROMPT
+        for part in ("one command per call", "&&", "not that Bash is banned"):
+            self.assertIn(part, p)
+
     def test_runner_never_publishes(self):
         src = TRON.read_text()
         # 'git stash push' keeps work safe and is the one allowed use of the word

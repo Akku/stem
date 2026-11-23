@@ -20,7 +20,9 @@ import transcripts
 
 ROLES = ("worker", "evaluator", "doctor", "planner", "retro", "applier")
 DEFAULT_PROMPT = ("Work on backlog task {task_id} following AGENTS.md. This is an unattended Tron mode session "
-                  "(STEM_TRON=1): read R-TRON first and follow it; nobody answers questions. Work on this one task only.")
+                  "(STEM_TRON=1): read R-TRON first and follow it; nobody answers questions. Work on this one task only. "
+                  "Bash is limited to an allowlist: run one command per call, never chained with &&, ;, | or a subshell; "
+                  "a denied call means that command form is not allowed, not that Bash is banned: split it or use another listed command.")
 JOURNAL_DIR = pathlib.Path("docs/agent/tron")
 # files a session must not change (tier 3 of the retro changes, R-TRON): the gate itself, the config, the decision frame, the invariants,
 # the judging and diagnosing agents, security and deny rules
