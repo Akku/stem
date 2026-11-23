@@ -2131,7 +2131,7 @@ def cmd_split_out(args):
     if made:
         sw.write_text(text)
         git_ok(root, "add", "-A", "--", "backlog", str(sw.relative_to(root)))
-        git_ok(root, "commit", "-q", "-m", f"Tron sweep {args.milestone}: split out {len(made)} AC(s) that need the user")
+        git_ok(root, "commit", "-q", "-m", f"Tron run: sweep {args.milestone} split out {len(made)} AC(s) that need the user")
     print(f"split out (info for the user, no question): {len(made)}")
     for nid, tid, ac, new, kind in made:
         print(f"- {nid}: {tid} AC#{ac} needs {NEEDS_KIND[kind]} -> {new} (waiting, tron-user)")
