@@ -769,6 +769,32 @@ class Tron(unittest.TestCase):
         rep = (self.proj / "docs/agent/tron" / next((self.proj / "docs/agent/tron").glob("REPORT-*.md")).name).read_text()
         self.assertIn("ladder: doctor: needs_user", rep)
 
+    def test_runner_error_mid_run_ends_cleanly_and_resumes(self):
+        """TASK-365 (shadowrun field report): a commit-msg hook rejecting the draft commit raised TronError and left
+        no stop_reason, no report and a staged draft. Now the run ends like a stop and a resume goes on."""
+        hook = self.proj / ".git/hooks/commit-msg"
+        hook.write_text("#!/bin/sh\nif head -n1 \"$1\" | grep -q '^Tron run:'; then echo rejected >&2; exit 1; fi\n"); hook.chmod(0o755)
+        self.with_doctor({"TASK-1": [{"verdict": "needs_user", "diagnosis": "conflict", "question": "csv or json?"}]})
+        self.behavior({"TASK-1": "no_evidence"})
+        r = self.tron("run", "--milestone", "m-1", "--run-id", "r1", "--max-tasks", "1")
+        self.assertEqual(r.returncode, 2, r.stdout + r.stderr); self.assertIn("run ended by an error", r.stderr)
+        j = self.journal()
+        self.assertIsNotNone(j["ended"]); self.assertFalse(j["complete"])
+        self.assertTrue(j["stop_reason"].startswith("runner error: TronError"), j["stop_reason"])
+        self.assertEqual(j["error_stash"], "tron r1 error leftovers")
+        self.assertEqual(git(self.proj, "diff", "--cached", "--name-only").stdout, "")
+        self.assertEqual([l for l in git(self.proj, "status", "--porcelain").stdout.splitlines() if "docs/agent/tron/" not in l], [])
+        self.assertIn("error leftovers", git(self.proj, "stash", "list").stdout)
+        rep = (self.proj / "docs/agent/tron/REPORT-r1.md").read_text()
+        self.assertIn("The run ended by an error", rep); self.assertIn("stash 'tron r1 error leftovers'", rep)
+        self.assertFalse((self.proj / "docs/agent/tron/LOCK").exists())
+        hook.unlink()
+        r = self.tron("run", "--milestone", "m-1", "--run-id", "r1", "--max-tasks", "1")
+        self.assertNotIn("not clean", r.stderr); self.assertIn("resuming run r1", r.stdout)
+        j = self.journal()
+        self.assertNotIn("error", j); self.assertEqual(j["error_history"][0]["error_stash"], "tron r1 error leftovers")
+        self.assertEqual(j["tasks"]["TASK-1"]["state"], "blocked")
+
     def split_plan(self, acs_a=("it works",), acs_b=("it also works",)):
         return {"verdict": "split_task", "diagnosis": "too big", "subtasks": [{"title": "part a", "acs": list(acs_a)}, {"title": "part b", "acs": list(acs_b)}]}
 

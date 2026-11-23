@@ -1148,6 +1148,9 @@ def build_report(root, journal, tron):
             "- The first core flows are tested by you: " + (", ".join(acc) or "(no accepted task)")]
     out += [f"- Unattended retro (analysis): {journal['retro']}"] if journal.get("retro") else []
     out += [f"- Unattended retro failed: {journal['retro_error']}"] if journal.get("retro_error") else []
+    out += [f"- The run ended by an error: {journal['error']}. Run again to continue after fixing it"
+            + (f"; loose files of that moment are in the stash '{journal['error_stash']}'" if journal.get("error_stash") else "")
+            + (f"; cleanup failed: {journal['error_cleanup']}" if journal.get("error_cleanup") else "")] if journal.get("error") else []
     out += [""] + retro_changes_report(journal) + calibration_report(journal)
     out += ["## Accepted tasks: acceptance criteria and evidence", ""]
     for i in acc:
@@ -1300,8 +1303,17 @@ def cmd_run(args):
         if pid and pid_alive(pid):
             raise TronError(f"another run is active (pid {pid}, {lock.relative_to(root)})")
     lock.write_text(str(os.getpid()))
+    ctx = {}  # run_loop puts its clean-end handler here once the journal exists
     try:
-        return run_loop(root, tron, args, milestone, jpath, run_id)
+        return run_loop(root, tron, args, milestone, jpath, run_id, ctx)
+    except Exception as e:  # TASK-365: an error mid-run ends the run like a stop (journal, report, clean index), never a dead process
+        if "fail" not in ctx:
+            raise
+        ctx["fail"](e)
+        if not isinstance(e, TronError):
+            raise
+        print(f"tron: run ended by an error: {e}; see docs/agent/tron/REPORT-{run_id}.md", file=sys.stderr)
+        return 2
     finally:
         try:
             lock.unlink()
@@ -1361,7 +1373,7 @@ def milestone_evaluation(root, tron, journal, jpath, accepted, start_commit, max
             return 4 if stop else 3
 
 
-def run_loop(root, tron, args, milestone, jpath, run_id):
+def run_loop(root, tron, args, milestone, jpath, run_id, ctx=None):
     t0 = time.time()
     max_tasks = args.max_tasks if args.max_tasks is not None else tron.get("max_tasks")
     max_repairs = int(tron.get("max_repairs", 3))
@@ -1395,6 +1407,8 @@ def run_loop(root, tron, args, milestone, jpath, run_id):
             journal.setdefault("retro_history", []).append(str(keep.relative_to(root)))
             journal.pop("retro")
         journal.pop("retro_error", None)
+        if journal.get("error"):  # the error of the earlier stop stays in the history; the report shows only a current one
+            journal.setdefault("error_history", []).append({k: journal.pop(k) for k in ("error", "error_stash", "error_cleanup") if k in journal})
         print(f"resuming run {run_id} on branch {branch}; {len(journal['tasks'])} task(s) settled before")
     else:
         branch, existed = prepare_branch(root, milestone, False)
@@ -1428,6 +1442,25 @@ def run_loop(root, tron, args, milestone, jpath, run_id):
             (root / JOURNAL_DIR / f"REPORT-{journal['run_id']}.md").write_text(build_report(root, journal, tron))
         except (OSError, TronError, KeyError, ValueError):
             pass
+
+    def fail(e):
+        """End the run after an error: loose and staged files go into a named stash (a resume needs a clean tree), then fin()."""
+        journal["error"] = f"{type(e).__name__}: {e}"[:300]
+        try:
+            unhide(root)
+            if tree_dirty(root) or git_ok(root, "diff", "--cached", "--name-only").strip():
+                name = f"tron {journal['run_id']} error leftovers"
+                n0 = len(git_ok(root, "stash", "list").splitlines())
+                git_ok(root, "stash", "push", "-u", "-q", "-m", name, "--", ".", *EXCLUDE)
+                if len(git_ok(root, "stash", "list").splitlines()) > n0:
+                    journal["error_stash"] = name
+            git_ok(root, "reset", "-q")  # nothing the runner staged stays in the index
+        except (TronError, OSError) as e2:
+            journal["error_cleanup"] = str(e2)[:300]
+        fin("runner error: " + journal["error"])
+
+    if ctx is not None:
+        ctx["fail"] = fail
 
     def stop_reason(count_tasks=True):
         if stop_path.is_file():
