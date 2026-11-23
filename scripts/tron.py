@@ -520,12 +520,33 @@ def labels_of(text):
     return [l.lower() for l in re.findall(r"[\w-]+", lab.group(1))] if lab else []
 
 
-def eval_due(tron, task_text):
-    """evaluator: off | milestone (default: milestone end, and per task for size-L or label review) | task (every task)."""
+def eval_due(tron, task_text, unfounded=False):
+    """evaluator: off | milestone (default: milestone end, and per task for size-L, label review, or an assumption with basis none
+    while the milestone has an acceptance scenario: unfounded, TASK-382) | task (every task)."""
     mode = tron.get("evaluator", "milestone")
     if mode == "off":
         return False
-    return mode == "task" or bool({"size-l", "review"} & set(labels_of(task_text)))
+    return mode == "task" or unfounded or bool({"size-l", "review"} & set(labels_of(task_text)))
+
+
+def scenario_path(tron, milestone):
+    return tron.get("acceptance_scenario") or f"docs/agent/tron/ACCEPTANCE-{milestone}.md"
+
+
+def scenario_text(root, tron, milestone):
+    """The milestone acceptance scenario, or None when the file is missing or empty."""
+    p = root / scenario_path(tron, milestone)
+    t = p.read_text().strip() if p.is_file() else ""
+    return t or None
+
+
+SCENARIO_CONFLICT = "acceptance scenario"  # prefix of an assumption flag's conflict that a repair session can fix (TASK-382)
+
+
+def unfounded_assumptions(text):
+    """Assumption lines of a task's notes with basis none or no basis named."""
+    return [l.strip() for l in parse_task(text)[2].splitlines()
+            if re.match(r"\s*Assumption:", l) and (assumption_basis(l) or "none").lower() == "none"]
 
 
 FINDING_KINDS = ("defect", "invariant", "not_verifiable", "placeholder", "risk")
@@ -656,8 +677,12 @@ def write_brief(root, tron, journal, target, base, g, task_ids, intent):
             _, acs, _ = parse_task(files[i].read_text())
             parts += [f"### {i}"] + [f"- AC#{n}: {s}" for _, n, s in acs]
     if target == "milestone":
-        scen = tron.get("acceptance_scenario", f"docs/agent/tron/ACCEPTANCE-{journal['milestone']}.md")
-        parts += ["", "## Milestone acceptance scenario", read_rel(root, scen)]
+        parts += ["", "## Milestone acceptance scenario", read_rel(root, scenario_path(tron, journal["milestone"]))]
+    else:  # TASK-382: an assumption that contradicts the scenario fails here, not after the whole milestone
+        scen = scenario_text(root, tron, journal["milestone"])
+        parts += ["", "## Milestone acceptance scenario (whole milestone; this task covers only part of it)", scen,
+                  f"An assumption of this task with basis none that contradicts a step of this scenario is an assumption flag with the conflict "
+                  f"'{SCENARIO_CONFLICT}: <step>'. Steps this task does not touch are not findings."] if scen else []
     code, tail = verify(root, tron)
     ex = EXCLUDE + [":(exclude)backlog"]  # task files carry the implementer's notes and evidence claims
     diff = git_ok(root, "diff", "--no-renames", base, "--", ".", *ex)
@@ -1047,14 +1072,17 @@ def verdict_failure(ev):
     lines = [f"verdict file: {ev['file']}"]
     for f in ev["findings"]:
         lines.append(f"{f.get('ac', '-')} at {f.get('location', '?')}: {f.get('scenario', '')}")
+    scen = [a for a in ev["assumption_flags"] if str(a.get("conflict", "")).strip().lower().startswith(SCENARIO_CONFLICT)]
     for a in ev["assumption_flags"]:
-        lines.append(f"assumption conflicts: {a.get('assumption', '?')} ({a.get('conflict', '?')})")
+        lines.append(f"assumption conflicts: {a.get('assumption', '?')} ({a.get('conflict', '?')})"
+                     + ("; drop the assumption and make that scenario step work" if a in scen else ""))
     sig = {(str(f.get("ac", "-")), str(f.get("kind", "defect"))) for f in ev["findings"]}
     if ev["assumption_flags"]:
-        sig.add(("assumption", "conflict"))
+        sig.add(("assumption", "scenario" if scen else "conflict"))
     sig = sorted(sig)
-    # findings a worker cannot repair (environment, assumptions): block at once instead of spending repair sessions
-    unrepairable = bool(ev["assumption_flags"] or ev["findings"]) and all(f.get("kind") == "not_verifiable" for f in ev["findings"])
+    # findings a worker cannot repair (environment, assumptions against vision, invariant or frame): block at once instead of spending
+    # repair sessions; a conflict with the acceptance scenario is repairable, the scenario says what to build (TASK-382)
+    unrepairable = bool(ev["assumption_flags"] or ev["findings"]) and not scen and all(f.get("kind") == "not_verifiable" for f in ev["findings"])
     return {"passed": False, "placeholders": [], "deleted_files": [],
             "failures": [{"check": "evaluator", "reason": f"evaluator verdict fail: {len(ev['findings'])} finding(s)", "detail": "\n".join(lines)[:4000],
                           "sig": sig, "unrepairable": unrepairable}]}
@@ -1830,7 +1858,8 @@ def run_loop(root, tron, args, milestone, jpath, run_id, ctx=None):
                 tf = task_files(root).get(task_id)
                 # labels are read from the run-start commit: a session cannot switch the evaluation off by editing them
                 text0 = start_text(root, task_id, start_commit) or (tf.read_text() if tf else "")
-                if tf and eval_due(tron, text0):
+                unfounded = bool(unfounded_assumptions(tf.read_text()) and scenario_text(root, tron, milestone)) if tf else False
+                if tf and eval_due(tron, text0, unfounded):
                     print(f"{task_id}: evaluator session")
                     ev = evaluate(root, tron, journal, jpath, task_id, base, g, [task_id], task_intent(tf.read_text()), no_count)
                     if "unavailable" in ev:
@@ -3086,7 +3115,7 @@ def check_milestone(root, milestone, cfg_path=None):
         f = root / rel
         if not f.is_file() or not f.read_text().strip():
             fails.append(f"{rel} is missing or empty")
-    scen = tron.get("acceptance_scenario") or f"docs/agent/tron/ACCEPTANCE-{milestone}.md"
+    scen = scenario_path(tron, milestone)
     sf = root / scen
     if not sf.is_file() or not sf.read_text().strip():
         fails.append(f"acceptance scenario missing or empty: {scen}")

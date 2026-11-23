@@ -191,6 +191,8 @@ elif v == "bad_kind":
     j = {"verdict": "pass", "findings": [{"ac": "AC#1", "kind": "whatever"}], "assumption_flags": [], "checked": [{"ac": "AC#1"}]}
 elif v == "flag":
     j = {"verdict": "pass", "findings": [], "checked": [{"ac": "AC#1"}], "assumption_flags": [{"assumption": "uses cloud", "conflict": "invariant: no external data"}]}
+elif v == "flag_scenario":  # TASK-382
+    j = {"verdict": "pass", "findings": [], "checked": [{"ac": "AC#1"}], "assumption_flags": [{"assumption": "CSV is fine", "conflict": "acceptance scenario: step 2 exports JSON"}]}
 elif v == "unverifiable":
     j = {"verdict": "fail", "findings": [{"ac": "AC#1", "location": "x", "scenario": "no start command", "kind": "not_verifiable"}], "assumption_flags": []}
 elif v == "fail":
@@ -1223,6 +1225,42 @@ class Tron(unittest.TestCase):
         self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
         self.assertEqual(self.eval_calls(), ["milestone"]); self.assertTrue(self.journal()["complete"])
 
+    def scenario(self, text="1. run the tool\n2. export JSON from the CLI\n"):
+        (self.proj / "docs/agent/tron").mkdir(parents=True, exist_ok=True)
+        (self.proj / "docs/agent/tron/ACCEPTANCE-m-1.md").write_text(text)
+        git(self.proj, "add", "-A"); git(self.proj, "commit", "-qm", "scenario")
+
+    def test_task_brief_carries_the_milestone_acceptance_scenario(self):  # TASK-382 AC#1
+        self.with_evaluator("task"); self.scenario()
+        self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
+        brief = (self.td / "brief_copy.txt").read_text().split("# Evaluator brief: milestone")[0]
+        self.assertIn("# Evaluator brief: TASK-1", brief)
+        self.assertIn("## Milestone acceptance scenario (whole milestone; this task covers only part of it)\n1. run the tool\n2. export JSON from the CLI", brief)
+        self.assertIn("'acceptance scenario: <step>'", brief)
+
+    def test_basis_none_assumption_against_the_scenario_is_repaired_at_task_level(self):  # TASK-382 AC#2
+        self.with_evaluator("milestone", max_repairs=2); self.scenario()
+        self.behavior({"TASK-1": ["assume_nobasis", "ok"]})
+        self.evaluator_plan({"TASK-1": ["flag_scenario", "pass"]})
+        r = self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        j = self.journal()
+        self.assertEqual(self.eval_calls()[:2], ["TASK-1", "TASK-1"])  # mode milestone: the unfounded assumption alone brings the task evaluator
+        self.assertEqual(j["tasks"]["TASK-1"]["state"], "accepted"); self.assertEqual(j["tasks"]["TASK-1"]["repairs"], 1)
+        repair = [json.loads(l) for l in (self.td / "calls.log").read_text().splitlines() if json.loads(l)["task"] == "TASK-1"][1]["prompt"]
+        self.assertIn("assumption conflicts: CSV is fine (acceptance scenario: step 2 exports JSON); drop the assumption", repair)
+
+    def test_other_assumption_flags_still_block_and_no_scenario_means_no_extra_evaluation(self):  # TASK-382
+        self.with_evaluator("milestone")
+        self.behavior({"TASK-1": "assume_nobasis"})
+        self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
+        self.assertNotIn("TASK-1", self.eval_calls())
+        sys.path.insert(0, str(ROOT / "scripts")); import tron
+        g = tron.verdict_failure({"file": "v", "findings": [], "assumption_flags": [{"assumption": "uses cloud", "conflict": "invariant: no external data"}]})
+        self.assertTrue(g["failures"][0]["unrepairable"])
+        g = tron.verdict_failure({"file": "v", "findings": [], "assumption_flags": [{"assumption": "a", "conflict": "Acceptance scenario: step 1"}]})
+        self.assertFalse(g["failures"][0]["unrepairable"])
+
     def test_review_acceptance_scenario_is_protected(self):
         self.with_evaluator("milestone")
         (self.proj / "docs/agent/tron").mkdir(parents=True, exist_ok=True)
@@ -1244,6 +1282,7 @@ class Tron(unittest.TestCase):
         self.with_evaluator("task")
         self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
         self.assertNotIn("fake evidence", (self.td / "brief_copy.txt").read_text())
+        self.assertNotIn("Milestone acceptance scenario", (self.td / "brief_copy.txt").read_text())  # TASK-382: no scenario, no section
 
     def test_review_evaluator_role_line_at_session_start(self):
         r = subprocess.run(["bash", str(ROOT / "scripts/session-start.sh")], cwd=self.tmp, capture_output=True, text=True,
