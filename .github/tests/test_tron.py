@@ -8,13 +8,25 @@ TRON = ROOT / "scripts/tron.py"
 GIT_ENV = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
 
 FAKE_BACKLOG = '''#!/usr/bin/env python3
-import json, sys
-st = json.load(open("state.json"))
+import glob, json, os, re, sys
+st = json.load(open("state.json")) if os.path.exists("state.json") else {"tasks": []}
+if sys.argv[1:3] == ["task", "edit"] and "-s" not in sys.argv:  # TASK-373: --remove-ac (renumbers) and --append-notes
+    a = sys.argv
+    f = glob.glob("backlog/tasks/task-%s - *.md" % a[3].split("-")[1])[0]
+    s = open(f).read()
+    drop = {int(a[i + 1]) for i, x in enumerate(a) if x == "--remove-ac"}
+    lines = [l for l in re.findall(r"(?m)^- \\[[ xX]\\] #\\d+ .*$", s)]
+    keep = [l for l in lines if int(re.match(r"- \\[.\\] #(\\d+)", l).group(1)) not in drop]
+    keep = [re.sub(r"#\\d+", "#%d" % (k + 1), l, count=1) for k, l in enumerate(keep)]
+    s = re.sub(r"(?s)<!-- AC:BEGIN -->.*?<!-- AC:END -->", lambda m: "<!-- AC:BEGIN -->\\n" + "".join(l + "\\n" for l in keep) + "<!-- AC:END -->", s, count=1)
+    if "--append-notes" in a:
+        if "<!-- SECTION:NOTES:END -->" not in s:
+            s += "\\n<!-- SECTION:NOTES:BEGIN -->\\n<!-- SECTION:NOTES:END -->\\n"
+        s = s.replace("<!-- SECTION:NOTES:END -->", a[a.index("--append-notes") + 1] + "\\n<!-- SECTION:NOTES:END -->")
+    open(f, "w").write(s); sys.exit(0)
 if sys.argv[1:3] == ["task", "edit"]:
-    import glob, re
     n = sys.argv[3].split("-")[1]
     status = sys.argv[sys.argv.index("-s") + 1]
-    import os
     if status == "Blocked" and os.path.exists(os.environ["TRON_TEST_DIR"] + "/no_blocked_status"):
         sys.stderr.write("Invalid status: Blocked\\n"); sys.exit(1)
     note = sys.argv[sys.argv.index("--append-notes") + 1] if "--append-notes" in sys.argv else ""
@@ -31,14 +43,16 @@ if sys.argv[1:3] == ["task", "edit"]:
 if sys.argv[1:3] == ["task", "create"]:
     import os
     a = sys.argv
-    n = max(int(x["id"].split("-")[1]) for x in st["tasks"]) + 1
+    n = max([int(x["id"].split("-")[1]) for x in st["tasks"]] + [int(re.search(r"task-(\\d+) ", f).group(1)) for f in glob.glob("backlog/tasks/task-*.md")]) + 1
     acs = [a[i + 1] for i, x in enumerate(a) if x == "--ac"]
     labels = a[a.index("-l") + 1].split(",") if "-l" in a else []
-    body = "---\\nid: TASK-%d\\ntitle: %s\\nstatus: To Do\\nmilestone: %s\\nlabels:\\n%s---\\n\\n<!-- AC:BEGIN -->\\n%s\\n<!-- AC:END -->\\n\\n<!-- SECTION:NOTES:BEGIN -->\\n<!-- SECTION:NOTES:END -->\\n" % (
-        n, a[2], a[a.index("-m") + 1], "".join("  - %s\\n" % l for l in labels), "\\n".join("- [ ] #%d %s" % (k + 1, t) for k, t in enumerate(acs)))
+    desc = a[a.index("-d") + 1] if "-d" in a else ""
+    body = "---\\nid: TASK-%d\\ntitle: %s\\nstatus: To Do\\n%slabels:\\n%s---\\n\\n%s\\n<!-- AC:BEGIN -->\\n%s\\n<!-- AC:END -->\\n\\n<!-- SECTION:NOTES:BEGIN -->\\n<!-- SECTION:NOTES:END -->\\n" % (
+        n, a[2], ("milestone: %s\\n" % a[a.index("-m") + 1]) if "-m" in a else "", "".join("  - %s\\n" % l for l in labels), desc,
+        "\\n".join("- [ ] #%d %s" % (k + 1, t) for k, t in enumerate(acs)))
     open("backlog/tasks/task-%d - sub.md" % n, "w").write(body)
     st["tasks"].append({"id": "TASK-%d" % n, "title": a[2], "status": "To Do", "deps": []})
-    json.dump(st, open("state.json", "w"))
+    if os.path.exists("state.json"): json.dump(st, open("state.json", "w"))
     print("Created task TASK-%d" % n); sys.exit(0)
 if sys.argv[1:3] == ["task", "list"] and "--ready" in sys.argv:
     print("To Do:")
@@ -85,7 +99,10 @@ json.dump(st, open("state.json", "w"))
 f = glob.glob("backlog/tasks/task-%s - *.md" % task.split("-")[1])[0]
 s = open(f).read()
 s = s.replace("status: To Do", "status: Done").replace("- [ ] #1", "- [x] #1")
-if beh != "no_evidence":
+if beh == "ok_all":
+    s = re.sub(r"(?m)^- \\[ \\] #", "- [x] #", s)
+    s = s.replace("<!-- SECTION:NOTES:BEGIN -->\\n", "<!-- SECTION:NOTES:BEGIN -->\\n" + "".join("AC#%s: E2 fake evidence\\n" % k for k in re.findall(r"(?m)^- \\[x\\] #(\\d+)", s)))
+elif beh != "no_evidence":
     s = s.replace("<!-- SECTION:NOTES:BEGIN -->\\n", "<!-- SECTION:NOTES:BEGIN -->\\nAC#1: E2 fake evidence\\n")
 if beh == "ac_change":
     s = s.replace("works", "works differently")
@@ -894,6 +911,58 @@ class Tron(unittest.TestCase):
         t = self.journal()["tasks"]["TASK-1"]
         self.assertEqual(t["state"], "blocked"); self.assertIn("invalid", t["reason"])
         self.assertFalse(list((self.proj / "backlog/tasks").glob("task-4*")))
+
+    OWN = "a player may only change their own character's initiative"
+
+    def three_acs(self):  # TASK-373: the shape of shadowrun TASK-384 (AC#3 needs an ownership model the app lacks)
+        f = self.proj / "backlog/tasks/task-1 - x.md"
+        f.write_text(f.read_text().replace("- [ ] #1 it works\n", f"- [ ] #1 it works\n- [ ] #2 the GM edits initiative\n- [ ] #3 {self.OWN}\n"))
+        git(self.proj, "add", "-A"); git(self.proj, "commit", "-qm", "three acs")
+
+    def test_doctor_split_out_moves_the_user_ac_and_the_task_goes_on(self):  # TASK-373
+        self.three_acs()
+        self.with_doctor({"TASK-1": [{"verdict": "needs_user", "diagnosis": "no ownership model", "question": "a) owner field b) name match c) split. Recommendation: c",
+                                      "split_out": [self.OWN]}]})
+        self.behavior({"TASK-1": ["no_evidence", "no_evidence", "ok_all"]})
+        r = self.tron("run", "--milestone", "m-1", "--run-id", "r1")
+        j = self.journal()
+        t = j["tasks"]["TASK-1"]
+        self.assertEqual(t["state"], "accepted", r.stdout + r.stderr)
+        self.assertEqual([(x["step"], x["result"]) for x in t["ladder"]][:2], [("doctor", "needs_user"), ("split out", "TASK-4")])
+        self.assertNotIn("stop_reason", {k: v for k, v in j.items() if k == "aborted"})
+        self.assertIn("TASK-2", j["tasks"]); self.assertIn("TASK-3", j["tasks"])  # the run went on
+        self.assertNotIn("TASK-4", j["tasks"])  # outside the milestone: not built in the run
+        new = (self.proj / "backlog/tasks/task-4 - sub.md").read_text()
+        self.assertIn(self.OWN, new); self.assertNotIn("milestone:", new)
+        for x in ("waiting", "tron-user", "Recommendation: c", "no ownership model"):
+            self.assertIn(x, new)
+        par = (self.proj / "backlog/tasks/task-1 - x.md").read_text()
+        self.assertNotIn(f"#3 {self.OWN}", par); self.assertIn("- [x] #2 the GM edits initiative", par)
+        self.assertIn("Split out: AC#3", par)
+        self.assertFalse(list((self.proj / "backlog/drafts").glob("draft-*")))  # no blocking question
+        rep = (self.proj / "docs/agent/tron/REPORT-r1.md").read_text()
+        self.assertIn("## Split out for you (info; the run went on)", rep); self.assertIn("moved to TASK-4", rep)
+        q = rep.split("## Questions for you")[1].split("## Cost")[0]
+        self.assertNotIn("TASK-4", q)
+        self.assertEqual(j["split_out"][0]["new"], "TASK-4")
+
+    def test_doctor_split_out_of_every_ac_falls_back_to_the_question(self):  # TASK-373
+        self.with_doctor({"TASK-1": [{"verdict": "needs_user", "diagnosis": "d", "question": "q?", "split_out": ["it works"]}]})
+        self.behavior({"TASK-1": "no_evidence"})
+        self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
+        t = self.journal()["tasks"]["TASK-1"]
+        self.assertEqual(t["state"], "blocked"); self.assertIn("the Doctor needs the user", t["reason"])
+        self.assertIn("invalid: split_out would move every AC", [x["result"] for x in t["ladder"] if x["step"] == "split out"][0])
+        self.assertEqual(len(list((self.proj / "backlog/drafts").glob("draft-*"))), 1)
+        self.assertFalse(list((self.proj / "backlog/tasks").glob("task-4*")))
+
+    def test_doctor_split_out_with_a_foreign_ac_is_refused(self):  # TASK-373
+        self.three_acs()
+        self.with_doctor({"TASK-1": [{"verdict": "needs_user", "diagnosis": "d", "question": "q?", "split_out": ["something new"]}]})
+        self.behavior({"TASK-1": "no_evidence"})
+        self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
+        t = self.journal()["tasks"]["TASK-1"]
+        self.assertEqual(t["state"], "blocked"); self.assertFalse(list((self.proj / "backlog/tasks").glob("task-4*")))
 
     def test_doctor_parse_rejects_ambiguous_and_placeholder_blocks(self):
         import importlib.util
@@ -1787,6 +1856,33 @@ class Check(unittest.TestCase):
         f = self.proj / "docs/agent/tron/SWEEP-m-9.md"
         f.write_text(f.read_text().replace("- [ ] N1", "- [x] N1") + "  Resolved: AC#1 moved to TASK-9 outside m-9\n"); self.commit()
         r = self.check(); self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
+    def test_split_out_command_moves_needs_user_acs_without_a_question(self):  # TASK-373
+        self.task("TASK-1", acs="- [ ] #1 the GM edits initiative\n- [ ] #2 a player edits only their own character\n")
+        self.task("TASK-2", acs="- [ ] #1 it feels right\n")
+        self.sweep("# Sweep: m-9\n## Questions\n- none\n## Needs the user\n"
+                   "- [ ] N1 (TASK-1 AC#2) interface: no ownership model Split: AC#2 into its own task\n"
+                   "- [ ] N2 (TASK-2 AC#1) judgement: taste\n")
+        self.commit()
+        bin_ = self.tmp / "bin"; bin_.mkdir(exist_ok=True); (bin_ / "backlog").write_text(FAKE_BACKLOG); (bin_ / "backlog").chmod(0o755)
+        env = dict(os.environ, PATH=f"{bin_}{os.pathsep}{os.environ['PATH']}", **GIT_ENV)
+        r = subprocess.run([sys.executable, str(TRON), "split-out", "--milestone", "m-9", "--root", str(self.proj)], capture_output=True, text=True, env=env)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("N1: TASK-1 AC#2 needs an interface decision -> TASK-3", r.stdout); self.assertIn("N2: TASK-2 stays", r.stdout)
+        new = (self.proj / "backlog/tasks/task-3 - sub.md").read_text()
+        self.assertIn("a player edits only their own character", new); self.assertIn("waiting", new); self.assertNotIn("milestone:", new)
+        par = (self.proj / "backlog/tasks/task-1 - x.md").read_text()
+        self.assertNotIn("own character", par.split("<!-- AC:END -->")[0])
+        sw = (self.proj / "docs/agent/tron/SWEEP-m-9.md").read_text()
+        self.assertIn("- [x] N1", sw); self.assertIn("Resolved: AC#2 split out to TASK-3", sw); self.assertIn("- [ ] N2", sw)
+        self.assertEqual(git(self.proj, "status", "--porcelain").stdout, "")
+        r = self.check(); self.assertNotIn("TASK-1 AC#2", r.stdout); self.assertIn("TASK-2 AC#1 needs the user's judgement", r.stdout)
+
+    def test_split_instead_of_blocked_is_described(self):  # TASK-373
+        self.assertIn("split_out", (ROOT / ".claude/agents/doctor.md").read_text())
+        self.assertIn("Split instead of Blocked", (ROOT / "docs/agent/TRON.md").read_text())
+        sk = (ROOT / ".claude/skills/tron/SKILL.md").read_text()
+        self.assertIn("split-out --milestone", sk); self.assertIn("ONE info list, no question", sk)
 
     def test_sweep_needs_user_item_of_a_done_task_does_not_block(self):
         self.sweep("# Sweep: m-9\n## Questions\n- none\n## Needs the user\n- [ ] N1 (TASK-1 AC#1) real data: needs the live feed\n")

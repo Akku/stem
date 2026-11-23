@@ -16,11 +16,12 @@ Find the cause, not the symptom: read the failing output, run the failing check 
 - `split_task`: the task is too big or mixes concerns; propose 2 to 5 subtasks. Each carries a subset of the parent's AC texts copied verbatim; together they cover every parent AC exactly once or more, and none adds a new one.
 - `environment_problem`: the cause lies outside the task (broken verify command, missing tool, red baseline); say what is broken.
 - `needs_user`: a decision, a missing fact or an invariant conflict only the user can settle; write the question with options and a recommendation.
+  When only some ACs need that decision (an interface or ownership model the code lacks, real data, the user's judgement) and the other ACs can be built and verified without the answer, also give `split_out`: those AC texts copied verbatim (at least one AC must stay). The runner then moves them into a new task outside the milestone that waits for the user, and the task goes on with the rest; the report lists it as info, not as a question. Leave `split_out` out when the remaining ACs depend on the answer, or when the decision touches an invariant or a 'Must come back' line of the decision frame for the remaining work: then the task stays Blocked. Optional `waits_for`: existing task ids the split-out task must wait for.
 
 ## Output
 End with exactly one fenced `json` block and nothing after it:
 
 ```json
-{"verdict": "retry_with_hint", "diagnosis": "<cause, 2-5 sentences>", "hint": "<for retry_with_hint>", "subtasks": [{"title": "<short>", "acs": ["<AC text verbatim>"]}], "question": "<for needs_user>"}
+{"verdict": "retry_with_hint", "diagnosis": "<cause, 2-5 sentences>", "hint": "<for retry_with_hint>", "subtasks": [{"title": "<short>", "acs": ["<AC text verbatim>"]}], "question": "<for needs_user>", "split_out": ["<AC text verbatim, optional for needs_user>"], "waits_for": ["<TASK-n, optional>"]}
 ```
-Fill only the field of your verdict (plus `diagnosis`, always). Do not quote any other verdict block.
+Fill only the field of your verdict (plus `diagnosis`, always; `split_out` and `waits_for` only with `needs_user`). Do not quote any other verdict block.

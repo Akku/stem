@@ -787,6 +787,9 @@ def parse_doctor(text):
             continue
         if v == "needs_user" and not str(d.get("question") or "").strip():
             continue
+        so = d.get("split_out")  # TASK-373: optional, the ACs that wait for the answer while the rest is built now
+        if v == "needs_user" and so is not None and not (isinstance(so, list) and so and all(isinstance(a, str) and a.strip() for a in so)):
+            continue
         if v == "split_task" and not (isinstance(subs, list) and subs and all(isinstance(x, dict) and str(x.get("title") or "").strip()
                                                                              and isinstance(x.get("acs"), list) and x["acs"] and all(isinstance(a, str) for a in x["acs"]) for x in subs)):
             continue
@@ -809,6 +812,58 @@ def check_split(parent_acs, subtasks):
     if got != want:
         return "the subtasks do not cover every parent AC: missing '" + sorted(want - got)[0][:80] + "'"
     return None
+
+
+def check_split_out(parent_acs, split_out):
+    """Why a split-out is invalid (None when fine): every AC text verbatim from the parent, at least one AC stays with it."""
+    want = [t.strip() for t in parent_acs]
+    for a in split_out:
+        if a.strip() not in want:
+            return f"split_out names an AC that is not a parent AC verbatim: '{a.strip()[:80]}'"
+    if not set(want) - {a.strip() for a in split_out}:
+        return "split_out would move every AC; nothing stays to build now"
+    return None
+
+
+SPLIT_OUT_LABELS = "waiting,tron-user,size-S"
+
+
+def split_out_acs(root, parent, ac_texts, title, body, waits_for=()):
+    """TASK-373: move ACs that wait for the user into a new task outside the milestone (labels waiting, tron-user) through
+    the backlog CLI; the parent keeps the rest. Returns the new task id. The caller commits."""
+    files = task_files(root)
+    if parent not in files:
+        raise TronError(f"{parent}: task file not found for a split-out")
+    acs = parse_task(files[parent].read_text())[1]
+    nums = sorted({n for _, n, t in acs for a in ac_texts if t.strip() == a.strip()}, reverse=True)
+    if len(nums) != len({a.strip() for a in ac_texts}) or len(nums) >= len(acs):
+        raise TronError(f"{parent}: the split-out ACs do not match the task's ACs, or nothing would stay")
+    before = set(files)
+    cmd = ["backlog", "task", "create", title[:90].replace("\n", " "), "-l", SPLIT_OUT_LABELS, "-d", body]
+    for a in ac_texts:
+        cmd += ["--ac", a.strip()]
+    deps = [w for w in waits_for if w in files and w != parent]
+    if deps:
+        cmd += ["--dep", ",".join(deps)]
+    r = sh(cmd, root)
+    if r.returncode:
+        raise TronError(f"could not create the split-out task of {parent}: {(r.stderr or r.stdout).strip()[:200]}")
+    new = sorted(set(task_files(root)) - before, key=lambda t: int(t.split("-")[1]))
+    if not new:
+        raise TronError(f"backlog created no task file for the split-out of {parent}")
+    nid = new[-1]
+    cmd = ["backlog", "task", "edit", parent]
+    for n in nums:
+        cmd += ["--remove-ac", str(n)]
+    note = "\n".join(f"Split out: AC#{n} '{t.strip()}' moved to {nid} (waits for the user; the rest is built now)" for _, n, t in acs if n in nums)
+    r = sh(cmd + ["--append-notes", note], root)
+    if r.returncode:
+        try:
+            task_files(root)[nid].unlink()
+        except (OSError, KeyError):
+            pass
+        raise TronError(f"could not remove the split-out ACs from {parent}: {(r.stderr or r.stdout).strip()[:200]}")
+    return nid
 
 
 def doctor_brief(root, tron, journal, task_id, base, intent, acs):
@@ -1310,6 +1365,11 @@ def build_report(root, journal, tron):
             out.append(f"- {i}: split by the Doctor into {', '.join(v.get('subtasks', []))}; closes when all of them pass (not closed yet" + "".join(f"; {x} is {tasks.get(x, {}).get('state', 'not run')}" for x in v.get("subtasks", []) if tasks.get(x, {}).get("state") != "accepted") + ")")
             out.append(f"  - ladder: {steps(v)}")
     out += ["(none)"] if not blk and not any(v["state"] == "split" for v in tasks.values()) else []
+    so = journal.get("split_out", [])
+    if so:  # TASK-373: info, not a question; the new task carries the open decision
+        out += ["", "## Split out for you (info; the run went on)", ""]
+        out += [f"- {x['task']}: {len(x['acs'])} AC(s) moved to {x['new']} (labels waiting, tron-user), which carries the open decision: "
+                f"{x['question'][:200]}. Nothing to answer now; decide it when you pick up {x['new']}." for x in so]
     out += ["", "## Questions for you", ""] + questions_block(root, journal, al)
     out += ["", "## Cost and time", ""]
     tot, part = cost_of(sess)
@@ -1697,7 +1757,7 @@ def run_loop(root, tron, args, milestone, jpath, run_id, ctx=None):
             if not up:
                 fin(entry.get("retry_aborted") or "API unavailable after retries"); print("run ended early; run again to continue", file=sys.stderr); return 0
             entry["repair"] = repairs
-            g = entry["gate"] = gate(root, tron, task_id, base, acs_before, start_commit, branch, refs0)
+            g = entry["gate"] = gate(root, tron, task_id, base, acs_before, journal.get("ac_ref", start_commit), branch, refs0)
             write_journal(jpath, journal)
             print(f"{task_id}: exit {entry['exit_code']}, gate " + ("passed" if g["passed"] else "FAILED: " + "; ".join(f["reason"] for f in g["failures"]))
                   + (f", cost {entry['cost_usd']}" if entry["cost_usd"] is not None else ""))
@@ -1755,6 +1815,7 @@ def run_loop(root, tron, args, milestone, jpath, run_id, ctx=None):
                     outcome = ("blocked", fail_reason + " (the Doctor gave no verdict)"); break
                 v = dv["verdict"]
                 ladder.append({"step": "doctor", "result": v, "diagnosis": dv["diagnosis"][:300]})
+                split_done = False
                 if v == "retry_with_hint":
                     hint, limit, stall = dv["hint"], max(limit, repairs + 1), None
                     persist()
@@ -1777,12 +1838,43 @@ def run_loop(root, tron, args, milestone, jpath, run_id, ctx=None):
                     ladder.append({"step": "baseline repair", "result": "ran"})
                     hint, limit, stall = "a baseline repair session ran for this environment problem: " + dv["diagnosis"], max(limit, repairs + 1), None
                     persist()
-                elif v == "needs_user":
+                elif v == "needs_user" and dv.get("split_out"):
+                    so = dv["split_out"]
+                    bad = check_split_out([t for _, _, t in parse_task(t0txt)[1]], so)
+                    nid = None
+                    if not bad:
+                        body = (f"Split out of {task_id} by the Tron runner (run {run_id}): the Doctor found that these ACs need the user's decision, "
+                                f"while the rest of {task_id} was built in the run.\n\nDiagnosis: {dv['diagnosis']}\n\nQuestion: {dv['question']}\n\n"
+                                "Decide with the user, then remove the label 'waiting' (and add the prerequisite task the answer needs, if any).")
+                        try:
+                            nid = split_out_acs(root, task_id, so, f"{task_id} split-out: " + so[0].strip()[:60], body, dv.get("waits_for") or ())
+                            rels = [task_files(root)[x].relative_to(root).as_posix() for x in (task_id, nid)]
+                            git_ok(root, "add", "--", *rels)
+                            git_ok(root, "commit", "-q", "-m", f"{task_id}: Tron runner split out {len(so)} AC(s) that need the user into {nid}", "--", *rels)
+                        except TronError as e:
+                            bad = str(e)
+                    if bad:  # an unusable split-out falls back to the plain question: draft and Blocked
+                        ladder.append({"step": "split out", "result": "invalid: " + bad[:150]})
+                        dv = dict(dv); dv.pop("split_out")
+                    else:
+                        journal["ac_ref"] = head(root)  # the AC freeze now restores from the state after the split-out
+                        acs_before[task_id] = journal["ac_hashes"][task_id] = ac_hash(task_files(root)[task_id].read_text())
+                        acs_before[nid] = ac_hash(task_files(root)[nid].read_text())  # not in journal ac_hashes: those are the run's tasks
+                        journal["in_progress"]["acs_before"] = acs_before
+                        journal.setdefault("split_out", []).append({"task": task_id, "new": nid, "acs": [a.strip() for a in so], "question": dv["question"]})
+                        ladder.append({"step": "split out", "result": nid})
+                        split_done = True
+                        print(f"{task_id}: Doctor split out {len(so)} AC(s) that need the user into {nid}; the task goes on")
+                        hint = (f"The ACs {', '.join(repr(a.strip()[:60]) for a in so)} were moved to {nid} because they need the user's decision; "
+                                f"do not build them. Finish the remaining ACs of {task_id}. Diagnosis: {dv['diagnosis']}")
+                        limit, stall, last_sig = max(limit, repairs + 1), None, None
+                        persist()
+                if v == "needs_user" and not split_done:
                     dn = write_question_draft(root, journal, f"Question from the Doctor about {task_id}: " + dv["question"][:60],
                                               f"Run {journal['run_id']}, {task_id} kept failing.\n\nDiagnosis: {dv['diagnosis']}\n\nQuestion: {dv['question']}", "tron-doctor")
                     ladder.append({"step": "draft question", "result": dn}); persist()
                     outcome = ("blocked", f"the Doctor needs the user: see {dn} ({dv['question'][:150]})"); break
-                else:  # split_task
+                elif v == "split_task":
                     parent_acs = [t for _, _, t in parse_task(start_text(root, task_id, start_commit) or "")[1]]
                     bad = check_split(parent_acs, dv["subtasks"])
                     if bad:
@@ -1999,10 +2091,52 @@ def cmd_sweep(args):
         print(f"{len(pre)} pre-decided assumption(s) (A1..A{len(pre)}): show them to the user as one list to veto by number")
     flagged = sweep_needs_user(body)
     if flagged:
-        print(f"{len(flagged)} AC(s) need the user ({', '.join(f'{t} AC#{a} {k}' for _, t, a, k, _ in flagged)}): split them out of the milestone before the run")
+        print(f"{len(flagged)} AC(s) need the user ({', '.join(f'{t} AC#{a} {k}' for _, t, a, k, _ in flagged)}): run 'python3 scripts/tron.py split-out --milestone {args.milestone}' (no question)")
     cost = entry.get("cost_usd")
     print(f"sweep written: {out.relative_to(root)} ({n} open question(s); cost {cost if cost is not None else 'unknown'} USD)")
     print("next: answer the questions with the user (skill tron), tick them '[x]' with 'Answer: ...', commit the file, then run the check")
+    return 0
+
+
+def cmd_split_out(args):
+    """TASK-373: split every unresolved '## Needs the user' AC of an open task out into its own task outside the milestone
+    (labels waiting, tron-user), tick its N line with 'Resolved:' and commit. A task whose every AC needs the user stays as it is."""
+    root = pathlib.Path(args.root).resolve()
+    if not SWEEP_ID.fullmatch(args.milestone):
+        raise TronError(f"invalid milestone id: {args.milestone!r}")
+    sw = root / f"docs/agent/tron/SWEEP-{args.milestone}.md"
+    if not sw.is_file():
+        raise TronError(f"{sw.relative_to(root)} missing: run the sweep first")
+    text = sw.read_text()
+    files = task_files(root)
+    todo = {}
+    for nid, tid, ac, kind, done in sweep_needs_user(text):
+        if not done and tid in files and (parse_task(files[tid].read_text())[0] or "").lower() != "done":
+            todo.setdefault(tid, []).append((nid, ac, kind))
+    made, kept = [], []
+    for tid, items in todo.items():
+        acs = {n: t for _, n, t in parse_task(files[tid].read_text())[1]}
+        if any(ac not in acs for _, ac, _ in items) or len({ac for _, ac, _ in items}) >= len(acs):
+            kept += [(nid, tid, "every AC of the task needs the user, or the AC number does not exist: ask the user") for nid, _, _ in items]
+            continue
+        for nid, ac, kind in items:
+            line = next((m.group(0) for m in re.finditer(r"^.*$", text, re.M) if SWEEP_N.match(m.group(0)) and SWEEP_N.match(m.group(0)).group(2) == nid), nid)
+            body = (f"Split out of {tid} before the Tron run of {args.milestone} (sweep {sw.name} {nid}): the AC needs {NEEDS_KIND[kind]}, "
+                    f"the rest of {tid} is built in the run.\n\nPlanner note: {line.strip()}\n\n"
+                    "Decide with the user, then remove the label 'waiting' (and add the prerequisite task the answer needs, if any).")
+            nid_task = split_out_acs(root, tid, [acs[ac]], f"{tid} split-out: " + acs[ac].strip()[:60], body)
+            text = re.sub(rf"^(\s*-\s*)\[ \](\s*{nid}\b.*)$", lambda m: f"{m.group(1)}[x]{m.group(2)}\n  Resolved: AC#{ac} split out to {nid_task} "
+                          "(agent decision, R-TRON; waits for the user)", text, count=1, flags=re.M)
+            made.append((nid, tid, ac, nid_task, kind))
+    if made:
+        sw.write_text(text)
+        git_ok(root, "add", "-A", "--", "backlog", str(sw.relative_to(root)))
+        git_ok(root, "commit", "-q", "-m", f"Tron sweep {args.milestone}: split out {len(made)} AC(s) that need the user")
+    print(f"split out (info for the user, no question): {len(made)}")
+    for nid, tid, ac, new, kind in made:
+        print(f"- {nid}: {tid} AC#{ac} needs {NEEDS_KIND[kind]} -> {new} (waiting, tron-user)")
+    for nid, tid, why in kept:
+        print(f"- {nid}: {tid} stays: {why}")
     return 0
 
 
@@ -2872,7 +3006,7 @@ def check_milestone(root, milestone, cfg_path=None):
             for nid, tid, ac, kind, done in sweep_needs_user(sw.read_text()):
                 if not done and tid in open_ids:
                     fails.append(f"{tid} AC#{ac} needs {NEEDS_KIND[kind]} "
-                                 f"({sw.name} {nid}): split it into a task outside {milestone} before the run, then tick {nid} '[x]' and add 'Resolved: ...'")
+                                 f"({sw.name} {nid}): run 'python3 scripts/tron.py split-out --milestone {milestone}' (or split it by hand, tick {nid} '[x]' and add 'Resolved: ...')")
     dirty = tree_dirty(root)
     if dirty:
         fails.append(f"working tree is not clean ({len(dirty)} change(s), first: {dirty[0].strip()[:80]})")
@@ -2967,13 +3101,16 @@ def main(argv=None):
     g.add_argument("--reject", metavar="D<n>", help="record your no for that drafted example")
     ca.add_argument("--config", help="config file (default: docs/agent/stem-config.json)")
     ca.add_argument("--root", default=".", help="project root (default: current directory)")
+    so = sub.add_parser("split-out", help="split the unresolved 'Needs the user' ACs of the sweep into tasks outside the milestone (info, no question)")
+    so.add_argument("--milestone", required=True, help="milestone id, e.g. m-5")
+    so.add_argument("--root", default=".", help="project root (default: current directory)")
     rp = sub.add_parser("report", help="write docs/agent/tron/REPORT-<run>.md from the journal and the backlog")
     rp.add_argument("--run-id", help="run id (default: the latest run)")
     rp.add_argument("--config", help="config file (default: docs/agent/stem-config.json)")
     rp.add_argument("--root", default=".", help="project root (default: current directory)")
     args = p.parse_args(argv)
     try:
-        return {"report": cmd_report, "check": cmd_check, "sweep": cmd_sweep, "retro": cmd_retro, "defect": cmd_defect, "calibrate": cmd_calibrate}.get(args.cmd, cmd_run)(args)
+        return {"report": cmd_report, "check": cmd_check, "sweep": cmd_sweep, "retro": cmd_retro, "defect": cmd_defect, "calibrate": cmd_calibrate, "split-out": cmd_split_out}.get(args.cmd, cmd_run)(args)
     except TronError as e:
         print(f"tron: {e}", file=sys.stderr)
         return 2
