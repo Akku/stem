@@ -647,6 +647,7 @@ def write_brief(root, tron, journal, target, base, g, task_ids, intent):
     if tron.get("smoke_cmd"):
         parts += ["", "## Start or smoke command", " ".join(tron["smoke_cmd"]) if isinstance(tron["smoke_cmd"], list) else str(tron["smoke_cmd"])]
     parts += ["", "## Invariants", read_rel(root, "docs/agent/INVARIANTS.md"), "", "## Decision frame", read_rel(root, "docs/agent/DECISION_FRAME.md"),
+              RISK_FRAME_NOTE,
               "", "## Hints from the runner", "Placeholder hits: " + json.dumps((g or {}).get("placeholders", [])),
               "Deleted files: " + json.dumps((g or {}).get("deleted_files", []))]
     al = assumptions(root, task_ids)
@@ -711,20 +712,50 @@ def evaluate(root, tron, journal, jpath, target, base, g, task_ids, intent, abor
     return dict(verdict, file=str(vpath.relative_to(root)))
 
 
+# TASK-371: a risk that touches no 'Must come back' line of the decision frame is listed in the report only, never a draft
+RISK_FRAME_NOTE = ("For a `risk` finding add \"frame\": \"<the 'Must come back' line of the decision frame it touches>\" when it touches one; "
+                   "a risk without it is only listed in the report, not asked as a question.")
+
+
+def must_come_back(root):
+    """The 'Must come back' lines of the decision frame (text without the list marker)."""
+    sec = re.search(r"^## Must come back.*?$(.*?)(?=^## |\Z)", read_rel(root, "docs/agent/DECISION_FRAME.md"), re.M | re.S)
+    return [m.group(1).strip() for m in re.finditer(r"^\s*[-*]\s+(.+)$", sec.group(1), re.M)] if sec else []
+
+
+def risk_frame(root, risk):
+    """The 'Must come back' line a risk finding names in its 'frame' field, or None."""
+    val = " ".join(str(risk.get("frame") or "").lower().split()).strip(" .`")
+    if len(val) < 4:
+        return None
+    for line in must_come_back(root):
+        low = " ".join(line.lower().split())
+        lead = re.split(r"[:.,(]", low)[0].strip(" `")
+        if val in low or (lead and lead in val):
+            return line
+    return None
+
+
 def write_risk_drafts(root, target, risks, journal):
-    """Each risk finding becomes a draft task (a question for the user); it never triggers a repair."""
+    """A risk finding that names a 'Must come back' frame line becomes a draft task (a question for the user); the others are
+    kept for the report only. A risk never triggers a repair."""
     d = root / "backlog/drafts"
     wrote = False
     for r in risks:
         key = hashlib.sha256(f"{target}|{r.get('scenario', '')}".encode()).hexdigest()[:16]
         if key in journal.setdefault("risk_keys", []):
             continue  # the same risk re-reported after a repair round
-        journal["risk_keys"].append(key); wrote = True
+        journal["risk_keys"].append(key)
+        frame = risk_frame(root, r)
+        if not frame:
+            journal.setdefault("risk_notes", []).append({"target": target, "location": str(r.get("location", "?")), "scenario": str(r.get("scenario", ""))})
+            continue
+        wrote = True
         d.mkdir(parents=True, exist_ok=True)
         n = max([int(m.group(1)) for p in d.glob("draft-*") for m in [re.match(r"draft-(\d+)", p.name)] if m] + [0]) + 1
         title = f"Risk found by the evaluator ({target}): " + str(r.get("scenario", ""))[:70].replace("\n", " ").replace("'", "")
         body = (f"Evaluator risk finding beyond the acceptance criteria (run {journal['run_id']}, {target}). It did not fail the verdict.\n\n"
-                f"Location: {r.get('location', '?')}\nScenario: {r.get('scenario', '')}\n\nDecide: accept the risk, or create a task.")
+                f"Location: {r.get('location', '?')}\nScenario: {r.get('scenario', '')}\nFrame (Must come back): {frame}\n\nDecide: accept the risk, or create a task.")
         slug = re.sub(r"[^A-Za-z0-9]+", "-", title)[:60].strip("-")
         (d / f"draft-{n} - {slug}.md").write_text(f"---\nid: DRAFT-{n}\ntitle: '{title}'\nstatus: Draft\nassignee: []\nlabels:\n  - tron-risk\ndependencies: []\n---\n\n"
                                                   f"## Description\n\n<!-- SECTION:DESCRIPTION:BEGIN -->\n{body}\n<!-- SECTION:DESCRIPTION:END -->\n")
@@ -1169,6 +1200,40 @@ def duration(s):
         return None
 
 
+def questions_block(root, journal, al):
+    """Every open item of a run as one numbered list with options and a recommendation, answered compactly (e.g. '1a, 3b')."""
+    q = []
+    d = root / "backlog/drafts"
+    if d.is_dir():
+        added = set(git_ok(root, "diff", "--name-only", "--diff-filter=A", journal["start_commit"], "HEAD", "--", "backlog/drafts").splitlines())
+        for rel in sorted(added, key=lambda r: int(m.group(1)) if (m := re.search(r"draft-(\d+)", r)) else 0):
+            p = root / rel
+            if not p.is_file():
+                continue
+            text = p.read_text()
+            title = re.search(r"^title: *(.+?) *$", text, re.M)
+            title = title.group(1).strip(chr(39) + chr(34)) if title else rel
+            if re.search(r"^\s*-\s*tron-risk\s*$", text, re.M):
+                q.append(f"{title} ({rel}) a) accept the risk b) create a task for it. Recommendation: b because it touches a 'Must come back' line of the frame")
+            else:
+                q.append(f"{title} ({rel}) a) answer it as the draft proposes, then run again (it resumes) b) leave the task Blocked. "
+                         "Recommendation: a because the run cannot go on without the answer")
+    for a in al:
+        if (assumption_basis(a) or "none").lower() == "none":
+            q.append(f"Assumption without a basis: {a[:200]} a) keep it (becomes a PRECEDENTS line) b) correct it (task and PRECEDENTS line). "
+                     "Recommendation: a unless it contradicts what you want")
+    if not journal.get("defects_reviewed"):
+        q.append("Did you find defects in the accepted tasks? a) none b) yes: name the task and what is wrong. "
+                 "Recommendation: answer after trying the acceptance scenario")
+    for r in journal.get("retro_changes", []):
+        if r["id"].startswith("C-") and str(r.get("result", "")).startswith("proposed"):
+            q.append(f"Apply the example verdict {r['id'][2:]} ({r.get('reason', '')}) to {EVALUATOR_FILE}? a) accept b) reject. "
+                     "Recommendation: a because the evaluator passed a defect you found")
+    if not q:
+        return ["(nothing to decide)"]
+    return ["Answer in one message, e.g. `1a, 3b`."] + [f"{i}. {x}" for i, x in enumerate(q, 1)]
+
+
 def build_report(root, journal, tron):
     """Markdown report of a run: what is ready to look at, what failed, what the user must decide, what it cost."""
     sess, tasks = journal["sessions"], journal["tasks"]
@@ -1217,7 +1282,9 @@ def build_report(root, journal, tron):
             out.append(f"  - {fi.get('ac', '-')} at {fi.get('location', '?')}: {fi.get('scenario', '')}")
         for a in v.get("assumption_flags", []):
             out.append(f"  - assumption conflict: {a.get('assumption', '?')} ({a.get('conflict', '?')})")
-    if not vfiles:
+    for x in journal.get("risk_notes", []):
+        out.append(f"- risk (report only, touches no 'Must come back' line) {x['target']} at {x['location']}: {x['scenario']}")
+    if not vfiles and not journal.get("risk_notes"):
         out.append("(no evaluator verdict in this run)")
     out += ["", "## Assumptions made", ""]
     al = assumptions(root, list(tasks))
@@ -1242,17 +1309,7 @@ def build_report(root, journal, tron):
             out.append(f"- {i}: split by the Doctor into {', '.join(v.get('subtasks', []))}; closes when all of them pass (not closed yet" + "".join(f"; {x} is {tasks.get(x, {}).get('state', 'not run')}" for x in v.get("subtasks", []) if tasks.get(x, {}).get("state") != "accepted") + ")")
             out.append(f"  - ladder: {steps(v)}")
     out += ["(none)"] if not blk and not any(v["state"] == "split" for v in tasks.values()) else []
-    out += ["", "## Open questions for you", ""]
-    q = []
-    d = root / "backlog/drafts"
-    if d.is_dir():
-        added = set(git_ok(root, "diff", "--name-only", "--diff-filter=A", journal["start_commit"], "HEAD", "--", "backlog/drafts").splitlines())
-        for rel in sorted(added):
-            p = root / rel
-            if p.is_file():
-                title = re.search(r"^title: *(.+?) *$", p.read_text(), re.M)
-                q.append(f"- {title.group(1).strip(chr(39) + chr(34)) if title else rel} ({rel})")
-    out += q or ["(no new draft task)"]
+    out += ["", "## Questions for you", ""] + questions_block(root, journal, al)
     out += ["", "## Cost and time", ""]
     tot, part = cost_of(sess)
     wall = journal.get("wall_seconds")

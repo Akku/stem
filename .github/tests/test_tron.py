@@ -156,8 +156,10 @@ if v == "write_tracked":
     open("scripts/t.py", "a").write("# tampered\\n")
 if v == "none":
     print("I looked at it and it seems fine."); sys.exit(0)
-if v == "risk":
+if v in ("risk", "risk_frame"):
     j = {"verdict": "fail", "findings": [{"ac": "-", "location": "x", "scenario": "1 GB input with one 4 MB word", "kind": "risk"}], "assumption_flags": [], "checked": [{"ac": "AC#1"}]}
+    if v == "risk_frame":
+        j["findings"][0]["frame"] = "Data loss"
 elif v == "bad_kind":
     j = {"verdict": "pass", "findings": [{"ac": "AC#1", "kind": "whatever"}], "assumption_flags": [], "checked": [{"ac": "AC#1"}]}
 elif v == "flag":
@@ -996,25 +998,44 @@ class Tron(unittest.TestCase):
         brief = (self.td / "brief_copy.txt").read_text()
         self.assertIn("## Acceptance criteria", brief); self.assertIn("## Invariants", brief); self.assertIn("## Diff", brief)
 
-    def test_risk_finding_passes_the_verdict_and_becomes_a_draft_without_repair(self):
+    FRAME = "## May decide alone\n- Naming.\n\n## Must come back (draft question, task Blocked)\n- Data loss: deletion or overwrite that cannot be undone.\n- Release, tag, push.\n"
+
+    def test_risk_without_frame_category_is_listed_in_the_report_only(self):  # TASK-371
         self.with_evaluator("task")
         self.evaluator_plan({"TASK-1": ["risk"]})
         self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
         self.assertEqual(self.journal()["tasks"]["TASK-1"], {"state": "accepted", "repairs": 0})
+        self.assertEqual(list((self.proj / "backlog/drafts").glob("draft-*")), [])
+        self.assertIn("'Must come back' line of the decision frame", (self.td / "brief_copy.txt").read_text())
+        rid = self.journal()["run_id"]; self.tron("report", "--run-id", rid)
+        rep = (self.proj / "docs/agent/tron" / f"REPORT-{rid}.md").read_text()
+        self.assertIn("risk (report only, touches no 'Must come back' line) TASK-1 at x: 1 GB input", rep)
+        self.assertNotIn("accept the risk", rep)
+
+    def test_risk_finding_passes_the_verdict_and_becomes_a_draft_without_repair(self):
+        self.with_evaluator("task")
+        (self.proj / "docs/agent").mkdir(parents=True, exist_ok=True); (self.proj / "docs/agent/DECISION_FRAME.md").write_text(self.FRAME)
+        git(self.proj, "add", "-A"); git(self.proj, "commit", "-qm", "frame")
+        self.evaluator_plan({"TASK-1": ["risk_frame"]})
+        self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
+        self.assertEqual(self.journal()["tasks"]["TASK-1"], {"state": "accepted", "repairs": 0})
         self.assertEqual(self.eval_calls(), ["TASK-1"])
         drafts = list((self.proj / "backlog/drafts").glob("draft-*"))
-        self.assertEqual(len(drafts), 1); self.assertIn("1 GB input", drafts[0].read_text())
+        self.assertEqual(len(drafts), 1); self.assertIn("1 GB input", drafts[0].read_text()); self.assertIn("Frame (Must come back): Data loss", drafts[0].read_text())
         self.tron("report", "--run-id", self.journal()["run_id"])
-        self.assertIn("1 GB input", (self.proj / "docs/agent/tron" / f"REPORT-{self.journal()['run_id']}.md").read_text())
+        rep = (self.proj / "docs/agent/tron" / f"REPORT-{self.journal()['run_id']}.md").read_text()
+        self.assertRegex(rep, r"\n1\. Risk found by the evaluator \(TASK-1\): 1 GB input.* a\) accept the risk b\) create a task for it\. Recommendation: b")
 
     def test_same_risk_reported_again_makes_one_draft(self):
         self.with_evaluator("task")
-        self.evaluator_plan({"TASK-1": ["risk"]})
+        (self.proj / "docs/agent").mkdir(parents=True, exist_ok=True); (self.proj / "docs/agent/DECISION_FRAME.md").write_text(self.FRAME)
+        git(self.proj, "add", "-A"); git(self.proj, "commit", "-qm", "frame")
+        self.evaluator_plan({"TASK-1": ["risk_frame"]})
         self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
         j = self.journal(); (self.proj / "docs/agent/tron/x").mkdir(exist_ok=True)
         m = __import__("importlib.util").util.spec_from_file_location("t2", pathlib.Path(__file__).resolve().parents[2] / "scripts/tron.py")
         mod = __import__("importlib.util").util.module_from_spec(m); m.loader.exec_module(mod)
-        mod.write_risk_drafts(self.proj, "TASK-1", [{"scenario": "1 GB input with one 4 MB word"}], j)
+        mod.write_risk_drafts(self.proj, "TASK-1", [{"scenario": "1 GB input with one 4 MB word", "frame": "data loss"}], j)
         self.assertEqual(len(list((self.proj / "backlog/drafts").glob("draft-*"))), 1)
 
     def test_parser_rejects_unknown_kinds_and_defect_still_fails(self):
@@ -1185,11 +1206,36 @@ class Tron(unittest.TestCase):
         r = self.tron("report", "--run-id", "s1")
         self.assertEqual(r.returncode, 0, r.stderr)
         rep = (self.proj / "docs/agent/tron/REPORT-s1.md").read_text()
-        for section in ("Look at this first", "Accepted tasks", "Evaluator findings", "Assumptions made", "Blocked tasks", "Open questions", "Cost and time", "Metrics"):
+        for section in ("Look at this first", "Accepted tasks", "Evaluator findings", "Assumptions made", "Blocked tasks", "Questions for you", "Cost and time", "Metrics"):
             self.assertIn(section, rep)
         self.assertIn("AC#1 it works (evidence: E2 test_a passes)", rep)
         self.assertIn("TASK-2: still failing", rep); self.assertIn("TASK-1: CSV is fine".replace("TASK-1: ", "TASK-1: Assumption: "), rep)
         self.assertIn("a.py:1", rep)
+
+    def test_report_numbers_every_open_question_in_one_block(self):  # TASK-371
+        self.sample_journal()
+        f = self.proj / "backlog/tasks/task-1 - x.md"
+        f.write_text(f.read_text().replace("Assumption: CSV is fine\n", "Assumption: CSV is fine (basis: none)\nAssumption: comma (basis: P-3)\n"))
+        d = self.proj / "backlog/drafts"; d.mkdir(parents=True, exist_ok=True)
+        (d / "draft-1 - q.md").write_text("---\nid: DRAFT-1\ntitle: 'Question from the Doctor about TASK-2: which format?'\nstatus: Draft\nlabels:\n  - tron-doctor\n---\n")
+        j = json.loads((self.proj / "docs/agent/tron/run-s1.json").read_text())
+        j["retro_changes"] = [{"id": "C-D1", "tier": 3, "target": ".claude/agents/evaluator.md", "metric": "evaluator_misses", "result": "proposed (tier 3: for the user)", "reason": "example verdict for D1 (TASK-1)"},
+                              {"id": "C-D2", "tier": 3, "target": "x", "metric": "evaluator_misses", "result": "rejected by the user 2026-11-23", "reason": "x"}]
+        (self.proj / "docs/agent/tron/run-s1.json").write_text(json.dumps(j))
+        git(self.proj, "add", "-A"); git(self.proj, "commit", "-qm", "q")
+        self.tron("report", "--run-id", "s1")
+        rep = (self.proj / "docs/agent/tron/REPORT-s1.md").read_text()
+        block = rep.split("## Questions for you")[1].split("\n## ")[0]
+        self.assertIn("e.g. `1a, 3b`", block)
+        self.assertIn("1. Question from the Doctor about TASK-2: which format? (backlog/drafts/draft-1 - q.md) a) answer it", block)
+        self.assertIn("2. Assumption without a basis: TASK-1: Assumption: CSV is fine (basis: none) a) keep it", block)
+        self.assertIn("3. Did you find defects in the accepted tasks? a) none b) yes", block)
+        self.assertIn("4. Apply the example verdict D1 (example verdict for D1 (TASK-1)) to .claude/agents/evaluator.md? a) accept b) reject", block)
+        self.assertNotIn("5.", block); self.assertNotIn("comma", block); self.assertNotIn("D2", block)
+        self.assertEqual(block.count("Recommendation:"), 4)
+        j["defects_reviewed"] = "2026-11-23T10:00:00Z"; j["retro_changes"] = []
+        (self.proj / "docs/agent/tron/run-s1.json").write_text(json.dumps(j)); self.tron("report", "--run-id", "s1")
+        self.assertNotIn("Did you find defects", (self.proj / "docs/agent/tron/REPORT-s1.md").read_text())
 
     def test_report_groups_assumptions_by_basis_none_first(self):
         self.sample_journal()
@@ -1757,6 +1803,12 @@ class Check(unittest.TestCase):
         self.assertIn("ONE numbered message", text); self.assertNotIn("one question at a time", text)
         self.assertIn("ask ONE question that is both budget and go", text); self.assertIn("no second confirmation", text)
         self.assertIn("never applied by default", text); self.assertIn("Bash(python3 scripts/tron.py:*)", text)
+
+    def test_skill_asks_the_report_questions_in_one_message(self):  # TASK-371
+        text = (ROOT / ".claude/skills/tron/SKILL.md").read_text()
+        self.assertIn("`## Questions for you` block in ONE message", text); self.assertIn("Ask nothing per item", text)
+        for needle in ("defect --run <run> --none", "calibrate --accept D<n>", "PRECEDENTS.md", "record the answer in the draft"):
+            self.assertIn(needle, text)
 
     def test_planner_lists_acs_that_need_the_user(self):  # TASK-367
         text = (ROOT / ".claude/agents/planner.md").read_text()
