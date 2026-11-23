@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Measured evidence for a retro (R-RETRO): cheap, repeatable numbers. Usage: scripts/retro-metrics.sh [since]  (YYYY-MM-DD or 'YYYY-MM-DD HH:MM' for a second retro on the same day; default: 14 days)
 set -u
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." || exit 1
 # --snapshot: also store the output as a dated baseline (docs/agent/baselines/) before changing a cost-carrying rule.
 if [ "${1:-}" = "--snapshot" ]; then
   shift; mkdir -p docs/agent/baselines; out="docs/agent/baselines/$(date +%F).txt"
@@ -73,13 +73,13 @@ for f in "${files[@]}"; do
   [ -f "$f" ] || continue
   grep -q '^status: Done' "$f" || continue
   u=$(awk -F"'" '/^updated_date:/{print substr($2,1,16); exit}' "$f")
-  [ -n "$u" ] && [ "$u" \> "$sinceutc" -o "$u" = "$sinceutc" ] && done_p=$((done_p+1))
+  [ -n "$u" ] && { [ "$u" \> "$sinceutc" ] || [ "$u" = "$sinceutc" ]; } && done_p=$((done_p+1))
 done
 echo "accepted tasks in period (Done, updated since $since local = $sinceutc UTC): $done_p"
 created_p=0
 for f in "${files[@]}"; do
   c=$(awk -F"'" '/^created_date:/{print substr($2,1,16); exit}' "$f")
-  [ -n "$c" ] && [ "$c" \> "$sinceutc" -o "$c" = "$sinceutc" ] && created_p=$((created_p+1))
+  [ -n "$c" ] && { [ "$c" \> "$sinceutc" ] || [ "$c" = "$sinceutc" ]; } && created_p=$((created_p+1))
 done
 echo "task intake in period: $created_p created, $done_p done"
 # Post-acceptance record (R-LIFECYCLE 1.6): done tasks in the period with a note line "Outcome: corrections=N rework=Nmin defects=N" (any value may be unknown); tasks without the line count as unrecorded, never dropped.

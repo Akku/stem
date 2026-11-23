@@ -61,7 +61,7 @@ build_image() {  # $1 = ubuntu version label (e.g. 24.04); image tag is stem-san
   fi
 }
 run_args() {  # common docker run args
-  args=($tty --name "$ctr" -v "$home_vol:/home/stem" -e GH_TOKEN -e ANTHROPIC_API_KEY -e "STEM_STRICT=$strict" --cap-drop ALL
+  args=("$tty" --name "$ctr" -v "$home_vol:/home/stem" -e GH_TOKEN -e ANTHROPIC_API_KEY -e "STEM_STRICT=$strict" --cap-drop ALL
         --cap-add SETUID --cap-add SETGID --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add SETPCAP --cap-add FOWNER
         --security-opt no-new-privileges:false)
   [ $strict = 1 ] && args+=(--cap-add NET_ADMIN --cap-add NET_RAW)
