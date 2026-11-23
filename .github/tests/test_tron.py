@@ -1433,6 +1433,33 @@ class Tron(unittest.TestCase):
         self.tron("report", "--run-id", "s1")
         self.assertIn("Repair rate: 2 repair session(s) in 4 worker session(s) (50%)", (self.proj / "docs/agent/tron/REPORT-s1.md").read_text())
 
+    def test_report_metrics_leave_out_sweep_skipped_tasks(self):  # TASK-384
+        self.sample_journal()
+        p = self.proj / "docs/agent/tron/run-s1.json"; j = json.loads(p.read_text())
+        j["tasks"]["TASK-3"] = {"state": "blocked", "reason": "skipped by sweep (docs/agent/tron/SWEEP-m-1.md)", "repairs": 0, "skipped": "sweep"}
+        j["tasks"]["TASK-4"] = {"state": "blocked", "reason": "skipped by sweep (docs/agent/tron/SWEEP-m-1.md)", "repairs": 0}  # journal before the flag
+        base = {k: v for k, v in j["sessions"][0].items() if k != "repair"}
+        j["sessions"] += [dict(base, task="TASK-4", cost_usd=5.0), dict(base, task="TASK-4", cost_usd=5.0, repair=1)]  # older runs gave them sessions
+        p.write_text(json.dumps(j))
+        self.tron("report", "--run-id", "s1")
+        rep = (self.proj / "docs/agent/tron/REPORT-s1.md").read_text()
+        self.assertIn("Left out of the rates and the cost per accepted task: 2 task(s) skipped by the sweep (TASK-3, TASK-4)", rep)
+        self.assertIn("Blocked rate: 1 of 2", rep); self.assertIn("Repair rate: 1 repair session(s) in 3 worker session(s)", rep)
+        self.assertIn("Cost per accepted task: at least 0.90 USD", rep)
+        self.assertIn("Total cost: at least 10.90 USD", rep)  # the total still counts everything
+
+    def test_draft_titles_are_cut_at_a_word_boundary(self):  # TASK-384
+        sys.path.insert(0, str(ROOT / "scripts")); import tron
+        self.assertEqual(tron.clip("short title", 90), "short title")
+        t = tron.clip("Which export format should the weekly summary use when several\nmailboxes are configured at once", 60)
+        self.assertLessEqual(len(t), 60); self.assertTrue(t.endswith("…"))
+        self.assertTrue("Which export format should the weekly summary use when several mailboxes".startswith(t[:-1])); self.assertNotIn("\n", t)
+        self.assertEqual(t, "Which export format should the weekly summary use when…")  # whole last word
+        tron.write_question_draft(self.proj, {}, "Question from the Doctor about TASK-2: " + tron.clip("x" * 5 + " " + "abcdefghij " * 10, 60), "body", "tron-doctor")
+        f = next((self.proj / "backlog/drafts").glob("draft-*"))
+        title = re.search(r"^title: '(.*)'$", f.read_text(), re.M).group(1)
+        self.assertTrue(title.endswith("abcdefghij…"), title); self.assertLessEqual(len(title), 90)
+
     def test_worker_that_stops_without_a_diff_shows_its_own_reason(self):
         self.config({"max_repairs": 0})
         self.behavior({"TASK-1": ["note_only"]})

@@ -779,7 +779,7 @@ def write_risk_drafts(root, target, risks, journal):
         wrote = True
         d.mkdir(parents=True, exist_ok=True)
         n = max([int(m.group(1)) for p in d.glob("draft-*") for m in [re.match(r"draft-(\d+)", p.name)] if m] + [0]) + 1
-        title = f"Risk found by the evaluator ({target}): " + str(r.get("scenario", ""))[:70].replace("\n", " ").replace("'", "")
+        title = f"Risk found by the evaluator ({target}): " + clip(r.get("scenario", ""), 70).replace("'", "")
         body = (f"Evaluator risk finding beyond the acceptance criteria (run {journal['run_id']}, {target}). It did not fail the verdict.\n\n"
                 f"Location: {r.get('location', '?')}\nScenario: {r.get('scenario', '')}\nFrame (Must come back): {frame}\n\nDecide: accept the risk, or create a task.")
         slug = re.sub(r"[^A-Za-z0-9]+", "-", title)[:60].strip("-")
@@ -864,7 +864,7 @@ def split_out_acs(root, parent, ac_texts, title, body, waits_for=()):
     if len(nums) != len({a.strip() for a in ac_texts}) or len(nums) >= len(acs):
         raise TronError(f"{parent}: the split-out ACs do not match the task's ACs, or nothing would stay")
     before = set(files)
-    cmd = ["backlog", "task", "create", title[:90].replace("\n", " "), "-l", SPLIT_OUT_LABELS, "-d", body]
+    cmd = ["backlog", "task", "create", clip(title, 90), "-l", SPLIT_OUT_LABELS, "-d", body]
     for a in ac_texts:
         cmd += ["--ac", a.strip()]
     deps = [w for w in waits_for if w in files and w != parent]
@@ -949,12 +949,22 @@ def next_draft_number(d):
     return max([int(m.group(1)) for p in d.glob("draft-*") for m in [re.match(r"draft-(\d+)", p.name)] if m] + [0]) + 1
 
 
+def clip(text, n):
+    """Text on one line, at most n characters, cut at a word boundary with an ellipsis (TASK-384)."""
+    t = " ".join(str(text).split())
+    if len(t) <= n:
+        return t
+    cut = t[:n - 1]
+    sp = cut.rfind(" ")
+    return (cut[:sp] if sp > n // 2 else cut).rstrip(" ,;:.-") + "…"
+
+
 def write_question_draft(root, journal, title, body, label):
     """A decision draft for the user, committed on its own (the blocked task's reset keeps drafts)."""
     d = root / "backlog/drafts"
     d.mkdir(parents=True, exist_ok=True)
     n = next_draft_number(d)
-    title = title[:90].replace("\n", " ").replace("'", "")
+    title = clip(title, 90).replace("'", "")
     slug = re.sub(r"[^A-Za-z0-9]+", "-", title)[:60].strip("-")
     (d / f"draft-{n} - {slug}.md").write_text(f"---\nid: DRAFT-{n}\ntitle: '{title}'\nstatus: Draft\nassignee: []\nlabels:\n  - {label}\ndependencies: []\n---\n\n"
                                               f"## Description\n\n<!-- SECTION:DESCRIPTION:BEGIN -->\n{body}\n<!-- SECTION:DESCRIPTION:END -->\n")
@@ -1415,12 +1425,17 @@ def build_report(root, journal, tron):
     dsess = [s for s in sess if s.get("denied")]
     out += ["", "Sessions with denied tool calls (the permission setup blocked them; recommended: " + RECOMMENDED_SETUP + "): "
             + "; ".join(f"{s['task']} {s['role']}: {s['denied']} ({s.get('transcript', 'no transcript')})" for s in dsess)] if dsess else []
-    n_acc, n_blk = len(acc), len(blk)
+    # TASK-384: tasks the sweep skipped were never worked on, so they stay out of the rates (older journals: only the reason says so)
+    skipped = {i for i, v in tasks.items() if v.get("skipped") == "sweep" or str(v.get("reason", "")).startswith("skipped by sweep")}
+    msess = [s for s in sess if s["task"] not in skipped]
+    mtot, mpart = cost_of(msess)
+    n_acc, n_blk = len(acc), len([i for i in blk if i not in skipped])
     # a repair answers a failed gate or evaluator verdict (task or milestone); journals before TASK-304 lack "repair" on milestone sessions
-    repair_sessions = sum(1 for s in sess if s["role"] == "worker" and (s.get("repair") or s["task"] == "milestone"))
-    worker_sessions = [s for s in sess if s["role"] == "worker"]
+    repair_sessions = sum(1 for s in msess if s["role"] == "worker" and (s.get("repair") or s["task"] == "milestone"))
+    worker_sessions = [s for s in msess if s["role"] == "worker"]
     out += ["", "## Metrics", ""]
-    out.append("- Cost per accepted task: " + (money(tot / n_acc, part) if tot is not None and n_acc else "unknown"))
+    out += [f"- Left out of the rates and the cost per accepted task: {len(skipped)} task(s) skipped by the sweep ({', '.join(sorted(skipped))})"] if skipped else []
+    out.append("- Cost per accepted task: " + (money(mtot / n_acc, mpart) if mtot is not None and n_acc else "unknown"))
     out.append("- Repair rate: " + (f"{repair_sessions} repair session(s) in {len(worker_sessions)} worker session(s) ({repair_sessions / len(worker_sessions):.0%})" if worker_sessions else "unknown"))
     out.append("- Blocked rate: " + (f"{n_blk} of {n_acc + n_blk} settled task(s) ({n_blk / (n_acc + n_blk):.0%})" if n_acc + n_blk else "unknown"))
     ud = journal.get("user_defects", [])
@@ -1920,7 +1935,7 @@ def run_loop(root, tron, args, milestone, jpath, run_id, ctx=None):
                         limit, stall, last_sig = max(limit, repairs + 1), None, None
                         persist()
                 if v == "needs_user" and not split_done:
-                    dn = write_question_draft(root, journal, f"Question from the Doctor about {task_id}: " + dv["question"][:60],
+                    dn = write_question_draft(root, journal, f"Question from the Doctor about {task_id}: " + clip(dv["question"], 60),
                                               f"Run {journal['run_id']}, {task_id} kept failing.\n\nDiagnosis: {dv['diagnosis']}\n\nQuestion: {dv['question']}", "tron-doctor")
                     ladder.append({"step": "draft question", "result": dn}); persist()
                     outcome = ("blocked", f"the Doctor needs the user: see {dn} ({dv['question'][:150]})"); break
