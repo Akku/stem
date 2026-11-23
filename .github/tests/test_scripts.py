@@ -756,9 +756,15 @@ class SessionStart(SandboxRepo):
         q.write_text("---\nid: DRAFT-1\ntitle: 'Decide: X'\n---\n\n## Description\n\n<!-- SECTION:DESCRIPTION:BEGIN -->\nQuestion to the user (today): a) b)\n<!-- SECTION:DESCRIPTION:END -->\n")
         (d / "draft-2 - idea.md").write_text("---\nid: DRAFT-2\ntitle: Idea\n---\n\n<!-- SECTION:DESCRIPTION:BEGIN -->\nJust an idea\n<!-- SECTION:DESCRIPTION:END -->\n")
         out = self.start(env)
-        self.assertIn("## open questions", out); self.assertIn("DRAFT-1: Decide: X", out); self.assertNotIn("DRAFT-2", out)
+        self.assertIn("## open questions", out); self.assertIn("DRAFT-1: Decide: X -> backlog/drafts/draft-1 - q.md", out)
+        oq, od = out.split("## open questions")[1].split("## open drafts")
+        self.assertNotIn("DRAFT-2", oq); self.assertIn("DRAFT-2: Idea -> backlog/drafts/draft-2 - idea.md", od)
+        self.assertIn("clickable markdown link", out)
         q.unlink()
-        self.assertNotIn("open questions", self.start(env))
+        out = self.start(env)
+        self.assertNotIn("open questions", out); self.assertIn("## open drafts", out)
+        (d / "draft-2 - idea.md").unlink()
+        self.assertNotIn("open drafts", self.start(env)); self.assertNotIn("clickable", self.start(env))
 
     def test_handoff_brief_has_no_detach_sentence(self):
         text = (ROOT / "docs/agent/OPERATING_MODEL.md").read_text(encoding="utf-8")

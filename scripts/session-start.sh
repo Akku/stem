@@ -117,14 +117,16 @@ fi
 # usage probes (docs/agent/PROBES.md): open and fired ones
 [ -d backlog/tasks ] && [ -f scripts/probe.py ] && python3 scripts/probe.py report 2>/dev/null
 echo; echo "## backlog check"; scripts/check-backlog.sh 2>/dev/null | head -10; [ "${PIPESTATUS[0]:-0}" -eq 0 ] && echo "ok"
-# open user questions: drafts whose description starts with "Question to the user" (recorded when a question stays open, see the handoff skill)
-oq=""
+# open drafts, each with its .md path: question drafts (description starts with "Question to the user", see the handoff skill) first, then all others
+oq=""; od=""
 for f in backlog/drafts/*.md; do
   [ -f "$f" ] || continue
-  awk '/DESCRIPTION:BEGIN/{getline; ok=($0 ~ /^Question to the user/); exit} END{exit !ok}' "$f" 2>/dev/null \
-    && oq="$oq$(sed -n 's/^id: //p' "$f" | head -1): $(sed -n 's/^title: //p' "$f" | head -1 | tr -d "'")"$'\n'
+  line="$(sed -n 's/^id: //p' "$f" | head -1): $(awk '/^title:/{t=substr($0,8); if(t ~ /^[>|]-?$/){getline; t=$0; while((getline n)>0 && n ~ /^  /) t=t" "n} gsub(/^ +| +$|\047/,"",t); gsub(/  +/," ",t); print t; exit}' "$f") -> $f"$'\n'
+  if awk '/DESCRIPTION:BEGIN/{getline; ok=($0 ~ /^Question to the user/); exit} END{exit !ok}' "$f" 2>/dev/null; then oq="$oq$line"; else od="$od$line"; fi
 done
 [ -n "$oq" ] && { echo; echo "## open questions for the user (answer or ask first; the draft holds the options)"; printf '%s' "$oq"; }
+[ -n "$od" ] && { echo; echo "## open drafts"; printf '%s' "$od"; }
+[ -n "$oq$od" ] && echo "show the user every draft above in your first reply, one clickable markdown link to its .md file each"
 [ -n "$dues" ] && { echo; echo "due (offered earlier today, do not start unasked): $dues"; }
 echo; echo "## handoff"
 if [ -f docs/agent/HANDOFF.md ]; then
