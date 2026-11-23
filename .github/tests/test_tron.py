@@ -484,6 +484,27 @@ class Tron(unittest.TestCase):
         self.assertIn("- A1: reuse the existing parser (basis: frame: reuse of existing code)", p)
         self.assertIn("Assumption:", p); self.assertNotIn("keep the old field", p)
 
+    def test_sweep_skipped_task_is_blocked_without_a_session(self):  # TASK-379
+        d = self.proj / "docs/agent/tron"; d.mkdir(parents=True, exist_ok=True)
+        (d / "SWEEP-m-1.md").write_text("# Sweep: m-1\n## Questions\n- none\n\n## Too large or not testable\n"
+                                        "Decision (user): the run skips TASK-2; it works on TASK-1 and TASK-3.\n")
+        git(self.proj, "add", "-A"); git(self.proj, "commit", "-qm", "sweep")
+        r = self.tron("run", "--milestone", "m-1", "--run-id", "r1", "--max-tasks", "2")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual([c["task"] for c in self.calls()], ["TASK-1", "TASK-3"])  # no session for TASK-2; it does not count to max_tasks
+        t2 = self.journal()["tasks"]["TASK-2"]
+        self.assertEqual((t2["state"], t2["skipped"]), ("blocked", "sweep"))
+        self.assertIn("skipped by sweep (docs/agent/tron/SWEEP-m-1.md)", t2["reason"])
+        self.assertFalse([s for s in self.journal()["sessions"] if s["task"] == "TASK-2"])
+        rep = next((self.proj / "docs/agent/tron").glob("REPORT-*.md")).read_text()
+        self.assertIn("- TASK-2: skipped by sweep", rep.split("## Blocked tasks")[1])
+
+    def test_sweep_skipped_parses_skip_lines_and_decision_lines(self):  # TASK-379
+        sys.path.insert(0, str(ROOT / "scripts")); import tron
+        self.assertEqual(tron.sweep_skipped("Decision: the run skips TASK-30, 31 and 127; it works on TASK-83.\n- Skip: TASK-5, TASK-6\n"),
+                         {"TASK-30", "TASK-31", "TASK-127", "TASK-5", "TASK-6"})
+        self.assertEqual(tron.sweep_skipped("Should the run skip 3 tasks? the run skips nothing.\n"), set())
+
     def test_configured_baseline_prompt_keeps_the_duties(self):
         sys.path.insert(0, str(ROOT / "scripts"))
         import tron

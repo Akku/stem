@@ -1050,8 +1050,8 @@ def limit_hit(journal, tron, max_tasks, t0=None):
         return f"max_cost reached ({cost:.2f} of {tron['max_cost']})"
     if tron.get("max_hours") is not None and t0 is not None and wall_hours(journal, t0) >= float(tron["max_hours"]):
         return f"max_hours reached ({wall_hours(journal, t0):.2f} of {tron['max_hours']})"
-    if max_tasks is not None and len(journal["tasks"]) >= max_tasks:
-        return f"max_tasks reached ({max_tasks}; counts all tasks of the run, blocked ones included)"
+    if max_tasks is not None and sum(1 for v in journal["tasks"].values() if not v.get("skipped")) >= max_tasks:
+        return f"max_tasks reached ({max_tasks}; counts all tasks of the run, blocked ones included, sweep-skipped ones not)"
     return None
 
 
@@ -1682,6 +1682,8 @@ def run_loop(root, tron, args, milestone, jpath, run_id, ctx=None):
         write_journal(jpath, journal)
         resume_ip = None
 
+    swf = root / f"docs/agent/tron/SWEEP-{milestone}.md"
+    sweep_skips = sweep_skipped(swf.read_text()) if swf.is_file() else set()
     no_count = lambda: stop_reason(count_tasks=False)  # limits that end a session in flight (not the task count)
     while True:
         for pid in close_split_parents(root, tron, journal):
@@ -1689,6 +1691,13 @@ def run_loop(root, tron, args, milestone, jpath, run_id, ctx=None):
         write_journal(jpath, journal)
         task_resumed = resume_ip is not None and resume_ip.get("task") != "baseline" and resume_ip.get("task") not in journal["tasks"]
         todo = [] if task_resumed else [t for t in ready_tasks(root, milestone, blocked_status) if t not in journal["tasks"] and t in acs0]
+        skip = [t for t in todo if t in sweep_skips]  # TASK-379: Blocked by the runner itself, no session, no cost
+        if skip:
+            for t in skip:
+                settle(t, head(root), f"skipped by sweep (docs/agent/tron/SWEEP-{milestone}.md)", 0)
+                journal["tasks"][t]["skipped"] = "sweep"
+            write_journal(jpath, journal)
+            continue
         if not task_resumed and not todo:  # milestone end: the task count must not keep the evaluation from running
             why = no_count()
             if why:
@@ -1963,6 +1972,18 @@ def predecided_prompt(root, milestone, task_id):
     return ("\n\nPre-decided before the run (docs/agent/tron/" + sw.name + ", the user did not veto them): follow them and record each "
             "in the task notes as 'Assumption: <decision> (basis: sweep <id>, <frame basis>)'.\n"
             + "\n".join(f"- {i}: {d} (basis: {b})" for i, _, d, b in pre))
+
+
+def sweep_skipped(text):
+    """Tasks the sweep decision skips (TASK-379): a 'Skip: TASK-1, TASK-2' line, or a decision line '... the run skips TASK-30, 31 and 127; ...'.
+    Bare numbers after the first TASK-n count as task ids; the list ends at ';', '.' or the line end."""
+    out = set()
+    for m in re.finditer(r"(?:^\s*(?:[-*]\s*)?Skip:|\bthe run skips\b)([^;.\n]*)", text, re.M | re.I):
+        seg = m.group(1)
+        first = re.search(r"TASK-\d+", seg)
+        if first:
+            out |= {f"TASK-{n}" for n in re.findall(r"(?:TASK-)?(\d+)", seg[first.start():])}
+    return out
 
 
 def sweep_needs_user(text):
