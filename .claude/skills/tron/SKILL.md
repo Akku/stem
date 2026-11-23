@@ -26,7 +26,8 @@ Rules: `R-TRON` in `docs/agent/TRON.md` (session duties, role tiers), `R-BATCHIN
 ## 3. Check and start
 - Run `python3 scripts/tron.py check --milestone <id>` and fix what it lists (it exits 1 with a list; warnings do not block).
 - When it prints `READY`, show the exact `start:` line and the budget (a run costs money), ideally run `--dry-run` first; ask once for the go.
-- After the go, start the run yourself as a background command that notifies you when it exits (Claude Code: Bash with `run_in_background`); never ask the user to start it, open a terminal or type a command. Say once where the report will appear and that you read it yourself when the run ends.
+- After the go, start the run yourself with `--detach` (the `start:` line) as a background command that notifies you when it exits (Claude Code: Bash with `run_in_background`); `--detach` makes the run its own process, so it goes on when this session ends. Never ask the user to start it, open a terminal or type a command. Say once where the report will appear and that you read it yourself when the run ends.
+- While the run holds `docs/agent/tron/LOCK`, commit nothing on `tron/<milestone>` (the pre-commit hook refuses it); repairs wait until the run has stopped (`docs/agent/tron/STOP` stops it after the current session). A resume moves the interrupted task's base past such repair commits.
 - During the run ask nothing and wait for no input: no questions, no "tell me when it is done". When the process exits, read `docs/agent/tron/REPORT-<run>.md` yourself and continue with section 4.
 
 ## 4. After the run

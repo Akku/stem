@@ -1,4 +1,16 @@
 #!/usr/bin/env bash
+# While an unattended Tron run holds docs/agent/tron/LOCK (live pid), only the run itself (STEM_TRON_RUN set) commits on its tron/* branch;
+# repairs wait until the run has stopped, so they never fall into a task's commit range.
+lock=docs/agent/tron/LOCK
+branch=$(git symbolic-ref -q --short HEAD || true)
+if [ -f "$lock" ] && [ -z "${STEM_TRON_RUN:-}" ] && [[ $branch == tron/* ]]; then
+  pid=$(tr -dc 0-9 < "$lock")
+  if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+    echo "pre-commit: an unattended run (pid $pid) is working on $branch; commit after it stopped (create docs/agent/tron/STOP to stop it)." >&2
+    exit 1
+  fi
+fi
+
 # Blocks source documents and local databases from being committed (they may be confidential).
 # All checks cover added, modified, renamed and copied files (diff-filter AMRC), so a rename cannot bypass them.
 bad=$(git diff --cached --name-only --diff-filter=AMRC | grep -i -E '\.(docx|pptx|xlsx|pdf|db|db-shm|db-wal|sqlite)$' || true)

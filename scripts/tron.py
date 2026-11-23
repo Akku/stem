@@ -1080,7 +1080,38 @@ def find_journal(root, milestone, run_id):
     return max(open_)[1] if open_ else None
 
 
-def recover(root, journal, jpath):
+def acs_at(root, commit):
+    """AC hashes of the task files at a commit (like snapshot_acs on the tree)."""
+    out = {}
+    for f in git_ok(root, "ls-tree", "-r", "--name-only", commit, "backlog/tasks").splitlines():
+        m = re.match(r"backlog/tasks/task-(\d+) - .*\.md$", f)
+        if m:
+            out[f"TASK-{m.group(1)}"] = ac_hash(git_ok(root, "show", f"{commit}:{f}"))
+    return out
+
+
+def move_base_past_repairs(root, journal, ip, tron):
+    """TASK-366: commits made between the run's stop and this resume are repairs by the user, not the interrupted task's work.
+    The task's base moves to HEAD so the gate does not count them; only when the task's own part (base..stop) is clean."""
+    stop = journal.pop("stop_head", None) or {}
+    cur = head(root)
+    if not stop.get("commit") or stop.get("ip_base") != ip["base"] or stop["commit"] == cur:
+        return None
+    if subprocess.run(["git", "merge-base", "--is-ancestor", stop["commit"], cur], cwd=root).returncode:
+        return None
+    prot = protected_paths(root, tron)
+    own = [f for f in git_ok(root, "diff", "--name-only", "--no-renames", ip["base"], stop["commit"]).splitlines()
+           if any(fnmatch.fnmatchcase(f, pat) for pat in prot)]
+    own_acs = acs_at(root, stop["commit"])
+    if own or any(own_acs.get(i) != h for i, h in ip["acs_before"].items()):
+        return None  # the task's own damage stays under the gate
+    n = len(git_ok(root, "rev-list", f"{stop['commit']}..{cur}").splitlines())
+    moved = {"from": ip["base"], "to": cur, "repair_commits": n}
+    ip["base"], ip["acs_before"] = cur, snapshot_acs(root)
+    return moved
+
+
+def recover(root, journal, jpath, tron=None):
     """A killed runner leaves a session unfinished: loose files go into a named stash; the task goes on from its recorded base."""
     ip = journal.get("in_progress")
     if not ip:
@@ -1093,6 +1124,10 @@ def recover(root, journal, jpath):
         git_ok(root, "stash", "push", "-u", "-q", "-m", name, "--", ".", *EXCLUDE)
         if len(git_ok(root, "stash", "list").splitlines()) > n0:
             note["stash"] = name
+    moved = move_base_past_repairs(root, journal, ip, tron or {}) if not tree_dirty(root) else None
+    if moved:
+        note["base_moved"] = moved
+        print(f"resume: base of {ip['task']} moved past {moved['repair_commits']} repair commit(s) made after the stop")
     journal.setdefault("recovered", []).append(note)
     write_journal(jpath, journal)
     print(f"resume: session for {ip['task']} was interrupted" + (f"; loose files are in the stash '{note['stash']}'" if "stash" in note else ""))
@@ -1263,7 +1298,12 @@ def cmd_report(args):
     return 0
 
 
-def finish(journal, jpath, reason=None, complete=False):
+def finish(journal, jpath, reason=None, complete=False, root=None):
+    if root is not None:  # where the run stopped: commits after this one are the user's repairs (TASK-366)
+        try:
+            journal["stop_head"] = {"commit": head(root), "ip_base": (journal.get("in_progress") or {}).get("base")}
+        except TronError:
+            pass
     journal["ended"] = now()
     journal["stop_reason"] = reason
     journal["complete"] = complete
@@ -1293,6 +1333,8 @@ def cmd_run(args):
     if not jpath and not first:
         print(f"no ready task in {milestone}; nothing to do")
         return 0
+    if args.detach:
+        return detach_run(root, args, milestone, run_id)
     lock = root / JOURNAL_DIR / "LOCK"  # two runners on one checkout would corrupt each other
     lock.parent.mkdir(parents=True, exist_ok=True)
     if lock.is_file():
@@ -1303,6 +1345,7 @@ def cmd_run(args):
         if pid and pid_alive(pid):
             raise TronError(f"another run is active (pid {pid}, {lock.relative_to(root)})")
     lock.write_text(str(os.getpid()))
+    os.environ["STEM_TRON_RUN"] = run_id  # the runner's commits and its sessions pass the pre-commit LOCK check (TASK-366)
     ctx = {}  # run_loop puts its clean-end handler here once the journal exists
     try:
         return run_loop(root, tron, args, milestone, jpath, run_id, ctx)
@@ -1319,6 +1362,22 @@ def cmd_run(args):
             lock.unlink()
         except OSError:
             pass
+
+
+def detach_run(root, args, milestone, run_id):
+    """TASK-366: the run lives in its own process session (no terminal, no stdin), so ending the chat that started it
+    cannot end the run. This process only waits for it and passes on its exit code; killing the waiter leaves the run going."""
+    log = root / JOURNAL_DIR / f"run-{run_id}.log"
+    log.parent.mkdir(parents=True, exist_ok=True)
+    cmd = [sys.executable, str(pathlib.Path(__file__).resolve()), "run", "--milestone", milestone, "--run-id", run_id, "--root", str(root)]
+    cmd += ["--config", args.config] if args.config else []
+    cmd += ["--max-tasks", str(args.max_tasks)] if args.max_tasks is not None else []
+    cmd += ["--accept-damage"] if args.accept_damage else []
+    with open(log, "a") as out:
+        proc = subprocess.Popen(cmd, cwd=root, stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT, start_new_session=True)
+    print(f"run {run_id} started as its own process (pid {proc.pid}); log {log.relative_to(root)}; "
+          f"report docs/agent/tron/REPORT-{run_id}.md. Stopping this command does not stop the run (STOP file does).", flush=True)
+    return proc.wait()
 
 
 def milestone_evaluation(root, tron, journal, jpath, accepted, start_commit, max_repairs, no_count, fin, branch, refs0, run_id, milestone):
@@ -1395,7 +1454,7 @@ def run_loop(root, tron, args, milestone, jpath, run_id, ctx=None):
             if tree_dirty(root):
                 raise TronError("working tree is not clean; commit or stash first (the run continues on its own branch)")
             git_ok(root, "checkout", "-q", branch)
-        resume_ip = recover(root, journal, jpath)
+        resume_ip = recover(root, journal, jpath, tron)
         if tree_dirty(root):
             raise TronError("working tree is not clean; commit or stash first")
         journal["ended"] = None; journal["stop_reason"] = None
@@ -1427,7 +1486,7 @@ def run_loop(root, tron, args, milestone, jpath, run_id, ctx=None):
 
     def fin(reason, complete=False):
         journal["wall_seconds"] = wall0 + time.time() - t0
-        finish(journal, jpath, reason, complete)
+        finish(journal, jpath, reason, complete, root)
         if tron.get("retro") == "on" and not journal.get("retro"):  # unattended retro analysis at every run end, stopped runs included (TASK-299); a failure never fails the run
             try:
                 retro_for_run(root, tron, journal, jpath)
@@ -2709,7 +2768,7 @@ def cmd_check(args):
         c = tron.get(f"{role}_cmd")
         print(f"  {role}: {' '.join(c) if c else '(falls back to worker_cmd)'}")
     print(f"  verify: {' '.join(tron['verify_cmd'])}")
-    print(f"start: scripts/tron.py run --milestone {args.milestone}")
+    print(f"start: scripts/tron.py run --milestone {args.milestone} --detach")
     return 0
 
 
@@ -2724,6 +2783,8 @@ def main(argv=None):
     r.add_argument("--config", help="config file (default: docs/agent/stem-config.json)")
     r.add_argument("--root", default=".", help="project root (default: current directory)")
     r.add_argument("--accept-damage", action="store_true", help="resume a run that stopped for gate damage (the damage stays on the run branch)")
+    r.add_argument("--detach", action="store_true", help="start the run as its own process (log docs/agent/tron/run-<id>.log) and wait for it; "
+                   "ending this command or the session that started it does not end the run")
     c = sub.add_parser("check", help="readiness check for a milestone: lists what blocks an unattended run, starts nothing")
     c.add_argument("--milestone", required=True, help="milestone id, e.g. m-4")
     c.add_argument("--config", help="config file (default: docs/agent/stem-config.json)")

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Fixture tests for scripts/tron.py (STEM maintenance only; run by stem-check.py or directly).
 A fake `backlog` CLI and a fake agent command stand in for the real ones; nothing calls a model."""
-import json, os, pathlib, re, shutil, subprocess, sys, tempfile, unittest
+import json, os, pathlib, re, shutil, subprocess, sys, tempfile, time, unittest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent.parent
 TRON = ROOT / "scripts/tron.py"
@@ -611,6 +611,65 @@ class Tron(unittest.TestCase):
         self.assertEqual([c["task"] for c in self.calls()], ["TASK-1", "TASK-2", "TASK-2", "TASK-3"])
         j = self.journal(); self.assertTrue(j["complete"]); self.assertIn("stash", j["recovered"][0])
         self.assertTrue(all(v["state"] == "accepted" for v in j["tasks"].values()))
+
+    def crash_then_repair(self, stop_record):
+        """Runner dies inside TASK-2; the user then commits a hook repair on the run branch (automations field report)."""
+        self.behavior({"TASK-2": ["crash", "ok"]})
+        self.tron("run", "--milestone", "m-1", "--run-id", "r1")
+        j = self.journal(); ip = j["in_progress"]
+        if stop_record:  # what fin() records at a clean stop (B: a runner error ends the run like a stop)
+            j["stop_head"] = {"commit": git(self.proj, "rev-parse", "HEAD").stdout.strip(), "ip_base": ip["base"]}
+            (self.proj / "docs/agent/tron/run-r1.json").write_text(json.dumps(j))
+        (self.proj / "scripts/githooks").mkdir(exist_ok=True); (self.proj / "scripts/githooks/commit-msg").write_text("# repaired\n")
+        git(self.proj, "add", "-A", "scripts"); git(self.proj, "commit", "-qm", "repair hook")
+        return self.tron("run", "--milestone", "m-1", "--run-id", "r1")
+
+    def test_resume_moves_the_task_base_past_repairs_made_after_the_stop(self):
+        """TASK-366: repair commits after a recorded stop are not the in-progress task's work."""
+        r = self.crash_then_repair(stop_record=True)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr); self.assertIn("moved past 1 repair commit", r.stdout)
+        j = self.journal()
+        self.assertNotIn("aborted", j); self.assertEqual(j["tasks"]["TASK-2"]["state"], "accepted")
+        self.assertEqual(j["recovered"][0]["base_moved"]["repair_commits"], 1)
+
+    def test_resume_without_a_stop_record_keeps_the_base(self):
+        """A killed runner recorded no stop: commits since the base may be the task's own, so the gate still sees them."""
+        r = self.crash_then_repair(stop_record=False)
+        self.assertEqual(r.returncode, 4, r.stdout + r.stderr); self.assertIn("protected", self.journal()["aborted"])
+
+    def test_detach_runs_in_its_own_session_and_waits(self):
+        """TASK-366: --detach starts the run as its own process session with a log; the waiter returns its exit code."""
+        wrap = self.bin / "wrap"
+        wrap.write_text("#!/usr/bin/env python3\nimport os, sys\nopen(os.environ['TRON_TEST_DIR'] + '/sid.log', 'a').write(str(os.getsid(0)) + '\\n')\n"
+                        f"os.execv({str(self.bin / 'agent')!r}, [{str(self.bin / 'agent')!r}] + sys.argv[1:])\n"); wrap.chmod(0o755)
+        self.config({"worker_cmd": [str(wrap), "{task_id}", "{session_id}", "{prompt}"]})
+        r = self.tron("run", "--milestone", "m-1", "--run-id", "r1", "--detach")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("started as its own process", r.stdout)
+        log = (self.proj / "docs/agent/tron/run-r1.log").read_text()
+        self.assertIn("run r1 on branch tron/m-1", log)
+        self.assertTrue(self.journal()["complete"])
+        sids = set((self.td / "sid.log").read_text().split())
+        self.assertNotIn(str(os.getsid(0)), sids)  # not in the starter's session: ending it does not end the run
+
+    def test_pre_commit_refuses_commits_on_the_run_branch_while_a_run_holds_the_lock(self):
+        hooks = self.proj / "scripts/githooks"; hooks.mkdir(exist_ok=True)
+        shutil.copy(ROOT / "scripts/githooks/pre-commit", hooks / "pre-commit")
+        git(self.proj, "checkout", "-q", "-b", "tron/m-1")
+        lock = self.proj / "docs/agent/tron/LOCK"; lock.parent.mkdir(parents=True, exist_ok=True)
+        (self.proj / ".gitignore").write_text("docs/agent/tron/LOCK\n")
+        env = dict(os.environ, **GIT_ENV); env.pop("STEM_TRON_RUN", None)
+        def commit(**extra):
+            (self.proj / "f.txt").write_text(str(time.time()))
+            subprocess.run(["git", "add", "-A"], cwd=self.proj, env=env)
+            return subprocess.run(["git", "-c", "core.hooksPath=scripts/githooks", "commit", "-qm", "x"], cwd=self.proj, env=dict(env, **extra), capture_output=True, text=True)
+        lock.write_text(str(os.getpid()))
+        r = commit(); self.assertEqual(r.returncode, 1); self.assertIn("unattended run", r.stderr)
+        self.assertEqual(commit(STEM_TRON_RUN="r1").returncode, 0)  # the run and its sessions
+        dead = subprocess.Popen(["true"]); dead.wait(); lock.write_text(str(dead.pid))
+        self.assertEqual(commit().returncode, 0)  # stale lock
+        lock.write_text(str(os.getpid())); git(self.proj, "checkout", "-q", "main")
+        self.assertEqual(commit().returncode, 0)  # other branches are not the run's
 
     def test_session_timeout_kills_hanging_session(self):
         self.config({"session_timeout": 1})
