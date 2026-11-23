@@ -2,7 +2,7 @@
 
 <img src="docs/assets/stem-header.jpg" alt="STEM" width="960">
 
-**An Agile Agentic Coding Harness**
+**An Agile Agentic Coding Process Harness Layer**
 
 **Version 1.20.1** · ![License](https://img.shields.io/badge/license-MIT-green) ![Claude Code](https://img.shields.io/badge/Claude%20Code-getestet-green) ![Codex](https://img.shields.io/badge/Codex-getestet-green)
 
@@ -10,7 +10,7 @@
 
 </div>
 
-STEM ist ein Template-Harness, mit dem du dein Projekt schnell startest. Es setzt auf dem Coding-Agenten auf, den du schon nutzt (am besten Claude Code), und braucht nur ein Modell wie Sonnet mit mittlerem Denkaufwand, du musst also kein Geld für die teuersten Modelle ausgeben.
+STEM ist ein Template auf der Prozessebene des Harness, mit dem du dein Projekt schnell startest: mit Alignment, Vision, dem Herunterbrechen der Vision in kleine Schritte und dem Lernen aus deinem bisherigen Prozess. Es setzt auf dem Coding-Agenten auf, den du schon nutzt (am besten Claude Code), und braucht nur ein mittleres Modell wie Sonnet mit mittlerem Denkaufwand, weil die Aufgaben klein geschnitten werden. Dazu bringt STEM einige Werkzeuge mit, die diesen Prozess unterstützen. Kopiere es als Template (oder entpacke es in deinen neuen Projektordner), um dein agiles Projekt zu starten.
 
 ## Warum STEM
 

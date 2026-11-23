@@ -1,6 +1,6 @@
 # Starte hier
 
-*STEM – An Agile Agentic Coding Harness*
+*STEM – An Agile Agentic Coding Process Harness Layer*
 
 **Version 1.20.1** · 🇬🇧 **English version: [START_HERE.md](START_HERE.md)**
 
