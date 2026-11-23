@@ -446,7 +446,7 @@ class Tron(unittest.TestCase):
         (d / "SWEEP-m-1.md").write_text("# Sweep: m-1\n## Questions\n- [x] Q1 (TASK-1) Who fixes the red baseline? a) a task b) an extra\n"
                                         "  Answer: c) the baseline repair session, sort unique_words too\n- [ ] Q2 (TASK-2) Open one?\n"
                                         "- [x] Q3 (TASK-3) Ticked without answer\n\n## Draft acceptance scenario\n1. x\n")
-        subprocess.run(["git", "add", "-A"], cwd=self.proj, check=True); subprocess.run(["git", "commit", "-qm", "sweep"], cwd=self.proj, check=True)
+        git(self.proj, "add", "-A"); git(self.proj, "commit", "-qm", "sweep")
         self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
         p = [c for c in self.calls() if c["task"] == "baseline"][0]["prompt"]
         self.assertIn("commit the fix", p); self.assertIn("clean working tree", p)
