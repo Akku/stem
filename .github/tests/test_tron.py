@@ -454,6 +454,17 @@ class Tron(unittest.TestCase):
         self.assertIn("Answer: c) the baseline repair session, sort unique_words too", p)
         self.assertNotIn("Open one?", p); self.assertNotIn("Ticked without answer", p); self.assertNotIn("Draft acceptance", p)
 
+    def test_worker_prompt_carries_the_tasks_pre_decided_assumptions(self):  # TASK-369
+        d = self.proj / "docs/agent/tron"; d.mkdir(parents=True, exist_ok=True)
+        (d / "SWEEP-m-1.md").write_text("# Sweep: m-1\n## Questions\n- none\n## Pre-decided assumptions\n"
+                                        "- A1 (TASK-1) reuse the existing parser (basis: frame: reuse of existing code)\n"
+                                        "- A2 (TASK-2) keep the old field (basis: frame: additive data change)\n")
+        git(self.proj, "add", "-A"); git(self.proj, "commit", "-qm", "sweep")
+        self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
+        p = [c for c in self.calls() if c["task"] == "TASK-1"][0]["prompt"]
+        self.assertIn("- A1: reuse the existing parser (basis: frame: reuse of existing code)", p)
+        self.assertIn("Assumption:", p); self.assertNotIn("keep the old field", p)
+
     def test_configured_baseline_prompt_keeps_the_duties(self):
         sys.path.insert(0, str(ROOT / "scripts"))
         import tron
@@ -1712,6 +1723,30 @@ class Check(unittest.TestCase):
         self.sweep("# Sweep: m-9\n## Questions\n- none\n## Needs the user\n- [ ] N1 (TASK-1 AC#1) real data: needs the live feed\n")
         f = next((self.proj / "backlog/tasks").glob("task-1 - *.md")); f.write_text(re.sub(r"(?m)^status: .*$", "status: Done", f.read_text()))
         self.commit(); r = self.check(); self.assertNotIn("needs real data", r.stdout)
+
+    def test_pre_decided_assumptions_do_not_block_the_check_but_questions_do(self):  # TASK-369
+        r = self.sweep("# Sweep: m-9\n## Questions\n- [ ] Q1 (TASK-1) Who may edit? a) owner b) all Recommendation: a because safe\n"
+                       "## Pre-decided assumptions\n- A1 (TASK-1) do TASK-1 before TASK-2 (basis: frame: order of tasks)\n"
+                       "- A2 (TASK-1) reuse src/x.js (basis: frame: reuse of existing code)\n## Draft acceptance scenario\nrun it\n")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr); self.assertIn("2 pre-decided assumption(s)", r.stdout)
+        sys.path.insert(0, str(ROOT / "scripts")); import tron
+        f = self.proj / "docs/agent/tron/SWEEP-m-9.md"
+        self.assertEqual([a[0] for a in tron.sweep_predecided(f.read_text())], ["A1", "A2"])
+        brief = (self.proj / "docs/agent/tron/brief-sweep-m-9.md").read_text(); self.assertIn("## Pre-decided assumptions", brief)
+        self.commit(); self.fails_with("1 unanswered question")
+        f.write_text(f.read_text().replace("- [ ] Q1", "- [x] Q1").replace("Recommendation: a because safe", "Recommendation: a because safe\n  Answer: a"))
+        self.commit(); r = self.check(); self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
+    def test_sweep_rejects_malformed_pre_decided_line(self):  # TASK-369
+        r = self.sweep("# Sweep: m-9\n## Questions\n- none\n## Pre-decided assumptions\n- A1 (TASK-1) reuse it\n")
+        self.assertEqual(r.returncode, 2, r.stdout); self.assertIn("malformed", r.stderr)
+        r = self.sweep("# Sweep: m-9\n## Questions\n- none\n## Pre-decided assumptions\n- none\n")
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_planner_sorts_pre_decided_assumptions_from_questions(self):  # TASK-369
+        text = (ROOT / ".claude/agents/planner.md").read_text()
+        for needle in ("## Pre-decided assumptions", "(basis: frame:", "labelled `waiting`", "reuse of existing code", "permissions or ownership"):
+            self.assertIn(needle, text)
 
     def test_sweep_rejects_malformed_needs_user_line(self):
         r = self.sweep("# Sweep: m-9\n## Questions\n- none\n## Needs the user\n- [ ] N1 TASK-1: user must like it\n")

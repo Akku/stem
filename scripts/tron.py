@@ -215,7 +215,10 @@ def kill_group(proc):
 def run_session(root, tron, role, task_id, run_id, milestone, prompt=None):
     """Start one agent process for one task and return its journal entry."""
     session_id = str(uuid.uuid4())
-    prompt = prompt or tron.get("prompt", DEFAULT_PROMPT).replace("{task_id}", task_id)
+    if not prompt:
+        prompt = tron.get("prompt", DEFAULT_PROMPT).replace("{task_id}", task_id)
+        if role == "worker" and re.fullmatch(r"TASK-\d+", task_id) and SWEEP_ID.fullmatch(milestone or ""):
+            prompt += predecided_prompt(root, milestone, task_id)
     cmd = fill(command_for(tron, role), {"prompt": prompt, "session_id": session_id, "task_id": task_id,
                                          "run_id": run_id, "milestone": milestone})
     env = dict(os.environ, STEM_TRON="1", STEM_TRON_RUN=run_id, STEM_TRON_TASK=task_id, STEM_TRON_ROLE=role)
@@ -1789,6 +1792,27 @@ SWEEP_ID = re.compile(r"[\w.-]+")
 SWEEP_N = re.compile(r"^\s*-\s*\[(.)\]\s*(N\d+)\s*\((TASK-\d+) AC#(\d+)\)\s*(judgement|real data|interface)\b", re.M)
 NEEDS_USER = "## Needs the user"
 NEEDS_KIND = {"judgement": "the user's judgement", "real data": "real data", "interface": "an interface decision"}
+# TASK-369: a reversible decision the frame covers is no question; the planner states it as a pre-decided assumption the user may veto
+PREDECIDED = "## Pre-decided assumptions"
+SWEEP_A = re.compile(r"^\s*-\s*(A\d+)\s*\((TASK-\d+)\)\s*(.+?)\s*\(basis:\s*(frame:[^)]*\S)\s*\)\s*$", re.M)
+
+
+def sweep_predecided(text, task_id=None):
+    """Pre-decided assumptions of a sweep: (id, task, decision, basis), optionally of one task only."""
+    sec = re.search(rf"^{PREDECIDED}\s*$(.*?)(?=^## |\Z)", text, re.M | re.S)
+    out = [(m.group(1), m.group(2), m.group(3), m.group(4)) for m in SWEEP_A.finditer(sec.group(1))] if sec else []
+    return [a for a in out if task_id is None or a[1] == task_id]
+
+
+def predecided_prompt(root, milestone, task_id):
+    """Worker prompt addition: the pre-decided assumptions of this task the user did not veto (SWEEP file)."""
+    sw = root / f"docs/agent/tron/SWEEP-{milestone}.md"
+    pre = sweep_predecided(sw.read_text(), task_id) if sw.is_file() else []
+    if not pre:
+        return ""
+    return ("\n\nPre-decided before the run (docs/agent/tron/" + sw.name + ", the user did not veto them): follow them and record each "
+            "in the task notes as 'Assumption: <decision> (basis: sweep <id>, <frame basis>)'.\n"
+            + "\n".join(f"- {i}: {d} (basis: {b})" for i, _, d, b in pre))
 
 
 def sweep_needs_user(text):
@@ -1845,7 +1869,9 @@ SWEEP_NOT_QUESTIONS = ("## Not questions",
                        "- A red or flaky baseline: the runner starts a baseline repair session on its own before the next task; do not ask about it.",
                        "- Anything a precedent below answers: do not ask it; name the precedent (e.g. P-1) in the draft acceptance scenario instead.",
                        f"- An AC that needs the user's judgement, real data or an interface decision is no question either: list it under '{NEEDS_USER}' "
-                       "(the run cannot meet it alone; it is split out before the run).")
+                       "(the run cannot meet it alone; it is split out before the run).",
+                       f"- A reversible decision the decision frame covers (task order and dependencies, reuse of existing code, splitting a large task, "
+                       f"skipping 'waiting' tasks, additive data changes) is no question: list it under '{PREDECIDED}' with its frame basis.")
 
 
 def sweep_brief(root, milestone):
@@ -1903,8 +1929,16 @@ def cmd_sweep(args):
     bad = [l for l in (nu.group(1).splitlines() if nu else []) if re.match(r"\s*[-*]\s*(\[|N\d)", l) and not SWEEP_N.match(l)]
     if bad:
         raise TronError(f"sweep has malformed '{NEEDS_USER}' lines (must be '- [ ] N<n> (TASK-n AC#k) judgement|real data|interface: ...'); bad: {bad[:2]}")
+    pa = re.search(rf"^{PREDECIDED}\s*$(.*?)(?=^## |\Z)", body, re.M | re.S)
+    bad = [l for l in (pa.group(1).splitlines() if pa else []) if re.match(r"\s*[-*]\s*\S", l) and not re.match(r"\s*[-*]\s*none\s*$", l)
+           and not SWEEP_A.match(l)]
+    if bad:
+        raise TronError(f"sweep has malformed '{PREDECIDED}' lines (must be '- A<n> (TASK-n) <decision> (basis: frame: ...)'); bad: {bad[:2]}")
     out.write_text(body + "\n")
     n = sweep_open(body)
+    pre = sweep_predecided(body)
+    if pre:
+        print(f"{len(pre)} pre-decided assumption(s) (A1..A{len(pre)}): show them to the user as one list to veto by number")
     flagged = sweep_needs_user(body)
     if flagged:
         print(f"{len(flagged)} AC(s) need the user ({', '.join(f'{t} AC#{a} {k}' for _, t, a, k, _ in flagged)}): split them out of the milestone before the run")

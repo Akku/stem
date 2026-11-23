@@ -7,7 +7,11 @@ Default list; setup and each milestone approval adjust it. The runner and the ag
 - Choice between equal options when either is easy to reverse.
 - Wording of text, messages and comments.
 - Test data and fixtures; helper code the task needs.
-- Order of independent tasks.
+- Order of independent tasks, and an order that follows a dependency between tasks.
+- Reuse of existing code instead of a second version.
+- Splitting a task that is too large into smaller tasks inside the milestone (the ACs stay).
+- Skipping tasks labelled `waiting` and tasks that wait for one.
+- Additive data changes that delete and rewrite nothing (a new field, the old one kept).
 
 ## Must come back (draft question, task Blocked)
 - Scope change: a task needs more or other than its acceptance criteria say.
