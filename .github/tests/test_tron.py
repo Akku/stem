@@ -1752,6 +1752,12 @@ class Check(unittest.TestCase):
         r = self.sweep("# Sweep: m-9\n## Questions\n- none\n## Needs the user\n- [ ] N1 TASK-1: user must like it\n")
         self.assertEqual(r.returncode, 2, r.stdout); self.assertIn("malformed", r.stderr)
 
+    def test_skill_asks_setup_once_and_budget_with_the_go(self):  # TASK-370
+        text = (ROOT / ".claude/skills/tron/SKILL.md").read_text()
+        self.assertIn("ONE numbered message", text); self.assertNotIn("one question at a time", text)
+        self.assertIn("ask ONE question that is both budget and go", text); self.assertIn("no second confirmation", text)
+        self.assertIn("never applied by default", text); self.assertIn("Bash(python3 scripts/tron.py:*)", text)
+
     def test_planner_lists_acs_that_need_the_user(self):  # TASK-367
         text = (ROOT / ".claude/agents/planner.md").read_text()
         self.assertIn("## Needs the user", text); self.assertIn("real data", text); self.assertIn("interface", text)
