@@ -6,10 +6,11 @@
 One fresh agent process per task, started from a command template in docs/agent/stem-config.json (key "tron").
 The runner works on the branch tron/<milestone>, writes a journal docs/agent/tron/run-<id>.json and never
 publishes anything: it does not push, tag or merge. State lives in git and the backlog.
-Config example (spike TASK-265: inside the sandbox only; Bash is allowed in full there, the container is the boundary):
+Recommended setup (TASK-372): run inside the STEM sandbox (scripts/sandbox.sh) with --permission-mode bypassPermissions, so no
+permission prompt can arise and the container is the boundary. Never a narrow --allowedTools list or dontAsk: their denials and
+prompts stop an unattended run that nobody answers. Config example:
   {"tron": {"worker_cmd": ["claude", "-p", "{prompt}", "--session-id", "{session_id}", "--output-format", "json",
-            "--max-budget-usd", "2", "--max-turns", "40", "--permission-mode", "dontAsk",
-            "--allowedTools", "Bash", "Read", "Edit", "Write", "Glob", "Grep"],
+            "--max-budget-usd", "2", "--max-turns", "40", "--permission-mode", "bypassPermissions"],
             "worker_model": "optional name when the output does not report one"}}
 Placeholders: {prompt} {session_id} {task_id} {run_id} {milestone}. Roles: worker, evaluator, doctor, planner, retro
 (key <role>_cmd; a missing one falls back to worker_cmd).
@@ -21,8 +22,8 @@ import transcripts
 ROLES = ("worker", "evaluator", "doctor", "planner", "retro", "applier")
 DEFAULT_PROMPT = ("Work on backlog task {task_id} following AGENTS.md. This is an unattended Tron mode session "
                   "(STEM_TRON=1): read R-TRON first and follow it; nobody answers questions. Work on this one task only. "
-                  "Bash is limited to an allowlist: run one command per call, never chained with &&, ;, | or a subshell; "
-                  "a denied call means that command form is not allowed, not that Bash is banned: split it or use another listed command.")
+                  "If a tool call is denied (a project that still limits Bash to an allowlist), that command form is not allowed, not Bash as a whole: "
+                  "run one command per call, never chained with &&, ;, | or a subshell, or use another command.")
 JOURNAL_DIR = pathlib.Path("docs/agent/tron")
 # files a session must not change (tier 3 of the retro changes, R-TRON): the gate itself, the config, the decision frame, the invariants,
 # the judging and diagnosing agents, security and deny rules
@@ -2791,6 +2792,27 @@ def cmd_calibrate(args):
     return 0
 
 
+# TASK-372 (user decision 2026-11-23): the recommended permission setup of a run; never a narrow allowlist or dontAsk
+RECOMMENDED_SETUP = ("run inside the STEM sandbox (scripts/sandbox.sh) with '--permission-mode bypassPermissions' in tron.worker_cmd "
+                     "(no permission prompt can arise; the container is the boundary)")
+
+
+def permission_strict(cmd):
+    """The strict part of a role command (narrow --allowedTools list or dontAsk), or ''."""
+    cmd = [str(x) for x in cmd or []]
+    hits = [x for x in ("--allowedTools", "--allowed-tools") if x in cmd]
+    for i, x in enumerate(cmd[:-1]):
+        if x == "--permission-mode" and cmd[i + 1] == "dontAsk":
+            hits.append("--permission-mode dontAsk")
+    return ", ".join(hits)
+
+
+def permission_bypassed(cmd):
+    cmd = [str(x) for x in cmd or []]
+    return "--dangerously-skip-permissions" in cmd or any(x == "--permission-mode" and cmd[i + 1] == "bypassPermissions"
+                                                          for i, x in enumerate(cmd[:-1]))
+
+
 def check_milestone(root, milestone, cfg_path=None):
     """Readiness check (doc-12 3.1): returns (failures, warnings, tron config or None). Deterministic, starts nothing."""
     fails, warns = [], []
@@ -2856,9 +2878,14 @@ def check_milestone(root, milestone, cfg_path=None):
         fails.append(f"working tree is not clean ({len(dirty)} change(s), first: {dirty[0].strip()[:80]})")
     wc = tron.get("worker_cmd") if cmdok(tron.get("worker_cmd")) else []
     sandbox = os.path.exists("/.dockerenv") or os.environ.get("IS_SANDBOX") == "1" or bool(os.environ.get("STEM_SANDBOX"))
-    allow = any(a in ("--allowedTools", "--allowed-tools") for a in wc)
-    if not (sandbox or allow):
-        fails.append("neither a sandbox nor a permission allowlist is detected (run inside the STEM sandbox, or put --allowedTools in tron.worker_cmd)")
+    strict = permission_strict(wc)
+    if not (sandbox or strict):
+        fails.append(f"no sandbox detected: {RECOMMENDED_SETUP}")
+    if strict:
+        warns.append(f"tron.worker_cmd uses a strict permission setup ({strict}): denials and prompts stop an unattended run "
+                     f"that nobody answers; recommended instead: {RECOMMENDED_SETUP}")
+    elif sandbox and wc and not permission_bypassed(wc):
+        warns.append(f"tron.worker_cmd does not bypass permission prompts: a prompt would hang the run; recommended: {RECOMMENDED_SETUP}")
     if os.environ.get("CLAUDE_CODE_EFFORT_LEVEL"):
         warns.append("CLAUDE_CODE_EFFORT_LEVEL is set and beats --effort in the role commands")
     if not cmdok(tron.get("doctor_cmd")):

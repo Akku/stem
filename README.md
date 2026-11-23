@@ -91,7 +91,7 @@ scripts/sandbox.sh start myproject    # resume later; also: stop, export, reset,
 
 ## Optional: Tron mode (one milestone, built unattended)
 
-For an approved milestone you can let agent sessions work without you, in three phases. **Before:** the `tron` skill prepares the run with you (decision frame, invariants, acceptance scenario, budget) and `python3 scripts/tron.py check --milestone <id>` lists what is still missing. **During:** `scripts/tron.py run` works task by task on its own branch, checks each result with a gate and an independent evaluator, stops at your limits and never pushes, tags or merges. **After:** you read the report in `docs/agent/tron/`, answer the questions of blocked tasks and merge yourself. A run costs real money; run it in the sandbox. Chosen in setup (module table), off by default for small projects.
+For an approved milestone you can let agent sessions work without you, in three phases. **Before:** the `tron` skill prepares the run with you (decision frame, invariants, acceptance scenario, budget) and `python3 scripts/tron.py check --milestone <id>` lists what is still missing. **During:** `scripts/tron.py run` works task by task on its own branch, checks each result with a gate and an independent evaluator, stops at your limits and never pushes, tags or merges. **After:** you read the report in `docs/agent/tron/`, answer the questions of blocked tasks and merge yourself. A run costs real money; run it in the sandbox with `--permission-mode bypassPermissions` (no permission prompt can stop the run; never a narrow tool allowlist). Chosen in setup (module table), off by default for small projects.
 
 ## Staying up to date
 

@@ -1314,8 +1314,9 @@ class Tron(unittest.TestCase):
         sys.path.insert(0, str(ROOT / "scripts"))
         import tron
         p = tron.DEFAULT_PROMPT
-        for part in ("one command per call", "&&", "not that Bash is banned"):
+        for part in ("one command per call", "&&", "not Bash as a whole"):
             self.assertIn(part, p)
+        self.assertNotIn("Bash is limited to an allowlist:", p)  # TASK-372: describes, never presumes, an allowlist
 
     def test_runner_never_publishes(self):
         src = TRON.read_text()
@@ -1667,8 +1668,30 @@ class Check(unittest.TestCase):
     def test_no_sandbox_no_allowlist(self):
         if os.path.exists("/.dockerenv"):
             self.skipTest("host is a container")
-        self.cfg(worker_cmd=["claude"]); self.commit(); self.fails_with("neither a sandbox nor a permission allowlist")
+        self.cfg(worker_cmd=["claude"]); self.commit(); self.fails_with("no sandbox detected: run inside the STEM sandbox")
         r = self.check(env={"IS_SANDBOX": "1"}); self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("does not bypass permission prompts", r.stdout)
+
+    def test_strict_allowlist_warns_and_sandbox_bypass_is_the_recommended_setup(self):  # TASK-372
+        if os.path.exists("/.dockerenv"):
+            self.skipTest("host is a container")
+        for strict in (["claude", "--allowedTools", "Bash"], ["claude", "--permission-mode", "dontAsk"]):
+            self.cfg(worker_cmd=strict); self.commit()
+            r = self.check(env={"IS_SANDBOX": "1"}); self.assertEqual(r.returncode, 0, r.stdout)  # a warning, never a failure
+            self.assertIn("strict permission setup", r.stdout); self.assertIn("--permission-mode bypassPermissions", r.stdout)
+        self.cfg(worker_cmd=["claude", "-p", "{prompt}", "--permission-mode", "bypassPermissions"]); self.commit()
+        r = self.check(env={"IS_SANDBOX": "1"}); self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertNotIn("strict permission setup", r.stdout); self.assertNotIn("bypass permission prompts", r.stdout)
+        r = self.check(); self.assertEqual(r.returncode, 1); self.assertIn("no sandbox detected", r.stdout)  # bypass needs the sandbox
+
+    def test_no_product_text_recommends_a_strict_permission_setup(self):  # TASK-372
+        sys.path.insert(0, str(ROOT / "scripts")); import tron
+        example = tron.__doc__.split("Config example:")[1]
+        self.assertIn("bypassPermissions", example); self.assertNotIn("dontAsk", example); self.assertNotIn("--allowedTools", example)
+        for f in (".claude/skills/tron/SKILL.md", "README.md", "docs/agent/TRON.md", "docs/agent/modules/tron/MODULE.md"):
+            text = (ROOT / f).read_text()
+            self.assertNotRegex(text, r"(?i)(recommend|use|put)[^.]{0,40}(--allowedTools|dontAsk)", f)
+        self.assertIn("--permission-mode bypassPermissions", (ROOT / ".claude/skills/tron/SKILL.md").read_text())
 
     def test_no_smoke_command(self):
         self.cfg(smoke_cmd=None); self.commit(); self.fails_with("start-and-smoke")
