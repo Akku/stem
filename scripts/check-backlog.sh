@@ -2,7 +2,7 @@
 # Reports backlog inconsistencies: Done tasks with unchecked acceptance/DoD boxes, Done tasks whose dependencies are not Done, decision records (ADR) without the required sections or status.
 # Usage: scripts/check-backlog.sh [task-file ...]   (default: all tasks). Exit 1 when something is found.
 set -u
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." || exit 1
 files=("$@"); [ ${#files[@]} -gt 0 ] || files=(backlog/tasks/*.md)
 status_of() { awk -F': ' '/^status:/{print $2; exit}' "$1"; }
 bad=0
