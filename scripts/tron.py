@@ -170,6 +170,30 @@ def transcript_path(cwd, session_id, home=None):
     return home / ".claude/projects" / transcripts.slug(cwd) / f"{session_id}.jsonl"
 
 
+# TASK-378: the texts Claude Code puts into an error tool_result when a permission rule, a mode or the user refused the call
+DENIED_RE = re.compile(r"Permission to use .+? (?:has been )?denied|requested permissions to use .+?haven't granted it|doesn't want to proceed with this tool use", re.S)
+
+
+def count_denials(path):
+    """Denied tool calls in one session transcript (JSONL); None when the transcript is missing or unreadable."""
+    try:
+        lines = pathlib.Path(path).read_text(errors="replace").splitlines()
+    except OSError:
+        return None
+    n = 0
+    for line in lines:
+        try:
+            content = (json.loads(line).get("message") or {}).get("content")
+        except (ValueError, AttributeError):
+            continue
+        for b in content if isinstance(content, list) else []:
+            if isinstance(b, dict) and b.get("type") == "tool_result" and b.get("is_error"):
+                t = b.get("content")
+                t = t if isinstance(t, str) else " ".join(x.get("text", "") for x in t or [] if isinstance(x, dict))
+                n += bool(DENIED_RE.search(t[:3000]))
+    return n
+
+
 def parse_output(text):
     """Cost, session id and model from an agent's JSON output (claude --output-format json); empty when not JSON."""
     try:
@@ -257,6 +281,7 @@ def run_session(root, tron, role, task_id, run_id, milestone, prompt=None):
     tp = transcript_path(root, entry["session_id"])
     entry["transcript"] = str(tp)
     entry["transcript_exists"] = tp.is_file()
+    entry["denied"] = count_denials(tp) if entry["transcript_exists"] else None
     return entry
 
 
@@ -706,7 +731,7 @@ def evaluate(root, tron, journal, jpath, target, base, g, task_ids, intent, abor
                    "scenario": "the evaluator gave no parseable verdict (final json block missing); treated as fail"}]}
     n = sum(1 for f in (root / JOURNAL_DIR).glob(f"verdict-{journal['run_id']}-{target}-*.json")) + 1
     vpath = root / JOURNAL_DIR / f"verdict-{journal['run_id']}-{target}-{n}.json"
-    vpath.write_text(json.dumps(dict(verdict, target=target, at=now(), tail=(text or "")[-2000:]), indent=1) + "\n")
+    vpath.write_text(json.dumps(dict(verdict, target=target, at=now(), denied=entry.get("denied"), tail=(text or "")[-2000:]), indent=1) + "\n")
     entry["evaluator"]["file"] = str(vpath.relative_to(root))
     write_risk_drafts(root, target, verdict.get("risks") or [], journal)
     write_journal(jpath, journal)
@@ -1333,7 +1358,8 @@ def build_report(root, journal, tron):
             v = json.loads(vf.read_text())
         except ValueError:
             continue
-        out.append(f"- {v.get('target')}: {v.get('verdict')} ({len(v.get('findings', []))} finding(s)) [{vf.name}]")
+        restricted = f"; restricted check: {v['denied']} denied tool call(s), the verdict may rest on reading only" if v.get("denied") else ""
+        out.append(f"- {v.get('target')}: {v.get('verdict')} ({len(v.get('findings', []))} finding(s){restricted}) [{vf.name}]")
         for fi in v.get("findings", []):
             out.append(f"  - {fi.get('ac', '-')} at {fi.get('location', '?')}: {fi.get('scenario', '')}")
         for a in v.get("assumption_flags", []):
@@ -1379,11 +1405,16 @@ def build_report(root, journal, tron):
         ss = [s for s in sess if s["task"] == i and (s["role"] != "evaluator" or i == "milestone")]
         c, pt = cost_of(ss) if ss else (None, False)
         out.append(f"| {i} | {len(ss)} | {tasks.get(i, {}).get('repairs', '-')} | {money(c, pt)} |")
-    out += ["", "| Role | Sessions | Cost | Models |", "| --- | --- | --- | --- |"]
+    out += ["", "| Role | Sessions | Cost | Models | Denied tool calls |", "| --- | --- | --- | --- | --- |"]
     for role in sorted({s["role"] for s in sess}):
         ss = [s for s in sess if s["role"] == role]
         c, pt = cost_of(ss)
-        out.append(f"| {role} | {len(ss)} | {money(c, pt)} | {', '.join(sorted({s.get('model') or 'unknown' for s in ss}))} |")
+        dn = [s["denied"] for s in ss if s.get("denied") is not None]  # TASK-378: None = no transcript (or a journal before TASK-378)
+        dn = "unknown" if not dn else f"{sum(dn)}" + (" (at least)" if len(dn) < len(ss) else "")
+        out.append(f"| {role} | {len(ss)} | {money(c, pt)} | {', '.join(sorted({s.get('model') or 'unknown' for s in ss}))} | {dn} |")
+    dsess = [s for s in sess if s.get("denied")]
+    out += ["", "Sessions with denied tool calls (the permission setup blocked them; recommended: " + RECOMMENDED_SETUP + "): "
+            + "; ".join(f"{s['task']} {s['role']}: {s['denied']} ({s.get('transcript', 'no transcript')})" for s in dsess)] if dsess else []
     n_acc, n_blk = len(acc), len(blk)
     # a repair answers a failed gate or evaluator verdict (task or milestone); journals before TASK-304 lack "repair" on milestone sessions
     repair_sessions = sum(1 for s in sess if s["role"] == "worker" and (s.get("repair") or s["task"] == "milestone"))

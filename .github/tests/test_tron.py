@@ -167,6 +167,14 @@ plan = json.load(open(td + "/evaluator.json")).get(target, ["pass"])
 v = plan[min(n, len(plan)) - 1]
 brief = re.search(r"brief is (\\S+)\\.", prompt).group(1)
 open(td + "/brief_copy.txt", "a").write(open(brief).read())
+if v == "pass_denied":  # TASK-378: a transcript with two denied tool calls and one ordinary error
+    tp = os.path.join(os.environ["HOME"], ".claude/projects", re.sub(r"[^A-Za-z0-9]", "-", os.getcwd()), sid + ".jsonl")
+    os.makedirs(os.path.dirname(tp), exist_ok=True)
+    r = lambda t, e=True: json.dumps({"type": "user", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "x", "is_error": e, "content": t}]}})
+    open(tp, "w").write("\\n".join([r("Permission to use Bash has been denied because Claude Code is running in don't ask mode."),
+        r("Permission to use Bash with command npm test\\nnpm run e2e has been denied."), r("Exit code 1\\nstatus: FAIL"),
+        r("Permission to use Bash has been denied", False), "not json"]) + "\\n")
+    v = "pass"
 if v == "write":
     open("evaluator_wrote.txt", "w").write("x")
 if v == "write_tracked":
@@ -1349,11 +1357,37 @@ class Tron(unittest.TestCase):
         self.sample_journal()
         self.tron("report", "--run-id", "s1")
         rep = (self.proj / "docs/agent/tron/REPORT-s1.md").read_text()
-        self.assertIn("| evaluator | 1 | unknown | opus |", rep)
-        self.assertIn("| worker | 3 | 0.90 USD | sonnet |", rep)
+        self.assertIn("| evaluator | 1 | unknown | opus | unknown |", rep)
+        self.assertIn("| worker | 3 | 0.90 USD | sonnet | unknown |", rep)
         self.assertIn("Total cost: at least 0.90 USD", rep)
         self.assertIn("Cost per accepted task: at least 0.90 USD", rep)
         self.assertIn("Blocked rate: 1 of 2", rep); self.assertIn("Repair rate: 1 repair session(s) in 3 worker session(s)", rep)
+
+    def test_denied_tool_calls_go_into_the_journal_and_mark_the_verdict_restricted(self):  # TASK-378
+        self.with_evaluator("task")
+        self.evaluator_plan({"TASK-1": ["pass_denied"]})
+        r = self.tron("run", "--milestone", "m-1", "--max-tasks", "1", "--run-id", "d1")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        ss = self.journal()["sessions"]
+        ev = [s for s in ss if s["role"] == "evaluator"][0]
+        self.assertEqual((ev["transcript_exists"], ev["denied"]), (True, 2))
+        self.assertIsNone([s for s in ss if s["role"] == "worker"][0]["denied"])  # no transcript: unknown, never 0
+        self.tron("report", "--run-id", "d1")
+        rep = (self.proj / "docs/agent/tron/REPORT-d1.md").read_text()
+        self.assertIn("TASK-1: pass (0 finding(s); restricted check: 2 denied tool call(s)", rep)
+        self.assertRegex(rep, r"\| evaluator \| 1 \| [^|]+ \| [^|]+ \| 2 \|")
+        self.assertRegex(rep, r"\| worker \| 1 \| [^|]+ \| [^|]+ \| unknown \|")
+        self.assertIn("Sessions with denied tool calls", rep); self.assertIn("TASK-1 evaluator: 2 (", rep)
+
+    def test_count_denials_reads_string_and_block_content(self):  # TASK-378
+        sys.path.insert(0, str(ROOT / "scripts")); import tron
+        f = self.tmp / "t.jsonl"
+        r = lambda c: json.dumps({"message": {"content": [{"type": "tool_result", "is_error": True, "content": c}]}})
+        f.write_text("\n".join([r([{"type": "text", "text": "Claude requested permissions to use Write, but you haven't granted it yet."}]),
+                                 r("The user doesn't want to proceed with this tool use."), r("Invalid status: Blocked"),
+                                 json.dumps({"message": {"content": "Permission to use Bash has been denied"}})]))
+        self.assertEqual(tron.count_denials(f), 2)
+        self.assertIsNone(tron.count_denials(self.tmp / "missing.jsonl"))
 
     def test_report_shows_smoke_cmd_when_preview_cmd_is_unset(self):
         self.config({"smoke_cmd": ["python3", "app.py", "--smoke"]})
