@@ -1753,6 +1753,33 @@ class Check(unittest.TestCase):
         self.assertNotIn("strict permission setup", r.stdout); self.assertNotIn("bypass permission prompts", r.stdout)
         r = self.check(); self.assertEqual(r.returncode, 1); self.assertIn("no sandbox detected", r.stdout)  # bypass needs the sandbox
 
+    def test_strict_judging_roles_warn_by_name(self):  # TASK-377
+        bypass = ["claude", "--permission-mode", "bypassPermissions"]
+        for role in ("evaluator", "doctor", "planner"):
+            for strict in (["claude", "--allowedTools", "Read,Grep,Bash"], ["claude", "--permission-mode", "dontAsk", "--allowedTools", "Bash"]):
+                self.cfg(worker_cmd=bypass, **{f"{role}_cmd": strict}); self.commit()
+                r = self.check(env={"IS_SANDBOX": "1"}); self.assertEqual(r.returncode, 0, r.stdout)
+                self.assertIn(f"tron.{role}_cmd uses a strict permission setup", r.stdout)
+            self.cfg(worker_cmd=bypass, **{f"{role}_cmd": bypass}); self.commit()
+            r = self.check(env={"IS_SANDBOX": "1"}); self.assertNotIn(f"tron.{role}_cmd uses a strict", r.stdout)
+
+    def test_strict_evaluator_or_doctor_must_allow_verify_and_smoke(self):  # TASK-377
+        bypass = ["claude", "--permission-mode", "bypassPermissions"]
+        for role in ("evaluator", "doctor"):
+            narrow = ["claude", "-p", "{prompt}", "--permission-mode", "dontAsk", "--allowedTools", "Read", "Grep", "Bash(git log:*)"]
+            self.cfg(worker_cmd=bypass, smoke_cmd=["npm", "test"], **{f"{role}_cmd": narrow}); self.commit()
+            r = self.check(env={"IS_SANDBOX": "1"}); self.assertEqual(r.returncode, 1, r.stdout)
+            self.assertIn(f"tron.{role}_cmd is strict", r.stdout); self.assertIn("tron.verify_cmd (scripts/run.sh v)", r.stdout)
+            self.assertIn("tron.smoke_cmd (npm test)", r.stdout)
+            ok = narrow[:-1] + ["Bash(scripts/run.sh:*),Bash(npm test)"]
+            self.cfg(worker_cmd=bypass, smoke_cmd=["npm", "test"], **{f"{role}_cmd": ok}); self.commit()
+            r = self.check(env={"IS_SANDBOX": "1"}); self.assertEqual(r.returncode, 0, r.stdout)
+            (self.proj / ".claude").mkdir(exist_ok=True)  # project allow rules count as well
+            (self.proj / ".claude/settings.json").write_text(json.dumps({"permissions": {"allow": ["Bash(scripts/run.sh:*)", "Bash(npm *)"]}}))
+            self.cfg(worker_cmd=bypass, smoke_cmd=["npm", "test"], **{f"{role}_cmd": narrow}); self.commit()
+            r = self.check(env={"IS_SANDBOX": "1"}); self.assertEqual(r.returncode, 0, r.stdout)
+            (self.proj / ".claude/settings.json").unlink(); self.commit()
+
     def test_no_product_text_recommends_a_strict_permission_setup(self):  # TASK-372
         sys.path.insert(0, str(ROOT / "scripts")); import tron
         example = tron.__doc__.split("Config example:")[1]

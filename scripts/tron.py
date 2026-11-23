@@ -2947,6 +2947,43 @@ def permission_bypassed(cmd):
                                                           for i, x in enumerate(cmd[:-1]))
 
 
+def allowed_rules(root, cmd):
+    """Allow rules a strict role command runs with: its --allowedTools values plus the project's settings allow lists (TASK-377)."""
+    cmd = [str(x) for x in cmd or []]
+    vals, take = [], False
+    for x in cmd:
+        if x in ("--allowedTools", "--allowed-tools"):
+            take = True
+        elif x.startswith("-"):
+            take = False
+        elif take:
+            vals.append(x)
+    rules = re.findall(r"[\w.*-]+(?:\([^)]*\))?", " ".join(vals))
+    for name in (".claude/settings.json", ".claude/settings.local.json"):
+        try:
+            allow = (json.loads((root / name).read_text()).get("permissions") or {}).get("allow") or []
+            rules += [str(r) for r in allow]
+        except (OSError, ValueError, AttributeError):
+            pass
+    return rules
+
+
+def bash_allowed(rules, command):
+    """Whether a Bash allow rule covers the command line (Bash, Bash(*), Bash(prefix:*), Bash(glob), Bash(exact))."""
+    for r in rules:
+        if r in ("Bash", "Bash(*)"):
+            return True
+        m = re.fullmatch(r"Bash\((.*)\)", r)
+        if not m:
+            continue
+        p = m.group(1)
+        if p.endswith(":*") and (command == p[:-2] or command.startswith(p[:-2] + " ")):
+            return True
+        if ("*" in p and not p.endswith(":*") and fnmatch.fnmatchcase(command, p)) or command == p:
+            return True
+    return False
+
+
 def check_milestone(root, milestone, cfg_path=None):
     """Readiness check (doc-12 3.1): returns (failures, warnings, tron config or None). Deterministic, starts nothing."""
     fails, warns = [], []
@@ -3020,6 +3057,23 @@ def check_milestone(root, milestone, cfg_path=None):
                      f"that nobody answers; recommended instead: {RECOMMENDED_SETUP}")
     elif sandbox and wc and not permission_bypassed(wc):
         warns.append(f"tron.worker_cmd does not bypass permission prompts: a prompt would hang the run; recommended: {RECOMMENDED_SETUP}")
+    # TASK-377: the judging and diagnosing roles too; a strict evaluator or doctor that cannot run verify and smoke judges by reading only
+    run_cmds = [("verify_cmd", tron.get("verify_cmd")), ("smoke_cmd", tron.get("smoke_cmd"))]
+    for role in ("evaluator", "doctor", "planner"):
+        rc = tron.get(f"{role}_cmd")
+        rs = permission_strict(rc) if cmdok(rc) else ""
+        if not rs:
+            continue
+        warns.append(f"tron.{role}_cmd uses a strict permission setup ({rs}): its denials stop the {role} in an unattended run; "
+                     f"recommended instead: {RECOMMENDED_SETUP}")
+        if role == "planner":
+            continue
+        rules = allowed_rules(root, rc)
+        for key, c in run_cmds:
+            line = " ".join(str(a) for a in c) if isinstance(c, list) else (str(c) if c else "")
+            if line and not bash_allowed(rules, line):
+                fails.append(f"tron.{role}_cmd is strict ({rs}) and does not allow tron.{key} ({line}): the {role} could not run it "
+                             f"and would judge by reading code only; allow it or use the recommended setup: {RECOMMENDED_SETUP}")
     if os.environ.get("CLAUDE_CODE_EFFORT_LEVEL"):
         warns.append("CLAUDE_CODE_EFFORT_LEVEL is set and beats --effort in the role commands")
     if not cmdok(tron.get("doctor_cmd")):
