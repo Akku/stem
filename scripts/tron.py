@@ -1783,6 +1783,25 @@ def run_loop(root, tron, args, milestone, jpath, run_id, ctx=None):
 
 SWEEP_Q = re.compile(r"^\s*-\s*\[(.)\]\s*Q\d+", re.M)
 SWEEP_ID = re.compile(r"[\w.-]+")
+# TASK-367: an AC an unattended run cannot meet (user judgement, real data, interface decision) is split out before the run
+SWEEP_N = re.compile(r"^\s*-\s*\[(.)\]\s*(N\d+)\s*\((TASK-\d+) AC#(\d+)\)\s*(judgement|real data|interface)\b", re.M)
+NEEDS_USER = "## Needs the user"
+NEEDS_KIND = {"judgement": "the user's judgement", "real data": "real data", "interface": "an interface decision"}
+
+
+def sweep_needs_user(text):
+    """Flagged ACs of the '## Needs the user' section: (id, task, ac, kind, resolved); resolved = ticked with a 'Resolved:' line."""
+    sec = re.search(rf"^{NEEDS_USER}\s*$(.*?)(?=^## |\Z)", text, re.M | re.S)
+    if not sec:
+        return []
+    body = sec.group(1)
+    ms = list(SWEEP_N.finditer(body))
+    out = []
+    for i, m in enumerate(ms):
+        block = body[m.end():ms[i + 1].start() if i + 1 < len(ms) else len(body)]
+        done = m.group(1).lower() == "x" and bool(re.search(r"^\s*(?:[-*]\s*)?Resolved:\s*\S", block, re.M | re.I))
+        out.append((m.group(2), m.group(3), int(m.group(4)), m.group(5), done))
+    return out
 
 
 def sweep_open(text):
@@ -1822,7 +1841,9 @@ def baseline_prompt(root, tron, milestone):
 # kinds of question the planner must not ask (TASK-302); repeated in .claude/agents/planner.md
 SWEEP_NOT_QUESTIONS = ("## Not questions",
                        "- A red or flaky baseline: the runner starts a baseline repair session on its own before the next task; do not ask about it.",
-                       "- Anything a precedent below answers: do not ask it; name the precedent (e.g. P-1) in the draft acceptance scenario instead.")
+                       "- Anything a precedent below answers: do not ask it; name the precedent (e.g. P-1) in the draft acceptance scenario instead.",
+                       f"- An AC that needs the user's judgement, real data or an interface decision is no question either: list it under '{NEEDS_USER}' "
+                       "(the run cannot meet it alone; it is split out before the run).")
 
 
 def sweep_brief(root, milestone):
@@ -1876,8 +1897,15 @@ def cmd_sweep(args):
     bad = [l for l in (qs.group(1).splitlines() if qs else []) if re.match(r"\s*[-*]\s*(\[|Q\d)", l) and not SWEEP_Q.match(l)]
     if not qs or bad:
         raise TronError(f"sweep has no parsable '## Questions' section (lines must be '- [ ] Q<n> ...' or '- none'); bad: {bad[:2]}")
+    nu = re.search(rf"^{NEEDS_USER}\s*$(.*?)(?=^## |\Z)", body, re.M | re.S)
+    bad = [l for l in (nu.group(1).splitlines() if nu else []) if re.match(r"\s*[-*]\s*(\[|N\d)", l) and not SWEEP_N.match(l)]
+    if bad:
+        raise TronError(f"sweep has malformed '{NEEDS_USER}' lines (must be '- [ ] N<n> (TASK-n AC#k) judgement|real data|interface: ...'); bad: {bad[:2]}")
     out.write_text(body + "\n")
     n = sweep_open(body)
+    flagged = sweep_needs_user(body)
+    if flagged:
+        print(f"{len(flagged)} AC(s) need the user ({', '.join(f'{t} AC#{a} {k}' for _, t, a, k, _ in flagged)}): split them out of the milestone before the run")
     cost = entry.get("cost_usd")
     print(f"sweep written: {out.relative_to(root)} ({n} open question(s); cost {cost if cost is not None else 'unknown'} USD)")
     print("next: answer the questions with the user (skill tron), tick them '[x]' with 'Answer: ...', commit the file, then run the check")
@@ -2725,6 +2753,11 @@ def check_milestone(root, milestone, cfg_path=None):
             n = sweep_open(sw.read_text())
             if n:
                 fails.append(f"{sw.relative_to(root)} holds {n} unanswered question(s): answer them with the user, tick them '[x]' and add 'Answer: ...'")
+            open_ids = {t for t in ids if (parse_task(files[t].read_text())[0] or "").lower() != "done"}
+            for nid, tid, ac, kind, done in sweep_needs_user(sw.read_text()):
+                if not done and tid in open_ids:
+                    fails.append(f"{tid} AC#{ac} needs {NEEDS_KIND[kind]} "
+                                 f"({sw.name} {nid}): split it into a task outside {milestone} before the run, then tick {nid} '[x]' and add 'Resolved: ...'")
     dirty = tree_dirty(root)
     if dirty:
         fails.append(f"working tree is not clean ({len(dirty)} change(s), first: {dirty[0].strip()[:80]})")

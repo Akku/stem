@@ -1688,6 +1688,31 @@ class Check(unittest.TestCase):
         f.write_text(f.read_text().replace("- [ ] Q1", "- [x] Q1") + "Answer: a\n"); self.commit()
         r = self.check(); self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
 
+    def test_sweep_flags_acs_that_need_the_user_and_check_holds_until_split(self):
+        """TASK-367 (automations TASK-41, shadowrun TASK-384): an AC needing judgement, real data or an interface decision
+        is listed apart from the questions; the check is not ready while an open task still carries it."""
+        r = self.sweep("# Sweep: m-9\n## Questions\n- none\n## Draft acceptance scenario\nrun it\n## Too large or not testable\n- none\n"
+                       "## Needs the user\n- [ ] N1 (TASK-1 AC#1) interface: ownership model is open Split: AC#1 into its own task\n")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr); self.assertIn("1 AC(s) need the user (TASK-1 AC#1 interface)", r.stdout)
+        brief = (self.proj / "docs/agent/tron/brief-sweep-m-9.md").read_text(); self.assertIn("## Needs the user", brief)
+        self.commit(); self.fails_with("TASK-1 AC#1 needs an interface decision (SWEEP-m-9.md N1)")
+        f = self.proj / "docs/agent/tron/SWEEP-m-9.md"
+        f.write_text(f.read_text().replace("- [ ] N1", "- [x] N1") + "  Resolved: AC#1 moved to TASK-9 outside m-9\n"); self.commit()
+        r = self.check(); self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
+    def test_sweep_needs_user_item_of_a_done_task_does_not_block(self):
+        self.sweep("# Sweep: m-9\n## Questions\n- none\n## Needs the user\n- [ ] N1 (TASK-1 AC#1) real data: needs the live feed\n")
+        f = next((self.proj / "backlog/tasks").glob("task-1 - *.md")); f.write_text(re.sub(r"(?m)^status: .*$", "status: Done", f.read_text()))
+        self.commit(); r = self.check(); self.assertNotIn("needs real data", r.stdout)
+
+    def test_sweep_rejects_malformed_needs_user_line(self):
+        r = self.sweep("# Sweep: m-9\n## Questions\n- none\n## Needs the user\n- [ ] N1 TASK-1: user must like it\n")
+        self.assertEqual(r.returncode, 2, r.stdout); self.assertIn("malformed", r.stderr)
+
+    def test_planner_lists_acs_that_need_the_user(self):  # TASK-367
+        text = (ROOT / ".claude/agents/planner.md").read_text()
+        self.assertIn("## Needs the user", text); self.assertIn("real data", text); self.assertIn("interface", text)
+
     def test_planner_does_not_ask_baseline_or_precedent_questions(self):  # TASK-302
         text = (ROOT / ".claude/agents/planner.md").read_text()
         self.assertIn("A red or flaky baseline", text); self.assertIn("baseline repair session", text)

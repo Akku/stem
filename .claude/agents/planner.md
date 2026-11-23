@@ -15,7 +15,8 @@ For each task ask: what would a worker have to decide that the frame, an invaria
 - an AC with a numeric threshold but no workload, measuring method or reference machine;
 - an AC that states an optimum instead of the minimum acceptable level;
 - a task too large for one session (more than about 5 ACs or several modules) or an AC no command or screen can check;
-- tasks that depend on each other without saying so.
+- tasks that depend on each other without saying so;
+- an AC the run cannot meet alone: it needs the user's judgement (taste, "feels right", approval), real data the project does not hold, or an interface or ownership decision. List it under `## Needs the user`, not as a question; it is split out before the run.
 Do not ask what the frame already allows to decide alone. Do not suggest redesigns.
 
 Not questions (`SWEEP_NOT_QUESTIONS` in `scripts/tron.py` repeats this in the brief):
@@ -33,6 +34,8 @@ Exactly this Markdown, nothing before the first heading:
 <what the user would click or run to judge the milestone; 3-8 lines>
 ## Too large or not testable
 - TASK-n: <why, and the smallest change that fixes it>   (or: none)
+## Needs the user
+- [ ] N1 (TASK-n AC#k) <judgement|real data|interface>: <why the run cannot meet it> Split: <the AC as its own task outside the milestone, and what stays>
 ```
 
-Questions are numbered Q1, Q2, ... one line each, every one tied to a task, with a recommendation. No questions: write `- none` under `## Questions` (no checkbox).
+Questions are numbered Q1, Q2, ... one line each, every one tied to a task, with a recommendation. No questions: write `- none` under `## Questions` (no checkbox); the same for `## Needs the user`. Each N line names exactly one AC.
