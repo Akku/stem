@@ -1862,5 +1862,52 @@ class Calibration(unittest.TestCase):
         self.assertTrue(any(x["id"] == "C-D1" for x in self.j()["retro_changes"]))
 
 
+class CommitMessages(unittest.TestCase):
+    """TASK-364: every commit message the runner makes or asks a session for passes the product's commit-msg hook."""
+    SAMPLES = {"task_id": ["TASK-7"], "pid": ["TASK-7"], "parent": ["TASK-7"], "target": ["TASK-7", "milestone"]}
+
+    def render(self, node):
+        """All messages an expression can produce: f-string fields become sample values, both branches of an if-expression count."""
+        import ast, itertools
+        if isinstance(node, ast.IfExp):
+            return self.render(node.body) + self.render(node.orelse)
+        if isinstance(node, ast.Constant):
+            return [str(node.value)]
+        self.assertIsInstance(node, ast.JoinedStr, f"commit message is not a literal: {ast.unparse(node)}")
+        parts = [[str(v.value)] if isinstance(v, ast.Constant) else
+                 self.SAMPLES.get(v.value.id, ["x1"]) if isinstance(v.value, ast.Name) else ["x1"] for v in node.values]
+        return ["".join(c) for c in itertools.product(*parts)]
+
+    def messages(self):
+        import ast
+        src = TRON.read_text()
+        found, variable = [], 0
+        for n in ast.walk(ast.parse(src)):
+            if not isinstance(n, ast.Call):
+                continue
+            args = n.args[0].elts if n.args and isinstance(n.args[0], ast.List) else n.args  # sh([...]) or git_ok(root, ...)
+            consts = [x.value if isinstance(x, ast.Constant) else None for x in args]
+            if "commit" in consts and "-m" in consts:
+                m = args[consts.index("-m") + 1]
+                if isinstance(m, ast.Name):
+                    variable += 1  # revert_retro's msg: its callers are collected below
+                else:
+                    found += self.render(m)
+            if getattr(n.func, "id", "") == "revert_retro":
+                found += self.render(n.args[2])
+        self.assertEqual(variable, 1, "a new commit call with a variable message: teach this test where it comes from")
+        found += [m + " x" for m in re.findall(r"(?:message starting with|starts with) '([^']+)'", src)]  # prompts to sessions
+        self.assertGreater(len(found), 10)
+        return found
+
+    def test_every_tron_commit_message_passes_the_commit_msg_hook(self):
+        hook = ROOT / "scripts/githooks/commit-msg"
+        with tempfile.TemporaryDirectory() as td:
+            f = pathlib.Path(td) / "msg"
+            for msg in self.messages():
+                f.write_text(msg + "\n")
+                r = subprocess.run(["bash", str(hook), str(f)], capture_output=True, text=True)
+                self.assertEqual(r.returncode, 0, f"hook rejects {msg!r}: {r.stderr}")
+
 if __name__ == "__main__":
     import shard; shard.main()

@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Commit message convention (R-STATE-COHERENCE): the first line starts with "TASK-<n>: " (several: "TASK-1, TASK-2: ").
 # Allowed without a task: merge, revert, fixup/squash, "Release ..."/"Release: ...", "Handoff ..."/"Handoff: ...", "Initial commit", "Set up ...",
-# "retro: ..." (retro changes of an unattended run).
+# "retro: ...", "Tron run: ...", "baseline: ..." (commits of an unattended Tron run).
 # Override only deliberately: git commit --no-verify
 first=$(grep -v -E '^(#|[[:space:]]*$)' "$1" | head -n 1)
 case "$first" in
-  Merge\ *|Revert\ *|fixup!\ *|squash!\ *|amend!\ *|Release\ *|Release:\ *|Handoff\ *|Handoff:\ *|retro:\ *|Initial\ commit*|Set\ up\ *) exit 0 ;;
+  Merge\ *|Revert\ *|fixup!\ *|squash!\ *|amend!\ *|Release\ *|Release:\ *|Handoff\ *|Handoff:\ *|retro:\ *|Tron\ run:\ *|baseline:\ *|Initial\ commit*|Set\ up\ *) exit 0 ;;
 esac
 if printf '%s\n' "$first" | grep -E -q '^TASK-[0-9]+(, TASK-[0-9]+)*: .+'; then exit 0; fi
 echo "commit-msg: first line must start with 'TASK-<n>: <summary>' (R-STATE-COHERENCE), got: $first" >&2
-echo "Allowed without a task: Merge, Revert, fixup!, Release, Handoff, Initial commit, Set up, retro: (Tron mode)." >&2
+echo "Allowed without a task: Merge, Revert, fixup!, Release, Handoff, Initial commit, Set up, retro:/Tron run:/baseline: (Tron mode)." >&2
 exit 1

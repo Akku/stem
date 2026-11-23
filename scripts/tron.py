@@ -726,7 +726,7 @@ def write_risk_drafts(root, target, risks, journal):
         journal.setdefault("risk_drafts", []).append(f"draft-{n}")
     if wrote:
         git_ok(root, "add", "-A", "--", "backlog/drafts")
-        git_ok(root, "commit", "-q", "-m", f"{target}: Tron evaluator risk finding(s) written as draft task(s)")
+        git_ok(root, "commit", "-q", "-m", f"Tron run: {target} evaluator risk finding(s) written as draft task(s)")  # target may be 'milestone'
 
 
 DOCTOR_VERDICTS = ("retry_with_hint", "split_task", "environment_problem", "needs_user")
