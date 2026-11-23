@@ -1543,6 +1543,13 @@ def milestone_evaluation(root, tron, journal, jpath, accepted, start_commit, max
         why = no_count()
         if why:
             fin(why); print(f"run ended: {why}; run again to continue"); return 0
+        stall = journal.get("milestone_no_commit")  # TASK-383: a resume after a repair without a commit would judge the same state again
+        if stall and stall["head"] == head(root):
+            journal["aborted"] = (f"milestone repair added no commit, so nothing changed since {stall['verdict']}; no new evaluator round: "
+                                  "commit a fix on the run branch or decide the findings, then run again")
+            fin(journal["aborted"]); print(f"milestone repair stopped: {journal['aborted']}", file=sys.stderr)
+            return 3
+        journal.pop("milestone_no_commit", None)
         print(f"milestone {milestone}: evaluator session")
         ev = evaluate(root, tron, journal, jpath, "milestone", start_commit, None, accepted,
                       f"Milestone {milestone}: the accepted tasks of this run work together as intended. Tasks: {titles}", no_count)
@@ -1569,17 +1576,20 @@ def milestone_evaluation(root, tron, journal, jpath, accepted, start_commit, max
         journal["in_progress"] = {"task": "baseline", "base": base, "acs_before": acs_before}
         prompt = ("The independent evaluation of the milestone found problems (unattended Tron mode session, STEM_TRON=1; read R-TRON first). "
                   f"Fix exactly these findings and nothing else (repair {repairs + 1} of {max_repairs}):\n" + g["failures"][0]["detail"])
-        before = fingerprint(root)
         entry, up = sessions_with_retry(root, tron, "worker", "milestone", run_id, milestone, journal, jpath, prompt, abort_check=no_count)
         if not up:
             fin(entry.get("retry_aborted") or "API unavailable after retries"); return 0
         entry["repair"] = repairs + 1  # counted by the report's repair rate
         entry["gate"] = gate(root, tron, None, base, acs_before, start_commit, branch, refs0)
         journal.pop("in_progress", None)
+        no_commit = head(root) == base
+        if no_commit:
+            journal["milestone_no_commit"] = {"head": base, "verdict": ev["file"]}
         write_journal(jpath, journal)
-        if not entry["gate"]["passed"] or fingerprint(root) == before:
+        if not entry["gate"]["passed"] or no_commit:
             stop = sorted({f["check"] for f in entry["gate"]["failures"]} & STOPPING)
-            journal["aborted"] = ("gate damage: " + ", ".join(stop)) if stop else ("milestone repair failed the gate" if not entry["gate"]["passed"] else "milestone repair left no diff")
+            why = ("gate damage: " + ", ".join(stop)) if stop else ("milestone repair failed the gate" if not entry["gate"]["passed"] else "milestone repair")
+            journal["aborted"] = why + ("; it added no commit, so another evaluator round would judge the same state" if no_commit else "")
             journal["damage"] = bool(stop)
             fin(journal["aborted"])
             print(f"milestone repair stopped: {journal['aborted']}", file=sys.stderr)

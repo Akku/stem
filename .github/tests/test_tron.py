@@ -86,7 +86,9 @@ if task == "baseline":
     if os.path.exists(td + "/verify_fail") and beh != "stay_red": os.remove(td + "/verify_fail")
     print(json.dumps({"session_id": sid, "total_cost_usd": 0.1})); sys.exit(0)
 if task == "milestone":
-    if beh != "noop":
+    if beh == "dirty":  # TASK-383: edits without a commit
+        open("m_dirty.txt", "w").write("half fix")
+    elif beh != "noop":
         n = sum(1 for l in open(td + "/calls.log") if json.loads(l)["task"] == "milestone")
         open("m_%d.txt" % n, "w").write("fix"); run("git", "add", "-A"); run("git", "commit", "-qm", "milestone fix")
     print(json.dumps({"session_id": sid, "total_cost_usd": 0.1})); sys.exit(0)
@@ -1282,7 +1284,25 @@ class Tron(unittest.TestCase):
         self.with_evaluator("milestone", max_repairs=2)
         self.evaluator_plan({"milestone": ["fail"]}); self.behavior({"milestone": "noop"})
         r = self.tron("run", "--milestone", "m-1")
-        self.assertEqual(r.returncode, 3); self.assertIn("no diff", self.journal()["aborted"])
+        self.assertEqual(r.returncode, 3); self.assertIn("added no commit", self.journal()["aborted"])
+        self.assertEqual(self.eval_calls(), ["milestone"])
+
+    def test_milestone_repair_without_commit_gets_no_new_evaluator_round_on_resume(self):  # TASK-383
+        self.with_evaluator("milestone", max_repairs=3)
+        self.evaluator_plan({"milestone": ["fail"]}); self.behavior({"milestone": "dirty"})
+        r = self.tron("run", "--milestone", "m-1", "--run-id", "r1")
+        self.assertEqual(r.returncode, 3, r.stderr); self.assertIn("added no commit", self.journal()["aborted"])
+        (self.proj / "m_dirty.txt").unlink()  # the user cleans the tree and runs again without a fix
+        r = self.tron("run", "--milestone", "m-1", "--run-id", "r1")
+        self.assertEqual(r.returncode, 3, r.stderr)
+        j = self.journal()
+        self.assertIn("milestone repair added no commit", j["stop_reason"]); self.assertIn("no new evaluator round", j["stop_reason"])
+        self.assertEqual(self.eval_calls(), ["milestone"])
+        self.assertIn("added no commit", (self.proj / "docs/agent/tron/REPORT-r1.md").read_text())
+        git(self.proj, "commit", "-q", "--allow-empty", "-m", "hand fix")  # a commit by the user lets the evaluator judge again
+        self.evaluator_plan({"milestone": ["fail", "pass"]})
+        r = self.tron("run", "--milestone", "m-1", "--run-id", "r1")
+        self.assertEqual(r.returncode, 0, r.stderr); self.assertEqual(self.eval_calls(), ["milestone", "milestone"])
 
     def sample_journal(self):
         d = self.proj / "docs/agent/tron"; d.mkdir(parents=True, exist_ok=True)
