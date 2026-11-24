@@ -923,7 +923,23 @@ def split_out_acs(root, parent, ac_texts, title, body, waits_for=()):
         except (OSError, KeyError):
             pass
         raise TronError(f"could not remove the split-out ACs from {parent}: {(r.stderr or r.stdout).strip()[:200]}")
+    release_parent(root, parent, nid)
     return nid
+
+
+def release_parent(root, parent, new_task, blocked_status="Blocked"):
+    """TASK-398: the split removed the ACs that kept the parent Blocked, so release it in the same step (status To Do, label
+    'blocked' removed); otherwise a resumed run never offers it again. A parent that is not Blocked stays as it is."""
+    text = task_files(root)[parent].read_text()
+    if not is_blocked(text, blocked_status):
+        return False
+    cmd = ["backlog", "task", "edit", parent, "-s", "To Do", "--append-notes", f"Released: the split to {new_task} removed what blocked this task"]
+    if "blocked" in labels_of(text):
+        cmd += ["--remove-label", "blocked"]
+    r = sh(cmd, root)
+    if r.returncode:
+        raise TronError(f"could not release {parent} after the split: {(r.stderr or r.stdout).strip()[:200]}")
+    return True
 
 
 def doctor_brief(root, tron, journal, task_id, base, intent, acs):

@@ -35,6 +35,8 @@ if sys.argv[1:3] == ["task", "edit"]:
     s = s.replace("<!-- SECTION:NOTES:END -->", note + "\\n<!-- SECTION:NOTES:END -->")
     if "--add-label" in sys.argv:
         s = s.replace("labels:\\n", "labels:\\n  - blocked\\n", 1)
+    if "--remove-label" in sys.argv:
+        s = s.replace("  - blocked\\n", "", 1)
     open(f, "w").write(s)
     for x in st["tasks"]:
         if x["id"] == "TASK-" + n: x["status"] = status
@@ -2158,6 +2160,24 @@ class Check(unittest.TestCase):
         self.assertIn("- [x] N1", sw); self.assertIn("Resolved: AC#2 split out to TASK-3", sw); self.assertIn("- [ ] N2", sw)
         self.assertEqual(git(self.proj, "status", "--porcelain").stdout, "")
         r = self.check(); self.assertNotIn("TASK-1 AC#2", r.stdout); self.assertIn("TASK-2 AC#1 needs the user's judgement", r.stdout)
+
+    def test_manual_split_releases_the_blocked_parent(self):  # TASK-398
+        self.task("TASK-1", acs="- [ ] #1 the GM edits initiative\n- [ ] #2 a player edits only their own character\n")
+        self.commit()
+        bin_ = self.tmp / "bin"; bin_.mkdir(exist_ok=True); (bin_ / "backlog").write_text(FAKE_BACKLOG); (bin_ / "backlog").chmod(0o755)
+        env = dict(os.environ, PATH=f"{bin_}{os.pathsep}{os.environ['PATH']}", TRON_TEST_DIR=str(self.tmp), **GIT_ENV)
+        (self.proj / "state.json").write_text(json.dumps({"tasks": [{"id": "TASK-1", "title": "x", "status": "Blocked", "deps": []}]}))
+        f = self.proj / "backlog/tasks/task-1 - x.md"
+        f.write_text(re.sub(r"(?m)^status: .*$", "status: Blocked", f.read_text()))
+        sys.path.insert(0, str(ROOT / "scripts")); import tron as T
+        old = os.environ["PATH"]; os.environ["PATH"] = env["PATH"]; os.environ["TRON_TEST_DIR"] = str(self.tmp); cwd = os.getcwd(); os.chdir(self.proj)
+        try:
+            self.assertEqual(T.ready_tasks(self.proj, "m-9"), [])  # Blocked parent is never offered
+            T.split_out_acs(self.proj, "TASK-1", ["a player edits only their own character"], "split", "body")
+            self.assertNotIn("status: Blocked", f.read_text()); self.assertIn("Released:", f.read_text())
+            self.assertIn("TASK-1", T.ready_tasks(self.proj, "m-9"))  # resumed run picks the parent up
+        finally:
+            os.chdir(cwd); os.environ["PATH"] = old
 
     def test_split_instead_of_blocked_is_described(self):  # TASK-373
         self.assertIn("split_out", (ROOT / ".claude/agents/doctor.md").read_text())
