@@ -893,6 +893,16 @@ class Tron(unittest.TestCase):
         self.assertEqual([c["task"] for c in self.calls()].count("baseline"), 1)
         self.assertIn("verify tool missing", [c for c in self.calls() if c["task"] == "baseline"][0]["prompt"])
 
+    def test_doctor_known_environment_gap_blocks_without_repair_or_baseline_session(self):  # TASK-394
+        self.with_doctor({"TASK-1": [{"verdict": "environment_problem", "diagnosis": "the AC needs a database server", "missing": "postgres service"}]})
+        self.behavior({"TASK-1": "no_evidence"})
+        self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
+        j = self.journal(); t = j["tasks"]["TASK-1"]
+        self.assertEqual(t["state"], "blocked"); self.assertIn("postgres service", t["reason"])
+        self.assertEqual([c["task"] for c in self.calls()].count("baseline"), 0)
+        self.assertEqual(j["env_gaps"], [{"task": "TASK-1", "missing": "postgres service"}])
+        self.assertEqual([c["task"] for c in self.calls()].count("TASK-1"), 2)  # worker + the repair that precedes the Doctor (existing ladder); none after the verdict
+
     def test_doctor_needs_user_writes_a_draft_and_blocks(self):
         self.with_doctor({"TASK-1": [{"verdict": "needs_user", "diagnosis": "conflict", "question": "csv or json?"}]})
         self.behavior({"TASK-1": "no_evidence"})

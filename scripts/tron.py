@@ -845,6 +845,8 @@ def parse_doctor(text):
             continue
         if v == "needs_user" and not str(d.get("question") or "").strip():
             continue
+        if v == "environment_problem" and d.get("missing") is not None and not isinstance(d["missing"], str):
+            continue
         so = d.get("split_out")  # TASK-373: optional, the ACs that wait for the answer while the rest is built now
         if v == "needs_user" and so is not None and not (isinstance(so, list) and so and all(isinstance(a, str) and a.strip() for a in so)):
             continue
@@ -1929,6 +1931,12 @@ def run_loop(root, tron, args, milestone, jpath, run_id, ctx=None):
                     persist()
                 if v == "retry_with_hint":
                     pass
+                elif v == "environment_problem" and str(dv.get("missing") or "").strip():
+                    # TASK-394: a known missing piece (service, tool, data) in the run environment: no repair session can add it, so block at once
+                    miss = clip(str(dv["missing"]).strip(), 120)
+                    journal.setdefault("env_gaps", []).append({"task": task_id, "missing": miss})
+                    ladder.append({"step": "environment gap", "result": miss}); persist()
+                    outcome = ("blocked", f"environment gap: the run environment lacks {miss}; no repair round ({clip(dv['diagnosis'], 150)})"); break
                 elif v == "environment_problem":
                     print(f"{task_id}: Doctor says environment problem; baseline repair session")
                     b2, a2 = head(root), snapshot_acs(root)
