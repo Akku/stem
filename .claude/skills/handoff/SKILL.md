@@ -9,6 +9,10 @@ Rules: `R-STATE`, `R-STATE-COHERENCE`. The handoff holds only what git and the b
 
 **Who does the work named with a handoff.** Only work the user places *before* the handoff by an explicit order ("do X, then handoff, then Y and Z") is done in this session: X first, then the handoff steps. Everything named for after the handoff (Y, Z) is done by the fresh session, never here. A mention without an order ("handoff, X is next", "X is still open") is not an instruction to do X here; when unsure which side a task belongs to, it goes to the fresh session.
 
+## 0. Propose the handoff with a continuation plan
+Whenever you propose a handoff (context notice, task or batch end, `R-BATCHING`), do the user's thinking: add 2-3 lettered options in one message, one marked recommended, each at most two lines naming (1) what still happens in this session first (or nothing), (2) what the fresh session does first (task IDs, first step), (3) model and effort (default: the same as now; larger only per step 6, then name the reason), (4) whatever the user must do (an approval, a test), or "nothing". Options differ in substance (e.g. next task vs. batch vs. waiting on the user), not in wording. The user answers with a letter or adds text; the chosen option sets the brief of step 5.
+When the user says "Handoff" without saying what follows, take your recommended option, name it in one line and proceed without asking.
+
 ## 1. Notes into the tasks
 Each unfinished task gets a concrete continuation point in its notes (open criterion, next action as `Next:`), hard-won context (ruled-out hypotheses), evidence with the SHA it verified (`R-STATE-COHERENCE`), and `Learning:` only if a detour happened (`R-LEARNING`).
 
