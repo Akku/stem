@@ -1494,7 +1494,9 @@ class Tron(unittest.TestCase):
         self.assertLessEqual(len(t), 60); self.assertTrue(t.endswith("…"))
         self.assertTrue("Which export format should the weekly summary use when several mailboxes".startswith(t[:-1])); self.assertNotIn("\n", t)
         self.assertEqual(t, "Which export format should the weekly summary use when…")  # whole last word
-        tron.write_question_draft(self.proj, {}, "Question from the Doctor about TASK-2: " + tron.clip("x" * 5 + " " + "abcdefghij " * 10, 60), "body", "tron-doctor")
+        from unittest import mock
+        with mock.patch.dict(os.environ, GIT_ENV):  # in-process git commit: CI runners have no identity (TASK-361)
+            tron.write_question_draft(self.proj, {}, "Question from the Doctor about TASK-2: " + tron.clip("x" * 5 + " " + "abcdefghij " * 10, 60), "body", "tron-doctor")
         f = next((self.proj / "backlog/drafts").glob("draft-*"))
         title = re.search(r"^title: '(.*)'$", f.read_text(), re.M).group(1)
         self.assertTrue(title.endswith("abcdefghij…"), title); self.assertLessEqual(len(title), 90)
