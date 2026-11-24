@@ -225,16 +225,24 @@ def write_journal(path, journal):
 
 
 def kill_group(proc):
+    """End the session and every tool it started. SIGKILL always follows SIGTERM: a child that was forked while the
+    group was signalled, or that ignores SIGTERM, outlives the leader otherwise (TASK-389)."""
     import signal
     try:
         os.killpg(proc.pid, signal.SIGTERM)
         try:
             proc.wait(timeout=3)
         except subprocess.TimeoutExpired:
-            os.killpg(proc.pid, signal.SIGKILL)
-        proc.communicate()
+            pass
     except (ProcessLookupError, PermissionError):
-        proc.communicate()
+        pass
+    for _ in range(10):  # a fixed window of repeated kills: a process caught mid-fork or mid-exec ignores one signal and appears in the group only afterwards
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)  # the group id outlives the leader while any member lives
+        except (ProcessLookupError, PermissionError):
+            pass
+        time.sleep(0.05)
+    proc.communicate()
 
 
 def run_session(root, tron, role, task_id, run_id, milestone, prompt=None):
