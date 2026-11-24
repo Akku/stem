@@ -3204,6 +3204,20 @@ def smoke_problem(root, tron, timeout=180):
             f"log in as the run user (start the agent once, /login) or skip with --no-smoke")
 
 
+def host_file_problem(root, rel, host):
+    """TASK-397: a git-ignored file the tests read must be identical in the run environment and on the host (compared by sha256)."""
+    mine, theirs = root / rel, pathlib.Path(host)
+    cp = f"cp '{host}' '{mine}'"
+    if not mine.is_file():
+        return [f"host file missing in the run environment: {rel} (tron.host_files); copy it: {cp}"]
+    if not theirs.is_file():
+        return [f"host copy not found: {host} (tron.host_files, for {rel}); fix the path or remove the entry"]
+    a, b = (hashlib.sha256(f.read_bytes()).hexdigest() for f in (mine, theirs))
+    if a != b:
+        return [f"{rel} differs from the host copy (sha256 {a[:12]} here, {b[:12]} host; tron.host_files); copy it: {cp}"]
+    return []
+
+
 def preflight(root, tron, smoke=True, uid=None):
     """Start conditions of an unattended run (TASK-388, generalized from a project preflight). Returns (failures, stop):
     stop is True for root, where every later step could leave root-owned files behind."""
@@ -3236,6 +3250,12 @@ def preflight(root, tron, smoke=True, uid=None):
             f = root / rel
             if not f.is_file() or f.stat().st_size == 0:
                 fails.append(f"required file missing or empty: {rel} (tron.required_files; e.g. git-ignored data the tests need)")
+    hf = tron.get("host_files") or []
+    if not (isinstance(hf, list) and all(isinstance(x, dict) and isinstance(x.get("path"), str) and isinstance(x.get("host"), str) for x in hf)):
+        fails.append('tron.host_files must be a list of {"path": "<relative to project root>", "host": "<absolute path of the host copy>"}')
+    else:
+        for item in hf:
+            fails.extend(host_file_problem(root, item["path"], item["host"]))
     if smoke:
         sp = smoke_problem(root, tron)
         if sp:

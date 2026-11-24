@@ -1914,6 +1914,17 @@ class Check(unittest.TestCase):
         self.assertEqual(self.check().returncode, 0)
         self.cfg(required_files="data/rules.json"); self.commit(); self.fails_with("tron.required_files must be a list")
 
+    def test_preflight_host_files(self):
+        host = self.tmp / "host.json"; host.write_text("{}")
+        self.cfg(host_files=[{"path": "data/rules.json", "host": str(host)}]); self.commit()
+        self.fails_with("host file missing in the run environment: data/rules.json")
+        (self.proj / "data").mkdir(); (self.proj / "data/rules.json").write_text('{"a": 1}'); self.commit()
+        self.fails_with("data/rules.json differs from the host copy"); self.fails_with("cp '%s'" % host)
+        (self.proj / "data/rules.json").write_text("{}"); self.commit()
+        self.assertEqual(self.check().returncode, 0)
+        host.unlink(); self.fails_with("host copy not found")
+        self.cfg(host_files=["data/rules.json"]); self.commit(); self.fails_with("tron.host_files must be a list")
+
     def fake_claude(self, reply, code=0):
         b = self.tmp / "bin"; b.mkdir(exist_ok=True)
         (b / "claude").write_text(f"#!/bin/sh\necho \"$@\" >> {self.tmp}/claude.log\necho '{json.dumps(reply)}'\nexit {code}\n"); (b / "claude").chmod(0o755)
