@@ -11,7 +11,9 @@
 #   sandbox.sh list                      list sandboxes
 # Options for new/start: --strict (only Claude API, GitHub, npm/PyPI reachable), --port N (repeatable, host:container same N),
 #   --ubuntu TAG (default: newest LTS = ubuntu:latest, chosen at first build, stored with the sandbox),
-#   --allow HOST (repeatable, extra host in --strict mode), --shell (bash instead of claude), -- CMD... (run CMD instead).
+#   --allow HOST (repeatable, extra host in --strict mode), --shell (bash instead of claude), -- CMD... (run CMD instead),
+#   --keep-awake (or STEM_KEEP_AWAKE=1; for a Tron run: on a macOS host 'caffeinate -i -w' keeps the Mac awake while the
+#   container session lives; elsewhere a no-op with one message line).
 # Credentials: ANTHROPIC_API_KEY and GH_TOKEN (scoped to ONE repo) are passed from your environment by name only;
 #   never stored in the image or a volume. Without ANTHROPIC_API_KEY, log in with your account inside (/login); it persists in the volume.
 #   The login belongs to ONE sandbox (own volume): a new sandbox asks for /login again. Use one sandbox for several projects
@@ -26,12 +28,12 @@ command -v docker >/dev/null || die "Docker not found. Install Docker Desktop (M
 docker info >/dev/null 2>&1 || die "Docker is installed but not running. Start it and retry."
 
 cmd=${1:-}; [ $# -gt 0 ] && shift
-name=stem; strict=0; ubuntu=; repo=; ports=(); allow=(); shellmode=0; pos=()
+name=stem; strict=0; keepawake=${STEM_KEEP_AWAKE:-0}; ubuntu=; repo=; ports=(); allow=(); shellmode=0; pos=()
 extra=()
 while [ $# -gt 0 ]; do
   case $1 in
     --) shift; extra=("$@"); break;;
-    --strict) strict=1;; --shell) shellmode=1;;
+    --strict) strict=1;; --shell) shellmode=1;; --keep-awake) keepawake=1;;
     --port) ports+=("${2:?--port needs a number}"); shift;;
     --ubuntu) ubuntu=${2:?--ubuntu needs a tag}; shift;;
     --repo) repo=${2:?--repo needs a URL}; shift;;
@@ -69,10 +71,18 @@ run_args() {  # common docker run args
   for p in "${ports[@]:-}"; do [ -n "$p" ] && args+=(-p "127.0.0.1:$p:$p"); done
   return 0
 }
+keep_awake() {  # TASK-388: called right before exec, so $$ becomes the docker process and caffeinate ends with it
+  [ "$keepawake" = 1 ] || return 0
+  if [ "$(uname -s)" = Darwin ] && command -v caffeinate >/dev/null; then
+    caffeinate -i -w $$ & echo "[sandbox] keep-awake: caffeinate keeps this Mac awake until the session ends" >&2
+  else
+    echo "[sandbox] keep-awake: no-op on $(uname -s) (only macOS hosts are kept awake)" >&2
+  fi
+}
 start_container() {
   if docker ps -q -f "name=^$ctr$" | grep -q .; then
     echo "[sandbox] already running; attaching a second session" >&2
-    exec docker exec $tty -u stem -w /home/stem/work "$ctr" "${startcmd[@]}"
+    keep_awake; exec docker exec $tty -u stem -w /home/stem/work "$ctr" "${startcmd[@]}"
   fi
   docker rm "$ctr" >/dev/null 2>&1 || true
   local stored; stored=$(vol_label "$home_vol" stem.ubuntu); [ -z "$ubuntu" ] && ubuntu=${stored:-latest}
@@ -86,7 +96,7 @@ start_container() {
     # clone as part of the first start, before Claude runs
     startcmd=(bash -c '[ -d .git ] || git clone "$0" . || exit 1; exec "$@"' "$cloneurl" "${startcmd[@]}")
   fi
-  exec docker run "${args[@]}" "$img" "${startcmd[@]}"
+  keep_awake; exec docker run "${args[@]}" "$img" "${startcmd[@]}"
 }
 tty=-i; [ -t 0 ] && tty=-it
 startcmd=(claude); [ $shellmode = 1 ] && startcmd=(bash); [ ${#extra[@]} -gt 0 ] && startcmd=("${extra[@]}")
@@ -118,5 +128,5 @@ case $cmd in
     docker volume ls -q -f name='^stem-sbx-' | sed 's/^stem-sbx-//' | while read -r n; do
       s=stopped; docker ps -q -f "name=^stem-sbx-$n$" | grep -q . && s=running
       echo "$n  ubuntu=$(vol_label "stem-sbx-$n" stem.ubuntu)  $s"; done;;
-  *) sed -n '2,18p' "${BASH_SOURCE[0]:-$0}" | sed 's/^# \{0,1\}//'; [ -z "$cmd" ] || exit 2;;
+  *) sed -n '2,20p' "${BASH_SOURCE[0]:-$0}" | sed 's/^# \{0,1\}//'; [ -z "$cmd" ] || exit 2;;
 esac

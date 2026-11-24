@@ -1542,6 +1542,9 @@ def cmd_run(args):
         if pid and pid_alive(pid):
             raise TronError(f"another run is active (pid {pid}, {lock.relative_to(root)})")
     lock.write_text(str(os.getpid()))
+    awake, msg = keep_awake(args.keep_awake or tron.get("keep_awake") is True)
+    if msg:
+        print(msg, flush=True)
     os.environ["STEM_TRON_RUN"] = run_id  # the runner's commits and its sessions pass the pre-commit LOCK check (TASK-366)
     ctx = {}  # run_loop puts its clean-end handler here once the journal exists
     try:
@@ -1555,6 +1558,8 @@ def cmd_run(args):
         print(f"tron: run ended by an error: {e}; see docs/agent/tron/REPORT-{run_id}.md", file=sys.stderr)
         return 2
     finally:
+        if awake:
+            awake.terminate()
         try:
             lock.unlink()
         except OSError:
@@ -1570,6 +1575,7 @@ def detach_run(root, args, milestone, run_id):
     cmd += ["--config", args.config] if args.config else []
     cmd += ["--max-tasks", str(args.max_tasks)] if args.max_tasks is not None else []
     cmd += ["--accept-damage"] if args.accept_damage else []
+    cmd += ["--keep-awake"] if getattr(args, "keep_awake", False) else []
     with open(log, "a") as out:
         proc = subprocess.Popen(cmd, cwd=root, stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT, start_new_session=True)
     print(f"run {run_id} started as its own process (pid {proc.pid}); log {log.relative_to(root)}; "
@@ -3090,7 +3096,128 @@ def bash_allowed(rules, command):
     return False
 
 
-def check_milestone(root, milestone, cfg_path=None):
+SMOKE_PROMPT = "Reply with the single word OK."
+
+
+def git_hooks_problem(root):
+    """TASK-388: the commit guards in scripts/githooks/ only act when git uses them; '' when fine or the project has none."""
+    if not (root / "scripts/githooks").is_dir():
+        return ""
+    hp = sh(["git", "config", "--get", "core.hooksPath"], root).stdout.strip()
+    return "" if hp == "scripts/githooks" else f"core.hooksPath is '{hp}' (the commit guards are off): git config core.hooksPath scripts/githooks"
+
+
+def foreign_file(root, uid):
+    """First path under root not owned by uid (e.g. left by a run as root: the run user cannot write it), or ''."""
+    for d, dirs, names in os.walk(root):
+        for n in dirs + names:
+            try:
+                if os.lstat(os.path.join(d, n)).st_uid != uid:
+                    return os.path.relpath(os.path.join(d, n), root)
+            except OSError:
+                pass
+    return ""
+
+
+def smoke_command(tron):
+    """One cheap agent call with the worker's executable, model and permission mode (TASK-388), or None when the worker is not
+    Claude Code. tron.preflight_model overrides the worker's --model."""
+    wc = [str(x) for x in tron.get("worker_cmd") or []]
+    if not wc or not os.path.basename(wc[0]).startswith("claude"):
+        return None
+    cmd = [wc[0], "-p", SMOKE_PROMPT, "--max-turns", "1", "--output-format", "json"]
+    model = tron.get("preflight_model")
+    for i, x in enumerate(wc[:-1]):
+        if x == "--permission-mode":
+            cmd += ["--permission-mode", wc[i + 1]]
+        if x == "--model" and not model:
+            model = wc[i + 1]
+    if "--dangerously-skip-permissions" in wc:
+        cmd.append("--dangerously-skip-permissions")
+    return cmd + (["--model", str(model)] if model else [])
+
+
+def smoke_problem(root, tron, timeout=180):
+    """'' when the smoke call answers; else the reason (not logged in, permission mode refused, e.g. bypass as root)."""
+    cmd = smoke_command(tron)
+    if cmd is None:
+        return ""
+    try:
+        r = subprocess.run(cmd, cwd=root, capture_output=True, text=True, timeout=timeout, stdin=subprocess.DEVNULL)
+    except FileNotFoundError:
+        return f"agent CLI not found: {cmd[0]} (install it where the run runs)"
+    except subprocess.TimeoutExpired:
+        return f"smoke call did not answer within {timeout} s"
+    out = r.stdout.strip()
+    try:
+        data = json.loads(out)
+    except ValueError:
+        data = {}
+    if r.returncode == 0 and isinstance(data, dict) and data and not data.get("is_error"):
+        return ""
+    msg = (data.get("result") if isinstance(data, dict) else "") or (r.stderr or out).strip()
+    mode = cmd[cmd.index("--permission-mode") + 1] if "--permission-mode" in cmd else "default"
+    return (f"smoke call '{' '.join(cmd[:2])} ...' failed (exit {r.returncode}, permission mode {mode}): {' '.join(str(msg).split())[:200]}; "
+            f"log in as the run user (start the agent once, /login) or skip with --no-smoke")
+
+
+def preflight(root, tron, smoke=True, uid=None):
+    """Start conditions of an unattended run (TASK-388, generalized from a project preflight). Returns (failures, stop):
+    stop is True for root, where every later step could leave root-owned files behind."""
+    uid = os.geteuid() if uid is None else uid
+    if uid == 0:
+        return ["running as root: Claude Code refuses bypassPermissions under root, and files the run writes would belong to root; "
+                "start as the normal user (sandbox: docker exec -u stem ...)"], True
+    fails = []
+    lock = root / JOURNAL_DIR / "LOCK"
+    if lock.is_file():
+        try:
+            pid = int(lock.read_text().strip())
+        except ValueError:
+            pid = 0
+        if pid and pid_alive(pid):
+            fails.append(f"a run is active (pid {pid}, {lock.relative_to(root)}): wait for it or stop it with docs/agent/tron/STOP")
+        else:
+            fails.append(f"stale {lock.relative_to(root)} (pid {pid or '?'} is gone; a killed run left it): delete the file")
+    hp = git_hooks_problem(root)
+    if hp:
+        fails.append(hp)
+    ff = foreign_file(root, uid)
+    if ff:
+        fails.append(f"files not owned by the run user (uid {uid}), e.g. {ff}: as root, chown -R <user>: {root}")
+    req = tron.get("required_files") or []
+    if not (isinstance(req, list) and all(isinstance(x, str) for x in req)):
+        fails.append("tron.required_files must be a list of paths relative to the project root")
+    else:
+        for rel in req:
+            f = root / rel
+            if not f.is_file() or f.stat().st_size == 0:
+                fails.append(f"required file missing or empty: {rel} (tron.required_files; e.g. git-ignored data the tests need)")
+    if smoke:
+        sp = smoke_problem(root, tron)
+        if sp:
+            fails.append(sp)
+    return fails, False
+
+
+def keep_awake(enabled, pid=None, platform=None, popen=subprocess.Popen):
+    """TASK-388: on macOS start 'caffeinate -i -w <pid>' (idle sleep off until that process ends); returns (process or None, message).
+    Elsewhere a no-op with one message line: inside the Docker sandbox the host keeps itself awake (scripts/sandbox.sh --keep-awake)."""
+    if not enabled:
+        return None, ""
+    platform = platform or sys.platform
+    pid = pid or os.getpid()
+    if platform != "darwin":
+        return None, (f"keep-awake: no-op on {platform} (inside the Docker sandbox start it on the macOS host: "
+                      "scripts/sandbox.sh start <name> --keep-awake)")
+    try:
+        proc = popen(["caffeinate", "-i", "-w", str(pid)], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except OSError as e:
+        return None, f"keep-awake: caffeinate could not start ({e}); the machine may sleep during the run"
+    return proc, f"keep-awake: caffeinate -i -w {pid} keeps this Mac awake until the run ends"
+
+
+def check_milestone(root, milestone, cfg_path=None, smoke=True, uid=None):
     """Readiness check (doc-12 3.1): returns (failures, warnings, tron config or None). Deterministic, starts nothing."""
     fails, warns = [], []
     cp = pathlib.Path(cfg_path) if cfg_path else root / "docs/agent/stem-config.json"
@@ -3103,6 +3230,12 @@ def check_milestone(root, milestone, cfg_path=None):
         fails.append(f"config missing or unreadable: {cp} (needs key 'tron')")
     def cmdok(c):
         return isinstance(c, list) and bool(c) and all(isinstance(a, str) for a in c)
+    pf, stop = preflight(root, tron, smoke=smoke and cmdok(tron.get("worker_cmd")), uid=uid)
+    fails += pf
+    if stop:
+        return fails, warns, tron
+    if not isinstance(tron.get("keep_awake", False), bool):
+        fails.append("tron.keep_awake must be true or false")
     if not cmdok(tron.get("worker_cmd")):
         fails.append("tron.worker_cmd is unset (command template as a list of strings)")
     if not cmdok(tron.get("verify_cmd")):
@@ -3202,7 +3335,7 @@ def check_milestone(root, milestone, cfg_path=None):
 
 def cmd_check(args):
     root = pathlib.Path(args.root).resolve()
-    fails, warns, tron = check_milestone(root, args.milestone, args.config)
+    fails, warns, tron = check_milestone(root, args.milestone, args.config, smoke=not args.no_smoke)
     for w in warns:
         print(f"warning: {w}")
     if fails:
@@ -3230,12 +3363,15 @@ def main(argv=None):
     r.add_argument("--config", help="config file (default: docs/agent/stem-config.json)")
     r.add_argument("--root", default=".", help="project root (default: current directory)")
     r.add_argument("--accept-damage", action="store_true", help="resume a run that stopped for gate damage (the damage stays on the run branch)")
+    r.add_argument("--keep-awake", action="store_true", help="keep the machine awake until the run ends (macOS: caffeinate; "
+                   "elsewhere a no-op with a message); also tron.keep_awake in the config")
     r.add_argument("--detach", action="store_true", help="start the run as its own process (log docs/agent/tron/run-<id>.log) and wait for it; "
                    "ending this command or the session that started it does not end the run")
     c = sub.add_parser("check", help="readiness check for a milestone: lists what blocks an unattended run, starts nothing")
     c.add_argument("--milestone", required=True, help="milestone id, e.g. m-4")
     c.add_argument("--config", help="config file (default: docs/agent/stem-config.json)")
     c.add_argument("--root", default=".", help="project root (default: current directory)")
+    c.add_argument("--no-smoke", action="store_true", help="skip the cheap agent call that checks login and the worker's permission mode")
     sw = sub.add_parser("sweep", help="start the planner in a fresh session; writes docs/agent/tron/SWEEP-<milestone>.md with the questions a run would hit")
     sw.add_argument("--milestone", required=True, help="milestone id, e.g. m-5")
     sw.add_argument("--force", action="store_true", help="overwrite an existing SWEEP file (its answers are lost)")

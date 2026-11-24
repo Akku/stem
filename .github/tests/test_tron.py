@@ -392,6 +392,20 @@ class Tron(unittest.TestCase):
         self.assertFalse((self.proj / "docs/agent/tron").exists())
         self.assertEqual(git(self.proj, "branch", "--show-current").stdout.strip(), "main")
 
+    def test_keep_awake_run(self):  # TASK-388: the run starts caffeinate on macOS, elsewhere one message line
+        (self.bin / "caffeinate").write_text(f"#!/bin/sh\necho \"$@\" > {self.td}/caffeinate.log\n"); (self.bin / "caffeinate").chmod(0o755)
+        r = self.tron("run", "--milestone", "m-1", "--max-tasks", "1", "--keep-awake")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("keep-awake:", r.stdout)
+        if sys.platform == "darwin":
+            for _ in range(50):
+                if (self.td / "caffeinate.log").exists():
+                    break
+                time.sleep(0.1)
+            self.assertRegex((self.td / "caffeinate.log").read_text(), r"^-i -w \d+$")
+        else:
+            self.assertIn("no-op", r.stdout)
+
     def test_dirty_tree_refused(self):
         (self.proj / "scripts/other.txt").write_text("changed")
         r = self.tron("run", "--milestone", "m-1")
@@ -1836,10 +1850,15 @@ class Check(unittest.TestCase):
         c = {k: v for k, v in c.items() if v is not None}
         (self.proj / "docs/agent/stem-config.json").write_text(json.dumps({"tron": c}))
 
-    def check(self, env=None):
+    def check(self, env=None, smoke=False):
         e = {k: v for k, v in os.environ.items() if k not in ("IS_SANDBOX", "STEM_SANDBOX", "CLAUDE_CODE_EFFORT_LEVEL")}
         e.update(env or {})
-        return subprocess.run([sys.executable, str(TRON), "check", "--milestone", "m-9", "--root", str(self.proj)], capture_output=True, text=True, env=e)
+        extra = [] if smoke else ["--no-smoke"]
+        return subprocess.run([sys.executable, str(TRON), "check", "--milestone", "m-9", "--root", str(self.proj)] + extra, capture_output=True, text=True, env=e)
+
+    def mod(self):
+        sys.path.insert(0, str(ROOT / "scripts")); import tron
+        return tron
 
     def commit(self):
         git(self.proj, "add", "-A"); git(self.proj, "commit", "-qm", "x")
@@ -1853,6 +1872,77 @@ class Check(unittest.TestCase):
         r = self.check()
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("READY", r.stdout); self.assertIn("start: scripts/tron.py run --milestone m-9", r.stdout)
+
+    # TASK-388: preflight (start conditions of an unattended run) inside the check
+    def test_preflight_root_stops_at_once(self):
+        t = self.mod()
+        fails, stop = t.preflight(self.proj, {}, smoke=False, uid=0)
+        self.assertTrue(stop); self.assertEqual(len(fails), 1); self.assertIn("running as root", fails[0])
+        fails, warns, _ = t.check_milestone(self.proj, "m-9", smoke=False, uid=0)
+        self.assertEqual(len(fails), 1); self.assertIn("running as root", fails[0])
+
+    def test_preflight_files_owned_by_another_user(self):
+        fails, _ = self.mod().preflight(self.proj, {}, smoke=False, uid=os.getuid() + 1)
+        self.assertTrue(any("files not owned by the run user" in f for f in fails), fails)
+        self.assertEqual(self.mod().foreign_file(self.proj, os.getuid()), "")
+
+    def test_preflight_stale_and_live_lock(self):
+        lock = self.proj / "docs/agent/tron/LOCK"
+        lock.write_text("999999999"); self.fails_with("stale docs/agent/tron/LOCK")
+        lock.write_text(str(os.getpid())); self.fails_with("a run is active (pid")
+
+    def test_preflight_hooks_path(self):
+        (self.proj / "scripts/githooks").mkdir(parents=True); (self.proj / "scripts/githooks/pre-commit").write_text("#!/bin/sh\n")
+        self.commit(); self.fails_with("core.hooksPath is ''")
+        git(self.proj, "config", "core.hooksPath", "scripts/githooks")
+        r = self.check(); self.assertEqual(r.returncode, 0, r.stdout)
+
+    def test_preflight_required_files(self):
+        self.cfg(required_files=["data/rules.json"]); self.commit()
+        self.fails_with("required file missing or empty: data/rules.json")
+        (self.proj / "data").mkdir(); (self.proj / "data/rules.json").write_text("{}"); self.commit()
+        self.assertEqual(self.check().returncode, 0)
+        self.cfg(required_files="data/rules.json"); self.commit(); self.fails_with("tron.required_files must be a list")
+
+    def fake_claude(self, reply, code=0):
+        b = self.tmp / "bin"; b.mkdir(exist_ok=True)
+        (b / "claude").write_text(f"#!/bin/sh\necho \"$@\" >> {self.tmp}/claude.log\necho '{json.dumps(reply)}'\nexit {code}\n"); (b / "claude").chmod(0o755)
+        return {"PATH": f"{b}:{os.environ['PATH']}", "IS_SANDBOX": "1"}
+
+    def test_preflight_smoke_call_uses_worker_mode_and_model(self):
+        self.cfg(worker_cmd=["claude", "-p", "{prompt}", "--permission-mode", "bypassPermissions", "--model", "m1"]); self.commit()
+        env = self.fake_claude({"is_error": False, "result": "OK"})
+        r = self.check(env=env, smoke=True); self.assertEqual(r.returncode, 0, r.stdout)
+        argv = (self.tmp / "claude.log").read_text()
+        for x in ("-p Reply with the single word OK.", "--max-turns 1", "--permission-mode bypassPermissions", "--model m1"):
+            self.assertIn(x, argv)
+        self.assertNotIn("{prompt}", argv)
+
+    def test_preflight_smoke_failure_and_no_smoke(self):
+        self.cfg(worker_cmd=["claude", "--permission-mode", "bypassPermissions"]); self.commit()
+        env = self.fake_claude({"is_error": True, "result": "Invalid API key. Please run /login"}, code=1)
+        r = self.check(env=env, smoke=True); self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("smoke call 'claude -p ...' failed (exit 1, permission mode bypassPermissions): Invalid API key", r.stdout)
+        (self.tmp / "claude.log").unlink()
+        r = self.check(env=env); self.assertEqual(r.returncode, 0, r.stdout)  # --no-smoke
+        self.assertFalse((self.tmp / "claude.log").exists())
+
+    def test_preflight_smoke_only_for_claude_workers(self):
+        t = self.mod()
+        self.assertIsNone(t.smoke_command({"worker_cmd": ["codex", "exec", "{prompt}"]}))
+        c = t.smoke_command({"worker_cmd": ["/opt/claude", "--dangerously-skip-permissions", "--model", "a"], "preflight_model": "b"})
+        self.assertEqual(c[0], "/opt/claude"); self.assertIn("--dangerously-skip-permissions", c); self.assertEqual(c[-2:], ["--model", "b"])
+
+    def test_keep_awake_by_platform(self):
+        t = self.mod(); seen = []
+        def popen(cmd, **kw):
+            seen.append(cmd); return "proc"
+        self.assertEqual(t.keep_awake(False, 7, "darwin", popen), (None, ""))
+        proc, msg = t.keep_awake(True, 7, "darwin", popen)
+        self.assertEqual((proc, seen), ("proc", [["caffeinate", "-i", "-w", "7"]])); self.assertIn("keeps this Mac awake", msg)
+        proc, msg = t.keep_awake(True, 7, "linux", popen)
+        self.assertIsNone(proc); self.assertEqual(len(seen), 1); self.assertIn("no-op on linux", msg); self.assertIn("sandbox.sh", msg)
+        self.cfg(keep_awake="yes"); self.commit(); self.fails_with("tron.keep_awake must be true or false")
 
     def test_task_without_acs(self):
         self.task("TASK-2", acs=""); self.commit(); self.fails_with("TASK-2: no acceptance criteria")

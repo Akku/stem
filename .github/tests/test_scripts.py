@@ -609,6 +609,25 @@ class SandboxScript(SandboxRepo):
         self.assertIn("out1/x.tar.gz", run(["bash", "scripts/sandbox.sh", "export", "x"], self.repo, env).stdout)
         self.assertIn("out2/x.tar.gz", run(["bash", "scripts/sandbox.sh", "export", "x", str(self.tmp / "out2")], self.repo, env).stdout)
 
+    def test_keep_awake_wraps_the_session_on_macos_only(self):  # TASK-388
+        env = self.stub(); (self.tmp / "home").mkdir(); b = self.tmp / "bin"
+        (b / "caffeinate").write_text(f"#!/bin/sh\necho \"$@\" > {self.tmp}/caf.log\n"); (b / "caffeinate").chmod(0o755)
+        for osname in ("Darwin", "Linux"):
+            (b / "uname").write_text(f"#!/bin/sh\necho {osname}\n"); (b / "uname").chmod(0o755)
+            r = run(["bash", "scripts/sandbox.sh", "start", "x", "--keep-awake"], self.repo, env)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            if osname == "Darwin":
+                self.assertIn("keep-awake: caffeinate", r.stderr)
+                for _ in range(50):
+                    if (self.tmp / "caf.log").exists():
+                        break
+                    time.sleep(0.1)
+                self.assertRegex((self.tmp / "caf.log").read_text(), r"^-i -w \d+$")
+            else:
+                self.assertIn("keep-awake: no-op on Linux", r.stderr)
+        r = run(["bash", "scripts/sandbox.sh", "start", "x"], self.repo, env)
+        self.assertNotIn("keep-awake", r.stderr)
+
     def test_dockerfile_installs_gh_and_image_tag_has_revision(self):
         self.assertRegex((ROOT / "docker/Dockerfile").read_text(), r"git gh ")
         self.assertRegex((ROOT / "scripts/sandbox.sh").read_text(), r'img="stem-sandbox:\$ver-\$IMG_REV"')
