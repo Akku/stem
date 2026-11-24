@@ -2154,6 +2154,24 @@ class Check(unittest.TestCase):
         sk = (ROOT / ".claude/skills/tron/SKILL.md").read_text()
         self.assertIn("split-out --milestone", sk); self.assertIn("ONE info list, no question", sk)
 
+    def test_sweep_environment_need_is_caught_before_the_run_and_check_follows_the_tick(self):  # TASK-395
+        r = self.sweep("# Sweep: m-9\n## Questions\n- none\n## Environment needs\n"
+                       "- [ ] E1 (TASK-1) postgres service: AC#1 needs real query results Check: pg_isready\n- [ ] E2 (TASK-2) none beyond tests\n")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr); self.assertIn("2 environment need(s)", r.stdout)
+        self.commit(); self.fails_with("TASK-1 needs postgres service")
+        f = self.proj / "docs/agent/tron/SWEEP-m-9.md"
+        f.write_text(f.read_text().replace("- [ ] E1", "- [x] E1").replace("- [ ] E2", "- [x] E2")); self.commit()
+        self.fails_with("TASK-1 needs postgres service")  # a tick without 'Checked:' is no proof
+        f.write_text(f.read_text().replace("Check: pg_isready\n", "Check: pg_isready\n  Checked: installed postgres in the sandbox, pg_isready ok\n")
+                     .replace("- [x] E2 (TASK-2) none beyond tests\n", "- [x] E2 (TASK-2) none beyond tests\n  Checked: nothing needed\n")); self.commit()
+        r = self.check(); self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
+    def test_sweep_rejects_malformed_environment_line_and_old_sweeps_stay_valid(self):  # TASK-395
+        r = self.sweep("# Sweep: m-9\n## Questions\n- none\n## Environment needs\n- [ ] E1 TASK-1: needs a server\n")
+        self.assertNotEqual(r.returncode, 0); self.assertIn("malformed '## Environment needs'", r.stdout + r.stderr)
+        sys.path.insert(0, str(ROOT / "scripts")); import tron
+        self.assertEqual(tron.sweep_env_needs("# Sweep: m-9\n## Questions\n- none\n"), [])
+
     def test_sweep_needs_user_item_of_a_done_task_does_not_block(self):
         self.sweep("# Sweep: m-9\n## Questions\n- none\n## Needs the user\n- [ ] N1 (TASK-1 AC#1) real data: needs the live feed\n")
         f = next((self.proj / "backlog/tasks").glob("task-1 - *.md")); f.write_text(re.sub(r"(?m)^status: .*$", "status: Done", f.read_text()))

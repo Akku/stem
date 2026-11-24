@@ -2058,6 +2058,10 @@ SWEEP_ID = re.compile(r"[\w.-]+")
 SWEEP_N = re.compile(r"^\s*-\s*\[(.)\]\s*(N\d+)\s*\((TASK-\d+) AC#(\d+)\)\s*(judgement|real data|interface)\b", re.M)
 NEEDS_USER = "## Needs the user"
 NEEDS_KIND = {"judgement": "the user's judgement", "real data": "real data", "interface": "an interface decision"}
+# TASK-395: what each task's ACs need from the run environment (service, tool, data) for E2 evidence; the calling agent checks it in the
+# environment the run uses and fixes or decides the gap with the user before the run (resolved = ticked with a 'Checked:' line)
+SWEEP_E = re.compile(r"^\s*-\s*\[(.)\]\s*(E\d+)\s*\((TASK-\d+)\)\s*(\S.*)$", re.M)
+ENV_NEEDS = "## Environment needs"
 # TASK-369: a reversible decision the frame covers is no question; the planner states it as a pre-decided assumption the user may veto
 PREDECIDED = "## Pre-decided assumptions"
 SWEEP_A = re.compile(r"^\s*-\s*(A\d+)\s*\((TASK-\d+)\)\s*(.+?)\s*\(basis:\s*(frame:[^)]*\S)\s*\)\s*$", re.M)
@@ -2105,6 +2109,22 @@ def sweep_needs_user(text):
         block = body[m.end():ms[i + 1].start() if i + 1 < len(ms) else len(body)]
         done = m.group(1).lower() == "x" and bool(re.search(r"^\s*(?:[-*]\s*)?Resolved:\s*\S", block, re.M | re.I))
         out.append((m.group(2), m.group(3), int(m.group(4)), m.group(5), done))
+    return out
+
+
+def sweep_env_needs(text):
+    """Lines of the '## Environment needs' section: (id, task, need, resolved); resolved = ticked with a non-empty 'Checked:' line.
+    A sweep without the section yields nothing (older sweeps stay valid)."""
+    sec = re.search(rf"^{ENV_NEEDS}\s*$(.*?)(?=^## |\Z)", text, re.M | re.S)
+    if not sec:
+        return []
+    body = sec.group(1)
+    ms = list(SWEEP_E.finditer(body))
+    out = []
+    for i, m in enumerate(ms):
+        block = body[m.end():ms[i + 1].start() if i + 1 < len(ms) else len(body)]
+        done = m.group(1).lower() == "x" and bool(re.search(r"^\s*(?:[-*]\s*)?Checked:\s*\S", block, re.M | re.I))
+        out.append((m.group(2), m.group(3), m.group(4).strip(), done))
     return out
 
 
@@ -2207,6 +2227,10 @@ def cmd_sweep(args):
     bad = [l for l in (nu.group(1).splitlines() if nu else []) if re.match(r"\s*[-*]\s*(\[|N\d)", l) and not SWEEP_N.match(l)]
     if bad:
         raise TronError(f"sweep has malformed '{NEEDS_USER}' lines (must be '- [ ] N<n> (TASK-n AC#k) judgement|real data|interface: ...'); bad: {bad[:2]}")
+    en = re.search(rf"^{ENV_NEEDS}\s*$(.*?)(?=^## |\Z)", body, re.M | re.S)
+    bad = [l for l in (en.group(1).splitlines() if en else []) if re.match(r"\s*[-*]\s*(\[|E\d)", l) and not SWEEP_E.match(l)]
+    if bad:
+        raise TronError(f"sweep has malformed '{ENV_NEEDS}' lines (must be '- [ ] E<n> (TASK-n) <need>: ... Check: <command>' or '- none'); bad: {bad[:2]}")
     pa = re.search(rf"^{PREDECIDED}\s*$(.*?)(?=^## |\Z)", body, re.M | re.S)
     bad = [l for l in (pa.group(1).splitlines() if pa else []) if re.match(r"\s*[-*]\s*\S", l) and not re.match(r"\s*[-*]\s*none\s*$", l)
            and not SWEEP_A.match(l)]
@@ -2220,6 +2244,9 @@ def cmd_sweep(args):
     flagged = sweep_needs_user(body)
     if flagged:
         print(f"{len(flagged)} AC(s) need the user ({', '.join(f'{t} AC#{a} {k}' for _, t, a, k, _ in flagged)}): run 'python3 scripts/tron.py split-out --milestone {args.milestone}' (no question)")
+    envs = sweep_env_needs(body)
+    if envs:
+        print(f"{len(envs)} environment need(s) (E1..): check each in the environment the run uses and fix the gap or decide it with the user (skill tron, 'Environment check')")
     cost = entry.get("cost_usd")
     print(f"sweep written: {out.relative_to(root)} ({n} open question(s); cost {cost if cost is not None else 'unknown'} USD)")
     print("next: answer the questions with the user (skill tron), tick them '[x]' with 'Answer: ...', commit the file, then run the check")
@@ -3299,6 +3326,10 @@ def check_milestone(root, milestone, cfg_path=None, smoke=True, uid=None):
                 if not done and tid in open_ids:
                     fails.append(f"{tid} AC#{ac} needs {NEEDS_KIND[kind]} "
                                  f"({sw.name} {nid}): run 'python3 scripts/tron.py split-out --milestone {milestone}' (or split it by hand, tick {nid} '[x]' and add 'Resolved: ...')")
+            for eid, tid, need, done in sweep_env_needs(sw.read_text()):
+                if not done and tid in open_ids:
+                    fails.append(f"{tid} needs {need[:100]} in the run environment ({sw.name} {eid}): check it where the run happens, install or configure it, "
+                                 f"or decide split, skip or block with the user, then tick {eid} '[x]' and add 'Checked: <result>'")
     dirty = tree_dirty(root)
     if dirty:
         fails.append(f"working tree is not clean ({len(dirty)} change(s), first: {dirty[0].strip()[:80]})")

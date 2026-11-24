@@ -17,6 +17,7 @@ For each task ask: what would a worker have to decide that the frame, an invaria
 - a task too large for one session (more than about 5 ACs or several modules) or an AC no command or screen can check;
 - tasks that depend on each other without saying so;
 - an AC the run cannot meet alone: it needs the user's judgement (taste, "feels right", approval), real data the project does not hold, or an interface or ownership decision. List it under `## Needs the user`, not as a question; it is split out before the run.
+- what its ACs need from the run environment for E2 evidence beyond the code and plain tests: a service (database, server, queue), a tool or runtime version, test data or a git-ignored file, network access. List them under `## Environment needs`, one line per need, with the command that proves it is present; the calling agent checks and fixes it before the run, so no worker meets the gap mid-run.
 Do not ask what the frame already allows to decide alone. Do not suggest redesigns.
 
 ## Question or pre-decided assumption
@@ -42,6 +43,8 @@ Exactly this Markdown, nothing before the first heading:
 - [ ] Q1 (TASK-n) <the question> a) <option> b) <option> Recommendation: <a|b> because <reason>
 ## Pre-decided assumptions
 - A1 (TASK-n) <the decision the run takes> (basis: frame: <frame line or kind above>)
+## Environment needs
+- [ ] E1 (TASK-n) <service|tool|data>: <what the ACs need it for> Check: <command that exits 0 when it is present>   (or: none)
 ## Draft acceptance scenario
 <what the user would click or run to judge the milestone; 3-8 lines>
 ## Too large or not testable
@@ -50,4 +53,4 @@ Exactly this Markdown, nothing before the first heading:
 - [ ] N1 (TASK-n AC#k) <judgement|real data|interface>: <why the run cannot meet it> Split: <the AC as its own task outside the milestone, and what stays>
 ```
 
-Questions are numbered Q1, Q2, ... one line each, every one tied to a task, with a recommendation. Pre-decided assumptions are numbered A1, A2, ... one line each, tied to a task, without a checkbox, ending in `(basis: frame: ...)`. No questions: write `- none` under `## Questions` (no checkbox); the same for `## Pre-decided assumptions` and `## Needs the user`. Each N line names exactly one AC.
+Questions are numbered Q1, Q2, ... one line each, every one tied to a task, with a recommendation. Pre-decided assumptions are numbered A1, A2, ... one line each, tied to a task, without a checkbox, ending in `(basis: frame: ...)`. No questions: write `- none` under `## Questions` (no checkbox); the same for `## Pre-decided assumptions`, `## Environment needs` and `## Needs the user`. E lines are numbered E1, E2, ... one need per line, tied to a task, with a `Check:` command. Each N line names exactly one AC.
