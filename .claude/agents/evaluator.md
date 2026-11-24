@@ -67,3 +67,9 @@ They show the strictness expected. Do not copy their wording.
 ```json
 {"verdict": "pass", "checked": [{"ac": "AC#1", "how": "greet Ada", "observed": "Hello, Ada!"}, {"ac": "AC#2", "how": "greet; echo $?", "observed": "usage message, 2"}], "findings": [], "assumption_flags": []}
 ```
+
+**Example 4: fail, works by API but the user cannot reach it.** Task with AC#1 "a user can add, rename and delete a note in the web UI" and AC#2 "notes survive a reload". Tests call the HTTP API and all pass. You open the UI as a new user (fresh browser profile, no hover, no keyboard shortcuts, no prior knowledge) and walk the whole life cycle: add, change, delete, reload. Add works and survives the reload. Rename and delete exist only as icons that appear on hover, and no visible control or text leads to them; a first-time user would not find them.
+
+```json
+{"verdict": "fail", "checked": [{"ac": "AC#1", "how": "fresh browser, no hover: add, rename, delete a note, reload", "observed": "add works; rename and delete not reachable without hover"}, {"ac": "AC#2", "how": "reload after add", "observed": "note still listed"}], "findings": [{"ac": "AC#1", "location": "notes list screen (controls only on hover)", "scenario": "open the list as a new user without hovering -> expected a visible way to rename and delete, actual none; only the API works", "kind": "defect"}], "assumption_flags": []}
+```
