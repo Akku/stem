@@ -11,7 +11,10 @@ permission prompt can arise and the container is the boundary. Never a narrow --
 prompts stop an unattended run that nobody answers. Config example:
   {"tron": {"worker_cmd": ["claude", "-p", "{prompt}", "--session-id", "{session_id}", "--output-format", "json",
             "--max-budget-usd", "2", "--max-turns", "40", "--permission-mode", "bypassPermissions"],
+            "evaluator_cmd": ["claude", "-p", "{prompt}", "--session-id", "{session_id}", "--output-format", "json",
+            "--max-budget-usd", "5", "--permission-mode", "bypassPermissions"],
             "worker_model": "optional name when the output does not report one"}}
+The evaluator gets no --max-turns (TASK-403: a turn limit ends it before its verdict); its budget limit is 5 USD per session.
 Placeholders: {prompt} {session_id} {task_id} {run_id} {milestone}. Roles: worker, evaluator, doctor, planner, retro
 (key <role>_cmd; a missing one falls back to worker_cmd).
 Python standard library only (macOS and Linux)."""
@@ -220,6 +223,8 @@ def parse_output(text):
         out["api_status"] = d["api_error_status"]
     if isinstance(d.get("result"), str):
         out["result_text"] = d["result"]
+    if isinstance(d.get("subtype"), str) and d["subtype"].startswith("error"):  # TASK-403: e.g. error_max_turns, error_max_budget_usd
+        out["subtype"] = d["subtype"]
     mu = d.get("modelUsage")
     if isinstance(mu, dict) and mu:
         out["model"] = ", ".join(sorted(mu))
@@ -278,6 +283,8 @@ def run_session(root, tron, role, task_id, run_id, milestone, prompt=None):
             raise
         entry["exit_code"] = proc.returncode
         info = parse_output(out)
+        if info.get("subtype"):
+            entry["end_reason"] = info["subtype"]
         if role in ("evaluator", "planner", "doctor", "retro"):  # the verdict or sweep text goes to its own file, not into the journal
             entry["_out"] = info.get("result_text") or (out or "")[-30000:]
         if proc.returncode:
@@ -946,7 +953,7 @@ def evaluate(root, tron, journal, jpath, target, base, g, task_ids, intent, abor
         print("tron: no evaluator_cmd configured: the evaluator runs with the worker command (Edit and Write allowed); "
               "read-only is only enforced by the tree check afterwards", file=sys.stderr)
     before = tree_state(root)
-    verdict = None
+    verdict, ends = None, []
     for attempt in (1, 2):  # a missing verdict gets one retry with a short brief; still none goes back to evaluation, never to a worker
         brief = write_brief(root, tron, journal, target, base, g, task_ids, intent, reduced=attempt == 2)
         prompt = (f"You are the independent evaluator of an unattended Tron mode run. Read .claude/agents/evaluator.md and follow it exactly. "
@@ -955,6 +962,8 @@ def evaluate(root, tron, journal, jpath, target, base, g, task_ids, intent, abor
             prompt += " " + NO_VERDICT_RETRY.format(target=target)
         entry, up = sessions_with_retry(root, tron, "evaluator", target, journal["run_id"], journal["milestone"], journal, jpath, prompt, abort_check=abort_check)
         text = entry.pop("_out", "")
+        if entry.get("end_reason"):
+            ends.append(entry["end_reason"])
         if not up:
             return {"unavailable": entry.get("retry_aborted") or "API unavailable after retries"}
         if tree_state(root) != before:
@@ -977,7 +986,9 @@ def evaluate(root, tron, journal, jpath, target, base, g, task_ids, intent, abor
     write_risk_drafts(root, target, verdict.get("risks") or [], journal)
     write_journal(jpath, journal)
     if none:
-        return {"none": "the evaluator gave no verdict twice (final json block missing, also after a short brief)", "file": str(vpath.relative_to(root))}
+        why = (f"the session hit a limit ({', '.join(ends)}): evaluator_cmd needs no --max-turns and a 5 USD budget" if ends
+               else "final json block missing, also after a short brief")
+        return {"none": f"the evaluator gave no verdict twice ({why})", "file": str(vpath.relative_to(root))}
     return dict(verdict, file=str(vpath.relative_to(root)))
 
 
@@ -3823,6 +3834,10 @@ def check_milestone(root, milestone, cfg_path=None, smoke=True, uid=None):
         warns.append("tron.retro_apply is on but tron.retro is not: open experiments are checked, no new proposals are applied")
     if not cmdok(tron.get("evaluator_cmd")) and tron.get("evaluator", "milestone") != "off":
         warns.append("tron.evaluator_cmd is missing: the evaluator falls back to worker_cmd, which may edit files")
+    ec = tron.get("evaluator_cmd") if cmdok(tron.get("evaluator_cmd")) else wc
+    if tron.get("evaluator", "milestone") != "off" and "--max-turns" in (ec or []):  # TASK-403
+        warns.append("the evaluator command carries --max-turns: a turn limit ends the evaluator before its verdict; "
+                     "drop it and limit the evaluator by --max-budget-usd 5")
     return fails, warns, tron
 
 

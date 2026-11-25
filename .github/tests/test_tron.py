@@ -189,6 +189,8 @@ if v == "write_tracked":
     open("scripts/t.py", "a").write("# tampered\\n")
 if v == "none":
     print("I looked at it and it seems fine."); sys.exit(0)
+if v == "limit":  # TASK-403: the session ran into --max-turns before its verdict
+    print(json.dumps({"type": "result", "subtype": "error_max_turns", "is_error": True, "session_id": sid, "total_cost_usd": 1.5, "num_turns": 41})); sys.exit(1)
 if v in ("risk", "risk_frame"):
     j = {"verdict": "fail", "findings": [{"ac": "-", "location": "x", "scenario": "1 GB input with one 4 MB word", "kind": "risk"}], "assumption_flags": [], "checked": [{"ac": "AC#1"}]}
     if v == "risk_frame":
@@ -1455,6 +1457,19 @@ class Tron(unittest.TestCase):
         self.assertIn("evaluator gave no verdict", rep)
         self.assertIn("Evaluator saw only part of the diff, so it is no independent review (R-REVIEW): TASK-1 (short brief (diff stat only))", rep)  # TASK-420 AC#4
 
+    def test_evaluator_hitting_a_limit_is_reported_with_that_reason_and_re_evaluated_on_resume(self):  # TASK-403 AC#1
+        self.with_evaluator("milestone", max_repairs=2)
+        self.evaluator_plan({"milestone": ["limit"]})
+        r = self.tron("run", "--milestone", "m-1", "--run-id", "r1")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        j = self.journal()
+        self.assertFalse(j["complete"]); self.assertIn("error_max_turns", j["stop_reason"]); self.assertIn("run again to re-evaluate", j["stop_reason"])
+        self.assertEqual([x for x in j["sessions"] if x["task"] == "milestone" and x["role"] == "worker"], [])  # no repair session
+        self.assertEqual([x.get("end_reason") for x in j["sessions"] if x["role"] == "evaluator" and x["task"] == "milestone"], ["error_max_turns"] * 2)
+        self.evaluator_plan({"milestone": ["limit", "limit", "pass"]})
+        r = self.tron("run", "--milestone", "m-1", "--run-id", "r1")
+        self.assertEqual(r.returncode, 0, r.stderr); self.assertTrue(self.journal()["complete"])
+
     def test_evaluator_short_retry_gives_the_verdict(self):  # TASK-419 AC#4
         self.with_evaluator("task")
         self.evaluator_plan({"TASK-1": ["none", "pass"]})
@@ -2419,6 +2434,16 @@ class Check(unittest.TestCase):
     def test_check_warns_task_naming_a_protected_path(self):
         self.task("TASK-2", acs="- [ ] #1 scripts/githooks/pre-commit refuses x\n"); self.commit()
         self.assertIn("TASK-2 names protected paths", self.check().stdout)
+
+    def test_check_warns_about_an_evaluator_turn_limit(self):  # TASK-403 AC#2
+        self.cfg(evaluator="milestone", evaluator_cmd=["claude", "-p", "{prompt}", "--max-turns", "40"]); self.commit()
+        self.assertIn("evaluator command carries --max-turns", self.check().stdout)
+        self.cfg(evaluator="milestone", evaluator_cmd=["claude", "-p", "{prompt}", "--max-budget-usd", "5"]); self.commit()
+        self.assertNotIn("--max-turns", self.check().stdout)
+        src = (ROOT / "scripts/tron.py").read_text()
+        ex = src[src.index('"evaluator_cmd": ["claude"'):].split("]", 1)[0]
+        self.assertIn('"--max-budget-usd", "5"', ex); self.assertNotIn("--max-turns", ex)
+        self.assertIn("evaluator_cmd` without `--max-turns`", (ROOT / ".claude/skills/tron/SKILL.md").read_text())
 
     def test_check_warns_retro_on_without_retro_cmd(self):
         self.cfg(retro="on"); self.commit()
