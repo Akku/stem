@@ -118,6 +118,8 @@ if beh == "draft_block":
     open("junk.txt", "w").write("half done")
 if beh == "note_only":
     s3 = open(f).read(); open(f, "w").write(s3.replace("status: Done", "status: To Do").replace("- [x] #1", "- [ ] #1").replace("AC#1: E2 fake evidence\\n", "").replace("<!-- SECTION:NOTES:END -->", "BLOCKED: need a decision\\n<!-- SECTION:NOTES:END -->"))
+if beh == "e1_gap":  # TASK-419: AC#2 could only be read, the environment lacks the runtime
+    s3 = open(f).read(); open(f, "w").write(s3.replace("- [ ] #2", "- [x] #2").replace("AC#1: E2 fake evidence\\n", "AC#1: E2 fake evidence\\nAC#2: E1 code read only, no php runtime here\\n"))
 if beh == "extrapolated":
     s3 = open(f).read(); open(f, "w").write(s3.replace("AC#1: E2 fake evidence", "AC#1: E2 extrapolated from 52 MB"))
 if beh == "assume_nobasis":
@@ -931,6 +933,46 @@ class Tron(unittest.TestCase):
         self.assertIn("draft question", [x["step"] for x in t["ladder"]])
         rep = (self.proj / "docs/agent/tron" / next((self.proj / "docs/agent/tron").glob("REPORT-*.md")).name).read_text()
         self.assertIn("ladder: doctor: needs_user", rep)
+
+    def test_worker_block_goes_to_the_doctor_at_once_and_reuses_its_draft(self):  # TASK-419 AC#2
+        self.with_doctor({"TASK-1": [{"verdict": "needs_user", "diagnosis": "x is open", "question": "x as a or b?"}]})
+        self.behavior({"TASK-1": "draft_block"})
+        self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
+        t = self.journal()["tasks"]["TASK-1"]
+        self.assertEqual(t["state"], "blocked")
+        self.assertEqual([c["task"] for c in self.calls()].count("TASK-1"), 1)  # no repair session
+        self.assertEqual(self.doctor_calls(), ["TASK-1"])
+        self.assertEqual([x["step"] for x in t["ladder"]][:2], ["worker blocked", "doctor"])
+        drafts = list((self.proj / "backlog/drafts").glob("draft-*"))
+        self.assertEqual(len(drafts), 1)
+        text = drafts[0].read_text(); self.assertIn("Decide x", text); self.assertIn("x as a or b?", text)
+        self.assertIn("draft-1", t["reason"])
+
+    def test_e1_only_ac_for_a_sweep_gap_is_split_out_after_the_first_session(self):  # TASK-419 AC#3
+        self.two_acs()
+        (self.proj / "docs/agent/tron").mkdir(parents=True, exist_ok=True)
+        (self.proj / "docs/agent/tron/SWEEP-m-1.md").write_text("# Sweep\n\n## Environment needs\n\n- [ ] E1 (TASK-1) PHP runtime for AC#2\n")
+        git(self.proj, "add", "-A"); git(self.proj, "commit", "-qm", "sweep")
+        self.behavior({"TASK-1": ["e1_gap", "ok"]})
+        r = self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
+        j = self.journal(); t = j["tasks"]["TASK-1"]
+        self.assertEqual(t["state"], "accepted", r.stdout + r.stderr)
+        self.assertEqual([c["task"] for c in self.calls()].count("TASK-1"), 2)
+        self.assertEqual(t["ladder"][0], {"step": "environment split out", "result": "TASK-4"})
+        self.assertIn("it also works", (self.proj / "backlog/tasks/task-4 - sub.md").read_text())
+        self.assertNotIn("#2 it also works", (self.proj / "backlog/tasks/task-1 - x.md").read_text())
+        self.assertIn("PHP runtime", j["split_out"][0]["question"])
+        self.assertIn("were moved to TASK-4", [c for c in self.calls() if c["task"] == "TASK-1"][1]["prompt"])
+
+    def test_doctor_environment_gap_splits_out_the_e1_acs_and_the_task_goes_on(self):  # TASK-419 AC#3
+        self.two_acs()
+        self.with_doctor({"TASK-1": [{"verdict": "environment_problem", "diagnosis": "no php", "missing": "php runtime"}]}, max_repairs=1)
+        self.behavior({"TASK-1": ["e1_gap", "ok"]})
+        self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
+        j = self.journal(); t = j["tasks"]["TASK-1"]
+        self.assertEqual(t["state"], "accepted", t)
+        self.assertEqual([x["step"] for x in t["ladder"]][:3], ["doctor", "environment gap", "environment split out"])
+        self.assertEqual(j["split_out"][0]["new"], "TASK-4")
 
     def test_runner_error_mid_run_ends_cleanly_and_resumes(self):
         """TASK-365 (shadowrun field report): a commit-msg hook rejecting the draft commit raised TronError and left

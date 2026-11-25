@@ -529,6 +529,16 @@ def gate(root, tron, task_id, base, acs_before, start_commit, branch, refs0):
 
 # ---- evaluator (independent judge; fail is handled like a gate fail) ----
 
+def env_gaps_for(root, journal, milestone, task_id, evidence=""):
+    """Environment gaps named before or during the run for a task: unresolved sweep needs of the task, Doctor gaps of the task,
+    and Doctor gaps of other tasks that share a word with the E1 evidence (TASK-419 row 7)."""
+    sw = root / f"docs/agent/tron/SWEEP-{milestone}.md"
+    gaps = [need for _, tid, need, done in (sweep_env_needs(sw.read_text()) if sw.is_file() else []) if tid == task_id and not done]
+    ew = content_words(evidence)
+    gaps += [g["missing"] for g in journal.get("env_gaps", []) if g.get("task") == task_id or content_words(g.get("missing", "")) & ew]
+    return list(dict.fromkeys(gaps))
+
+
 def labels_of(text):
     lab = re.search(r"^labels:(.*?)(?=^\S)", text, re.M | re.S)
     return [l.lower() for l in re.findall(r"[\w-]+", lab.group(1))] if lab else []
@@ -684,6 +694,31 @@ def assumption_basis(line):
     """Basis of an 'Assumption:' line: text after '(basis: ...)' at the end, 'none' when it says so, None when the line names no basis."""
     m = ASSUMPTION_BASIS.search(line.strip())
     return (m.group(1) or "none").strip() if m else None
+
+
+def e1_only_acs(text):
+    """[(n, ac text, E1 line)] of the ACs whose notes carry an 'AC#n: E1 ...' line and no E2 line (TASK-419 row 7)."""
+    _, acs, notes = parse_task(text)
+    out = []
+    for _, n, t in acs:
+        m = re.search(rf"^\s*AC#{n}: E1\b(.*)$", notes, re.M)
+        if m and not re.search(rf"^\s*AC#{n}: E2 +\S", notes, re.M):
+            out.append((n, t, m.group(1).strip()))
+    return out
+
+
+def worker_blocked(root, task_id, start_commit, blocked_status="Blocked"):
+    """Why the worker blocked the task on purpose (status Blocked or a new 'blocked' notes line), else None (TASK-419 row 5)."""
+    f = task_files(root).get(task_id)
+    if not f:
+        return None
+    text = f.read_text()
+    old = {l.strip() for l in parse_task(start_text(root, task_id, start_commit) or "")[2].splitlines()}
+    new = [l.strip() for l in parse_task(text)[2].splitlines() if l.strip() and l.strip() not in old]
+    hit = [l for l in new if re.search(r"\bblock(ed)?\b", l, re.I)]
+    if hit or is_blocked(text, blocked_status):
+        return " ".join(hit or new)[:300] or "status set to " + blocked_status
+    return None
 
 
 def task_intent(text):
@@ -1091,10 +1126,43 @@ def clip(text, n):
     return (cut[:sp] if sp > n // 2 else cut).rstrip(" ,;:.-") + "…"
 
 
-def write_question_draft(root, journal, title, body, label):
-    """A decision draft for the user, committed on its own (the blocked task's reset keeps drafts)."""
+def task_draft(root, journal, task_id, since):
+    """TASK-419 row 5: a draft of this run that belongs to the task (names it, or appeared during its sessions since `since`),
+    so a Doctor question about the same cause goes into it instead of a second draft. None when there is none."""
+    d = root / "backlog/drafts"
+    if not d.is_dir() or not journal.get("start_commit"):
+        return None
+    at = lambda c: set(git_ok(root, "ls-tree", "--name-only", c, "backlog/drafts/").splitlines()) if c else set()
+    old, task_old = at(journal["start_commit"]), at(since)
+    for p in sorted(d.glob("draft-*.md"), key=lambda p: next_draft_number_of(p.name)):
+        rel, text = p.relative_to(root).as_posix(), p.read_text()
+        title = re.search(r"^title: *(.+?) *$", text, re.M)
+        if rel in old or is_follow_up(title.group(1) if title else "", text) or re.search(r"^\s*-\s*tron-risk\s*$", text, re.M):
+            continue
+        if re.search(rf"\b{re.escape(task_id)}\b", text) or (since and rel not in task_old):
+            return p
+    return None
+
+
+def next_draft_number_of(name):
+    m = re.match(r"draft-(\d+)", name)
+    return int(m.group(1)) if m else 0
+
+
+def write_question_draft(root, journal, title, body, label, task_id=None, since=None):
+    """A decision draft for the user, committed on its own (the blocked task's reset keeps drafts). With task_id an existing
+    draft of this run for the same task is reused: the body is appended to it (TASK-419)."""
     d = root / "backlog/drafts"
     d.mkdir(parents=True, exist_ok=True)
+    old = task_draft(root, journal, task_id, since) if task_id else None
+    if old is not None:
+        text = old.read_text()
+        add = f"\n\n{title}\n\n{body}\n"
+        end = "<!-- SECTION:DESCRIPTION:END -->"
+        old.write_text(text.replace(end, add.lstrip("\n") + end, 1) if end in text else text.rstrip("\n") + "\n" + add)
+        git_ok(root, "add", "-A", "--", "backlog/drafts")
+        git_ok(root, "commit", "-q", "-m", f"Tron run: {label} added to {old.name.split(' ')[0].upper()}")
+        return old.name.split(" ")[0]
     n = next_draft_number(d)
     title = clip(title, 90).replace("'", "")
     slug = re.sub(r"[^A-Za-z0-9]+", "-", title)[:60].strip("-")
@@ -1951,7 +2019,7 @@ def run_loop(root, tron, args, milestone, jpath, run_id, ctx=None):
         journal["in_progress"] = {"task": task_id, "base": base, "acs_before": acs_before, "repairs": repairs, "last_sig": last_sig}
         prompt = None
         outcome = None
-        limit, ladder, doctored, hint, split_plan = max_repairs, [], False, None, None
+        limit, ladder, doctored, hint, split_plan, split_e1 = max_repairs, [], False, None, None, False
         rip = resume_ip_task if resume_ip_task and resume_ip_task["task"] == task_id else None
         if rip and rip.get("ladder") is not None:  # the ladder state survives a stop: the Doctor runs once per task
             limit, ladder, doctored, hint = rip.get("limit", limit), rip["ladder"], rip.get("doctored", False), rip.get("hint")
@@ -1959,6 +2027,28 @@ def run_loop(root, tron, args, milestone, jpath, run_id, ctx=None):
         def persist():
             journal["in_progress"].update(limit=limit, ladder=ladder, doctored=doctored, hint=hint)
             write_journal(jpath, journal)
+
+        def split_out(task_id, so, diagnosis, question, waits_for):
+            """Move the ACs `so` into a new task outside the milestone and commit (TASK-373, TASK-419): (new id, None) or (None, why not)."""
+            bad = check_split_out([t for _, _, t in parse_task(start_text(root, task_id, journal.get("ac_ref", start_commit)) or "")[1]], so)
+            if bad:
+                return None, bad
+            body = (f"Split out of {task_id} by the Tron runner (run {run_id}): these ACs cannot be finished in this run, "
+                    f"while the rest of {task_id} was built in the run.\n\nDiagnosis: {diagnosis}\n\nQuestion: {question}\n\n"
+                    "Decide with the user, then remove the label 'waiting' (and add the prerequisite task the answer needs, if any).")
+            try:
+                nid = split_out_acs(root, task_id, so, f"{task_id} split-out: " + so[0].strip()[:60], body, waits_for)
+                rels = [task_files(root)[x].relative_to(root).as_posix() for x in (task_id, nid)]
+                git_ok(root, "add", "--", *rels)
+                git_ok(root, "commit", "-q", "-m", f"{task_id}: Tron runner split out {len(so)} AC(s) into {nid}", "--", *rels)
+            except TronError as e:
+                return None, str(e)
+            journal["ac_ref"] = head(root)  # the AC freeze now restores from the state after the split-out
+            acs_before[task_id] = journal["ac_hashes"][task_id] = ac_hash(task_files(root)[task_id].read_text())
+            acs_before[nid] = ac_hash(task_files(root)[nid].read_text())  # not in journal ac_hashes: those are the run's tasks
+            journal["in_progress"]["acs_before"] = acs_before
+            journal.setdefault("split_out", []).append({"task": task_id, "new": nid, "acs": [a.strip() for a in so], "question": question})
+            return nid, None
         if rip and rip.get("ladder") is not None:
             persist()
         while True:
@@ -2005,12 +2095,36 @@ def run_loop(root, tron, args, milestone, jpath, run_id, ctx=None):
             if any(f.get("unrepairable") for f in g["failures"]):
                 outcome = ("blocked", "the evaluator could not verify or flagged assumptions; a repair session cannot fix that: " + g["failures"][0]["detail"][:200].replace("\n", " ")); break
             stall = None
+            wb = worker_blocked(root, task_id, start_commit, blocked_status)  # after the Doctor ran, a new block ends the task at once
+            if not wb and repairs == 0 and not split_e1:  # TASK-419 row 7: E1-only ACs for a named environment gap leave after the first session
+                split_e1 = True
+                tf = task_files(root).get(task_id)
+                e1 = e1_only_acs(tf.read_text()) if tf else []
+                gaps = env_gaps_for(root, journal, milestone, task_id, " ".join(x for _, _, x in e1))
+                if e1 and gaps:
+                    nid, bad = split_out(task_id, [t for _, t, _ in e1], f"the run environment lacks {gaps[0]}",
+                                         f"provide {gaps[0]} in the run environment (or decide how to prove these ACs), then run the task again", ())
+                    ladder.append({"step": "environment split out", "result": nid or "invalid: " + bad[:150]}); persist()
+                    if nid:
+                        print(f"{task_id}: {len(e1)} AC(s) with only E1 evidence (environment lacks {gaps[0]}) split out into {nid}; the task goes on")
+                        hint = (f"The ACs {', '.join(repr(t[:60]) for _, t, _ in e1)} were moved to {nid} because the run environment lacks {gaps[0]}; "
+                                f"do not work on them. Finish the remaining ACs of {task_id} with E2 evidence.")
+                        limit, last_sig = max(limit, repairs + 1), None
+                        persist()
+                        repairs += 1
+                        journal["in_progress"].update(repairs=repairs, last_sig=last_sig)
+                        prompt = repair_prompt(tron, task_id, g, repairs, limit) + "\n\n" + hint
+                        hint = None
+                        continue
             if fingerprint(root) == before:
                 if entry["exit_code"] == 127:  # the agent command does not start: blocking every task would not help
                     fin("worker command could not start (exit 127): fix the config, then run again"); print("worker command could not start", file=sys.stderr); return 0
                 stall = "the session left no diff"
             elif sig == last_sig:
                 stall = "the same failure twice in a row: " + "; ".join(r for _, r, _ in sig)
+            if wb:  # TASK-419 row 5: a block on purpose goes to the Doctor at once; repair sessions would only ask again
+                stall = f"the worker blocked the task on purpose: {wb}"
+                ladder.append({"step": "worker blocked", "result": clip(wb, 150)}); persist()
             fail_reason = stall or f"still failing after {limit} repair(s): " + "; ".join(r for _, r, _ in sig)
             if tron.get("doctor_cmd") and not doctored and (stall or repairs >= limit - 1):
                 doctored = True
@@ -2041,7 +2155,18 @@ def run_loop(root, tron, args, milestone, jpath, run_id, ctx=None):
                     miss = clip(str(dv["missing"]).strip(), 120)
                     journal.setdefault("env_gaps", []).append({"task": task_id, "missing": miss})
                     ladder.append({"step": "environment gap", "result": miss}); persist()
-                    outcome = ("blocked", f"environment gap: the run environment lacks {miss}; no repair round ({clip(dv['diagnosis'], 150)})"); break
+                    tf = task_files(root).get(task_id)
+                    e1 = e1_only_acs(tf.read_text()) if tf else []
+                    nid = split_out(task_id, [t for _, t, _ in e1], f"the run environment lacks {miss}",
+                                    f"provide {miss} in the run environment (or decide how to prove these ACs), then run the task again", ())[0] if e1 else None
+                    if nid:  # TASK-419 row 7: the ACs the gap blocks leave, the rest goes on
+                        ladder.append({"step": "environment split out", "result": nid})
+                        hint = (f"The ACs {', '.join(repr(t[:60]) for _, t, _ in e1)} were moved to {nid} because the run environment lacks {miss}; "
+                                f"do not work on them. Finish the remaining ACs of {task_id} with E2 evidence.")
+                        limit, stall, last_sig = max(limit, repairs + 1), None, None
+                        persist()
+                    else:
+                        outcome = ("blocked", f"environment gap: the run environment lacks {miss}; no repair round ({clip(dv['diagnosis'], 150)})"); break
                 elif v == "environment_problem":
                     print(f"{task_id}: Doctor says environment problem; baseline repair session")
                     b2, a2 = head(root), snapshot_acs(root)
@@ -2061,28 +2186,11 @@ def run_loop(root, tron, args, milestone, jpath, run_id, ctx=None):
                     persist()
                 elif v == "needs_user" and dv.get("split_out"):
                     so = dv["split_out"]
-                    bad = check_split_out([t for _, _, t in parse_task(t0txt)[1]], so)
-                    nid = None
-                    if not bad:
-                        body = (f"Split out of {task_id} by the Tron runner (run {run_id}): the Doctor found that these ACs need the user's decision, "
-                                f"while the rest of {task_id} was built in the run.\n\nDiagnosis: {dv['diagnosis']}\n\nQuestion: {dv['question']}\n\n"
-                                "Decide with the user, then remove the label 'waiting' (and add the prerequisite task the answer needs, if any).")
-                        try:
-                            nid = split_out_acs(root, task_id, so, f"{task_id} split-out: " + so[0].strip()[:60], body, dv.get("waits_for") or ())
-                            rels = [task_files(root)[x].relative_to(root).as_posix() for x in (task_id, nid)]
-                            git_ok(root, "add", "--", *rels)
-                            git_ok(root, "commit", "-q", "-m", f"{task_id}: Tron runner split out {len(so)} AC(s) that need the user into {nid}", "--", *rels)
-                        except TronError as e:
-                            bad = str(e)
+                    nid, bad = split_out(task_id, so, dv["diagnosis"], dv["question"], dv.get("waits_for") or ())
                     if bad:  # an unusable split-out falls back to the plain question: draft and Blocked
                         ladder.append({"step": "split out", "result": "invalid: " + bad[:150]})
                         dv = dict(dv); dv.pop("split_out")
                     else:
-                        journal["ac_ref"] = head(root)  # the AC freeze now restores from the state after the split-out
-                        acs_before[task_id] = journal["ac_hashes"][task_id] = ac_hash(task_files(root)[task_id].read_text())
-                        acs_before[nid] = ac_hash(task_files(root)[nid].read_text())  # not in journal ac_hashes: those are the run's tasks
-                        journal["in_progress"]["acs_before"] = acs_before
-                        journal.setdefault("split_out", []).append({"task": task_id, "new": nid, "acs": [a.strip() for a in so], "question": dv["question"]})
                         ladder.append({"step": "split out", "result": nid})
                         split_done = True
                         print(f"{task_id}: Doctor split out {len(so)} AC(s) that need the user into {nid}; the task goes on")
@@ -2092,7 +2200,8 @@ def run_loop(root, tron, args, milestone, jpath, run_id, ctx=None):
                         persist()
                 if v == "needs_user" and not split_done:
                     dn = write_question_draft(root, journal, f"Question from the Doctor about {task_id}: " + clip(dv["question"], 60),
-                                              f"Run {journal['run_id']}, {task_id} kept failing.\n\nDiagnosis: {dv['diagnosis']}\n\nQuestion: {dv['question']}", "tron-doctor")
+                                              f"Run {journal['run_id']}, {task_id} kept failing.\n\nDiagnosis: {dv['diagnosis']}\n\nQuestion: {dv['question']}", "tron-doctor",
+                                              task_id=task_id, since=base)
                     ladder.append({"step": "draft question", "result": dn}); persist()
                     outcome = ("blocked", f"the Doctor needs the user: see {dn} ({dv['question'][:150]})"); break
                 elif v == "split_task":
@@ -2126,7 +2235,7 @@ def run_loop(root, tron, args, milestone, jpath, run_id, ctx=None):
         if state == "blocked":
             wn = worker_notes(root, task_id)
             if re.search(r"\bblock(ed)?\b", wn, re.I):  # the worker blocked on purpose: its reason is the reason
-                reason = "the worker blocked the task on purpose: " + wn[:300].replace("\n", " ")
+                reason = "the worker blocked the task on purpose: " + wn[:300].replace("\n", " ") + (f"; {reason}" if "Doctor" in reason else "")
             journal["blocking"] = {"task": task_id, "base": base, "reason": reason, "repairs": repairs, "split_plan": split_plan, "ladder": ladder}
             write_journal(jpath, journal)
             settle(task_id, base, reason, repairs)
