@@ -1611,7 +1611,7 @@ def questions_block(root, journal, al, precs=()):
                      "Recommendation: a because the run cannot go on without the answer")
     veto = [a for a in al if (is_decision(a) or (assumption_basis(a) or "none").lower() == "none") and not ruled_by(a, precs)]
     if veto:
-        q.append(f"Assumptions without a basis and interface decisions ({len(veto)}): a) keep all (each becomes a PRECEDENTS line) b) veto some: name them, e.g. `b: V1, V3`, "
+        q.append(f"Assumptions without a basis{' and interface decisions' if any(is_decision(a) for a in veto) else ''} ({len(veto)}): a) keep all (each becomes a PRECEDENTS line) b) veto some: name them, e.g. `b: V1, V3`, "
                  "and say what you want instead (task and PRECEDENTS line). Recommendation: a unless one contradicts what you want"
                  + "".join(f"\n   - V{k}: {clip(a, 200)}" for k, a in enumerate(veto, 1)))
     if not journal.get("defects_reviewed"):
