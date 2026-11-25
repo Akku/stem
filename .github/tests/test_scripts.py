@@ -38,21 +38,28 @@ class ContextCheck(Sandbox):
         self.assertEqual((r.returncode, r.stdout), (0, ""))
 
     def test_notice_above_floor_relative_threshold(self):
-        # first turn 10k -> threshold 60k (first + 50k); current 70k
-        r = self.check([assistant("claude-sonnet-5-5", 10000), assistant("claude-sonnet-5-5", 70000)])
+        # first turn 10k -> threshold 130k (fixed floor beats first + 50k); current 140k
+        self.assertEqual(self.check([assistant("claude-sonnet-5-5", 10000), assistant("claude-sonnet-5-5", 125000)]).stdout, "")
+        r = self.check([assistant("claude-sonnet-5-5", 10000), assistant("claude-sonnet-5-5", 140000)])
         self.assertIn("CONTEXT NOTICE", r.stdout)
-        self.assertIn("threshold 60k", r.stdout)
+        self.assertIn("threshold 130k", r.stdout)
         self.assertIn("interrupt it at a sensible point", r.stdout)
-        urgent = self.check([assistant("claude-sonnet-5-5", 10000), assistant("claude-sonnet-5-5", 95000)])
+        urgent = self.check([assistant("claude-sonnet-5-5", 10000), assistant("claude-sonnet-5-5", 205000)])
         self.assertIn("interrupt your work at the next sensible point", urgent.stdout)
 
     def test_subagent_records_are_ignored(self):
         r = self.check([assistant("claude-sonnet-5-5", 10000), assistant("claude-sonnet-5-5", 190000, sidechain=True)])
         self.assertEqual(r.stdout, "")
 
-    def test_unknown_model_uses_cap(self):
-        low = self.check([assistant("other-model", 80000), assistant("other-model", 90000)])
-        high = self.check([assistant("other-model", 80000), assistant("other-model", 110000)], env={"CONTEXT_WARN_TOKENS": "100000"})
+    def test_start_plus_growth_beats_floor_and_urgent_waits_for_200k(self):
+        m = "claude-opus-5-5[1m]"
+        self.assertIn("threshold 150k", self.check([assistant(m, 100000), assistant(m, 151000)]).stdout)
+        self.assertNotIn("interrupt your work", self.check([assistant(m, 30000), assistant(m, 199000)]).stdout)  # 1.5x 130k = 195k < 200k
+        self.assertIn("interrupt your work", self.check([assistant(m, 30000), assistant(m, 201000)]).stdout)
+
+    def test_unknown_model_uses_floor(self):
+        low = self.check([assistant("other-model", 40000), assistant("other-model", 120000)])
+        high = self.check([assistant("other-model", 40000), assistant("other-model", 110000)], env={"CONTEXT_WARN_TOKENS": "100000"})
         self.assertEqual(low.stdout, "")
         self.assertIn("threshold 100k", high.stdout)
 
@@ -62,8 +69,8 @@ class ContextCheck(Sandbox):
         r = run([sys.executable, str(SCRIPTS / "context-check.py")], self.tmp, {"TMPDIR": str(self.tmp)}, stdin="not json")
         self.assertEqual((r.returncode, r.stdout), (0, ""))
 
-    def test_hook_mode_repeats_only_after_step(self):
-        t = self.tmp / "t.jsonl"; write_jsonl(t, [assistant("claude-sonnet-5-5", 10000), assistant("claude-sonnet-5-5", 70000)])
+    def test_hook_mode_notices_once(self):
+        t = self.tmp / "t.jsonl"; write_jsonl(t, [assistant("claude-sonnet-5-5", 10000), assistant("claude-sonnet-5-5", 140000)])
         hook = lambda: run([sys.executable, str(SCRIPTS / "context-check.py")], self.tmp, {"TMPDIR": str(self.tmp)}, stdin=json.dumps({"transcript_path": str(t), "session_id": "s1"})).stdout
         self.assertIn("CONTEXT NOTICE", hook())
         self.assertEqual(hook(), "")  # same size: no second notice
@@ -71,25 +78,28 @@ class ContextCheck(Sandbox):
 
     def test_codex_log_uses_window_from_log(self):
         tc = lambda n, w: {"type": "event_msg", "payload": {"type": "token_count", "info": {"last_token_usage": {"input_tokens": n, "total_tokens": n + 5}, "model_context_window": w}}}
-        low = self.check([tc(20000, 475000), tc(65000, 475000)])
-        high = self.check([tc(20000, 475000), tc(80000, 475000)])
+        low = self.check([tc(20000, 475000), tc(125000, 475000)])
+        high = self.check([tc(20000, 475000), tc(135000, 475000)])
+        small = self.check([tc(20000, 128000), tc(120000, 128000)])
         self.assertEqual(low.stdout, "")
-        self.assertIn("threshold 70k", high.stdout)
+        self.assertIn("threshold 130k", high.stdout)
+        self.assertIn("threshold 115k", small.stdout)  # at most 90 % of a known window
 
     def test_codex_desktop_log_falls_back_to_total_tokens(self):
-        r = self.check([{"type": "event_msg", "payload": {"type": "token_count", "info": {"last_token_usage": {"input_tokens": 0, "total_tokens": 127000}, "model_context_window": None}}}])
-        self.assertIn("threshold 100k", r.stdout)
+        tc = lambda n: {"type": "event_msg", "payload": {"type": "token_count", "info": {"last_token_usage": {"input_tokens": 0, "total_tokens": n}, "model_context_window": None}}}
+        r = self.check([tc(20000), tc(140000)])
+        self.assertIn("threshold 130k", r.stdout)
 
     def test_auto_finds_codex_log_and_reports_below_threshold(self):
         log = self.tmp / "codex" / "sessions" / "2026" / "rollout-x-abc123.jsonl"; log.parent.mkdir(parents=True)
         write_jsonl(log, [{"type": "event_msg", "payload": {"type": "token_count", "info": {"last_token_usage": {"input_tokens": 30000}, "model_context_window": 475000}}}])
         r = run([sys.executable, str(SCRIPTS / "context-check.py"), "--auto"], self.tmp, {"TMPDIR": str(self.tmp), "CODEX_HOME": str(self.tmp / "codex"), "CODEX_THREAD_ID": "abc123"})
-        self.assertIn("context check: about 30k tokens, threshold 80k", r.stdout)
+        self.assertIn("context check: about 30k tokens, threshold 130k", r.stdout)
 
     def test_auto_finds_claude_transcript_of_cwd(self):
         work = self.tmp / "my.proj"; work.mkdir()
         d = self.tmp / "claude" / "projects" / re.sub(r"[^A-Za-z0-9]", "-", str(work.resolve())); d.mkdir(parents=True)
-        write_jsonl(d / "s.jsonl", [assistant("claude-sonnet-5-5", 10000), assistant("claude-sonnet-5-5", 60000)])
+        write_jsonl(d / "s.jsonl", [assistant("claude-sonnet-5-5", 10000), assistant("claude-sonnet-5-5", 140000)])
         r = run([sys.executable, str(SCRIPTS / "context-check.py"), "--auto"], work, {"TMPDIR": str(self.tmp), "CLAUDE_CONFIG_DIR": str(self.tmp / "claude"), "CODEX_THREAD_ID": ""})
         self.assertIn("CONTEXT NOTICE", r.stdout)
         self.assertIn("fresh session", r.stdout)
@@ -1467,7 +1477,7 @@ class RunWrapperContextNotice(Sandbox):
             self.assertEqual(r.returncode, 0); self.assertNotIn("CONTEXT", r.stdout); self.assertNotIn("context check", r.stdout)
 
     def test_notice_once_above_the_threshold_and_exit_code_kept(self):
-        r = self.runsh(90000)
+        r = self.runsh(140000)
         self.assertIn("CONTEXT NOTICE (run.sh)", r.stdout); self.assertIn("status: PASS", r.stdout)
         self.assertNotIn("CONTEXT NOTICE", self.runsh(90000).stdout)  # again only after +30k, like the hook
         f = run(["bash", str(SCRIPTS / "run.sh"), "x", "false"], self.tmp, {"AGENT_LOG_DIR": str(self.tmp / "logs")})
@@ -1564,7 +1574,7 @@ class StemConfig(Sandbox):
         (p / "AGENTS.md").write_text("x\n"); (p / "docs/agent").mkdir(parents=True)
         if cfg is not None: (p / "docs/agent/stem-config.json").write_text(cfg)
         big = p / "big.md"; big.write_text("x" * 20000)
-        t = p / "t.jsonl"; write_jsonl(t, [assistant("claude-sonnet-5-5", 10000), assistant("claude-sonnet-5-5", 90000)])
+        t = p / "t.jsonl"; write_jsonl(t, [assistant("claude-sonnet-5-5", 10000), assistant("claude-sonnet-5-5", 140000)])
         return p, json.dumps({"tool_name": "Read", "tool_input": {"file_path": str(big)}}), json.dumps({"transcript_path": str(t), "session_id": "s"})
 
     def outputs(self, cfg):

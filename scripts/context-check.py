@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Context watchdog for Claude Code and Codex (UserPromptSubmit hook). Prints a short notice into the agent's context when the
-current context exceeds a threshold, then again every +30k. Threshold = smaller of: first-turn context of the session + 50k (the
-fixed floor of system prompt, tools and instructions is not session growth) and half the model's window (Claude: model read from the
-transcript; Codex: model_context_window from the session log). Without a known model window or first-turn context: cap of 100k (env CONTEXT_WARN_TOKENS).
+current context exceeds a threshold: one notice, and one urgent notice at max(200k, 1.5x the threshold), each once per session (TASK-203, TASK-413).
+Threshold = larger of 130k (env CONTEXT_WARN_TOKENS) and first-turn context of the session + 50k (the fixed floor of system prompt,
+tools and instructions is not session growth); with a known window (Claude: model from the transcript; Codex: model_context_window
+from the session log) at most 90 % of it.
 Reads the hook JSON from stdin through hooklib.py (transcript_path, session_id); manual use: --transcript FILE; task-end check: --auto finds the current
 session log itself (Codex: CODEX_THREAD_ID; Claude: newest transcript of this directory) and also prints one line below the threshold;
 --auto --notice-only (used by scripts/run.sh, so agents without a prompt hook get the notice too) stays silent below it.
@@ -11,9 +12,9 @@ Silent and exit 0 on any problem or below the threshold (hook mode). Numbers onl
 import glob, json, os, re, sys
 import hooklib, transcripts
 
-CAP = int(os.environ.get("CONTEXT_WARN_TOKENS", "100000"))
+BASE = int(os.environ.get("CONTEXT_WARN_TOKENS", "130000"))  # first notice: fixed floor (TASK-413)
+URGENT = 200000  # second notice no earlier than this (TASK-413)
 GROWTH = 50000
-STEP = 30000
 WINDOW = 200000  # any claude-* model without a "[1m]" marker; other models: unknown
 
 def usage_of(r):
@@ -48,13 +49,13 @@ def scan(path):
     return last or 0, first, model
 
 def threshold(first, model):
-    if model.startswith("codex:"):
-        if not model[6:].isdigit(): return min([CAP] + ([first + GROWTH] if first else []))  # window unknown: cap stays
-        window = int(model[6:])
+    """max(130k, first-turn + 50k) (TASK-413); with a known window at most 90 % of it."""
+    t = max(BASE, (first or 0) + GROWTH)
+    if model.startswith("codex:"): window = int(model[6:]) if model[6:].isdigit() else 0
     elif "[1m]" in model: window = 1000000
     elif model.startswith("claude-"): window = WINDOW
-    else: return CAP  # unknown Claude-side model: window unknown, fixed cap
-    return min(window // 2, first + GROWTH) if first else min(CAP, window // 2)
+    else: window = 0  # unknown model: window unknown, no cap
+    return min(t, window * 9 // 10) if window else t
 
 def current_log():
     """Session log of the running agent: Codex by CODEX_THREAD_ID, else the newest Claude transcript of this directory."""
@@ -69,7 +70,7 @@ def current_log():
 
 def main():
     args = sys.argv[1:]
-    quiet = "--notice-only" in args  # scripts/run.sh: like the hook (silent below the threshold, then every +30k), log found like --auto
+    quiet = "--notice-only" in args  # scripts/run.sh: like the hook (silent below the threshold, one notice and one urgent per session), log found like --auto
     manual = ("--transcript" in args or "--auto" in args) and not quiet
     if "--transcript" not in args and hooklib.config("context_warning", True) is False: return 0  # module switched off at setup
     try:
@@ -87,14 +88,16 @@ def main():
         if "--auto" in args and tokens and not quiet: print("context check: about %dk tokens, threshold %dk: continue." % (tokens // 1000, THRESHOLD // 1000))
         return 0
     state = os.path.join(os.environ.get("TMPDIR", "/tmp"), "agent-logs", "ctx-" + "".join(c for c in sid if c.isalnum())[:40])
-    last = 0
+    level = 2 if tokens >= max(URGENT, THRESHOLD * 3 // 2) else 1
+    last = 0  # highest level already printed in this session (state file holds 1 or 2; anything else counts as none)
     try: last = int(open(state).read().strip() or 0)
     except Exception: pass
-    if not manual and last and tokens < last + STEP: return 0
+    if last not in (1, 2): last = 0
+    if not manual and level <= last: return 0
     try:
-        os.makedirs(os.path.dirname(state), exist_ok=True); open(state, "w").write(str(tokens))
+        os.makedirs(os.path.dirname(state), exist_ok=True); open(state, "w").write(str(level))
     except Exception: pass
-    urgent = tokens >= THRESHOLD * 1.5
+    urgent = level == 2
     print("CONTEXT NOTICE (%s): the context holds about %dk tokens (threshold %dk, session started at %dk). %s" % ("run.sh" if quiet else "hook", tokens // 1000, THRESHOLD // 1000, (first or 0) // 1000,
           "Do not wait for the task end: interrupt your work at the next sensible point and hand off the rest to a new session, even inside a related batch. Finish first only if very little is left." if urgent else
           "If at least ~5 turns of the current task remain, interrupt it at a sensible point and hand off the rest to a new session. Otherwise finish it, then hand off only if at least ~5 turns of unrelated work are ahead. Continue in this session if the rest is short, closely related (batch) or needs hard-won context."),
