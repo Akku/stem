@@ -122,6 +122,8 @@ if beh == "e1_gap":  # TASK-419: AC#2 could only be read, the environment lacks 
     s3 = open(f).read(); open(f, "w").write(s3.replace("- [ ] #2", "- [x] #2").replace("AC#1: E2 fake evidence\\n", "AC#1: E2 fake evidence\\nAC#2: E1 code read only, no php runtime here\\n"))
 if beh == "extrapolated":
     s3 = open(f).read(); open(f, "w").write(s3.replace("AC#1: E2 fake evidence", "AC#1: E2 extrapolated from 52 MB"))
+if beh == "decision":  # TASK-420: R-DESIGN in a Tron run
+    s3 = open(f).read(); open(f, "w").write(s3.replace("AC#1: E2 fake evidence\\n", "AC#1: E2 fake evidence\\nDecision: export() gets an optional sep parameter (basis: R-DESIGN)\\n"))
 if beh == "assume_nobasis":
     s3 = open(f).read(); open(f, "w").write(s3.replace("AC#1: E2 fake evidence\\n", "AC#1: E2 fake evidence\\nAssumption: CSV is fine\\nAssumption: sep is comma (basis: P-3)\\n"))
 if beh == "overwrite_notes":
@@ -992,13 +994,44 @@ class Tron(unittest.TestCase):
                 self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
                 self.assertIn(why, self.journal()["tasks"]["TASK-1"]["reason"])
 
+    def test_doctor_split_moves_a_probe_ac_with_its_marker_to_the_subtask(self):  # TASK-420 review
+        self.probe_ac("#2 it also works [probe: TASK-1#2]", calls=0)
+        (self.proj / "scripts/feature.sh").write_text("python3 scripts/probe.py fire TASK-5#1 --at scripts/feature.sh\n")
+        git(self.proj, "add", "-A"); git(self.proj, "commit", "-qm", "fire call")
+        self.with_doctor({"TASK-1": [self.split_plan(acs_b=("it also works [probe: TASK-1#2]",))]})
+        self.behavior({"TASK-1": "no_evidence"})
+        r = self.tron("run", "--milestone", "m-1", "--run-id", "r1")
+        j = self.journal()
+        self.assertEqual(j["tasks"]["TASK-1"]["state"], "accepted", r.stdout + r.stderr)
+        self.assertIn("- [x] #1 it also works [probe: TASK-5#1]", (self.proj / "backlog/tasks/task-5 - sub.md").read_text())
+        parent = (self.proj / "backlog/tasks/task-1 - x.md").read_text()
+        self.assertIn("AC#2: usage probe moved to a subtask (TASK-4, TASK-5)", parent); self.assertNotIn("AC#2: E2", parent)
+
+    def test_decision_lines_reach_the_report_for_review(self):  # TASK-420 AC#3
+        self.behavior({"TASK-1": "decision"})
+        self.tron("run", "--milestone", "m-1", "--run-id", "r1", "--max-tasks", "1")
+        rep = (self.proj / "docs/agent/tron/REPORT-r1.md").read_text()
+        self.assertIn("Assumptions without a basis and interface decisions (1)", rep)
+        self.assertIn("V1: TASK-1: Decision: export() gets an optional sep parameter (basis: R-DESIGN)", rep)
+
+    def test_retarget_probes_and_strict_marker(self):  # TASK-420 review
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("tron_mod", str(pathlib.Path(__file__).resolve().parents[2] / "scripts/tron.py"))
+        m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+        self.assertFalse(m.is_probe("a [probe:TASK-1#2]")); self.assertFalse(m.is_probe("a [probe: TASK-1#2] "))
+        f = self.tmp / "t.md"
+        f.write_text("x\n<!-- AC:BEGIN -->\n- [ ] #1 a [probe: TASK-1#3]\n- [x] #2 b\n<!-- AC:END -->\nnotes [probe: TASK-1#3]\n")
+        m.retarget_probes(f, "TASK-7")
+        self.assertEqual(f.read_text(), "x\n<!-- AC:BEGIN -->\n- [ ] #1 a [probe: TASK-7#1]\n- [x] #2 b\n<!-- AC:END -->\nnotes [probe: TASK-1#3]\n")
+
     def test_gate_fails_when_every_ac_is_a_probe(self):  # TASK-420 AC#5
         f = self.proj / "backlog/tasks/task-1 - x.md"
         f.write_text(f.read_text().replace("- [ ] #1 it works\n", "- [ ] #1 it works [probe: TASK-1#1]\n"))
         git(self.proj, "add", "-A"); git(self.proj, "commit", "-qm", "probe only")
         self.config({"max_repairs": 0})
+        self.behavior({"TASK-1": "noop"})
         self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
-        self.assertIn("every acceptance criterion is a usage probe", self.journal()["tasks"]["TASK-1"]["reason"])
+        self.assertIn("every acceptance criterion is a usage probe", json.dumps(self.gate_of("TASK-1")["failures"]))
         import importlib.util
         spec = importlib.util.spec_from_file_location("tron_mod", str(pathlib.Path(__file__).resolve().parents[2] / "scripts/tron.py"))
         m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
@@ -1350,7 +1383,9 @@ class Tron(unittest.TestCase):
         self.assertEqual([c["task"] for c in self.calls()], ["TASK-1"])
         briefs = (self.td / "brief_copy.txt").read_text().split("# Evaluator brief")
         self.assertIn("Short brief: the earlier evaluator session", briefs[2]); self.assertNotIn("Short brief", briefs[1])
-        self.assertIn("evaluator gave no verdict", (self.proj / f"docs/agent/tron/REPORT-{self.journal()['run_id']}.md").read_text())
+        rep = (self.proj / f"docs/agent/tron/REPORT-{self.journal()['run_id']}.md").read_text()
+        self.assertIn("evaluator gave no verdict", rep)
+        self.assertIn("Evaluator saw only part of the diff, so it is no independent review (R-REVIEW): TASK-1 (short brief (diff stat only))", rep)  # TASK-420 AC#4
 
     def test_evaluator_short_retry_gives_the_verdict(self):  # TASK-419 AC#4
         self.with_evaluator("task")
@@ -2310,6 +2345,12 @@ class Check(unittest.TestCase):
     def test_check_warns_retro_on_without_retro_cmd(self):
         self.cfg(retro="on"); self.commit()
         self.assertIn("tron.retro_cmd is missing", self.check().stdout)
+
+    def test_check_fails_on_probe_markers_the_gate_would_refuse(self):  # TASK-420 review
+        self.task("TASK-2", acs="- [ ] #1 it works [probe: TASK-2#1]\n"); self.commit()
+        self.fails_with("TASK-2: every acceptance criterion is a usage probe")
+        self.task("TASK-2", acs="- [ ] #1 it works\n- [ ] #2 used [probe: TASK-9#2]\n"); self.commit()
+        self.fails_with("TASK-2 AC#2: probe marker must be '[probe: TASK-2#2]'")
 
     def test_check_fails_while_sweep_is_missing(self):
         self.cfg(sweep=True); self.commit(); self.fails_with("question sweep missing")

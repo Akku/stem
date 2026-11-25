@@ -12,12 +12,13 @@ Default list; setup and each milestone approval adjust it. The runner and the ag
 - Splitting a task that is too large into smaller tasks inside the milestone (the ACs stay).
 - Skipping tasks labelled `waiting` and tasks that wait for one.
 - Additive data changes that delete and rewrite nothing (a new field, the old one kept).
+- Additive, internal, backward-compatible interfaces (record `Decision: ...`, `R-DESIGN`).
 
 ## Must come back (draft question, task Blocked)
 - Scope change: a task needs more or other than its acceptance criteria say.
 - New running cost, paid service or new dependency with a licence or network need.
 - New external recipient of data (upload, API, analytics, email).
 - Data loss: deletion, overwrite or migration that cannot be undone.
-- Architecture or interface change across modules.
+- Architecture change; a breaking or public interface (contract others call); an ownership or permission model.
 - Anything that touches an invariant (`INVARIANTS.md`).
 - Release, tag, push, merge, publishing.

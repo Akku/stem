@@ -93,7 +93,7 @@ For a large task (`size-L`) or any interface/module-boundary change, the recorde
 3. likely failure cases;
 4. what the user must confirm.
 
-Obtain the user's approval of that plan before implementation. If the exact plan has already been explicitly approved, reference that decision instead of asking again. Do not infer plan approval merely from approval to work on a task or batch. In a Tron run (`R-TRON`) the approved milestone plus the answered sweep (`SWEEP-<milestone>.md`) count as plan approval for every task of the run, size-L included; a new public contract or an ownership change still needs a ruling (frame 'Must come back'). For tasks created before the label existed, treat broad work across several workflows or subsystems as large. Smaller work without a boundary change keeps the proportional planning above. Independent review still follows `R-REVIEW`.
+Obtain the user's approval of that plan before implementation. If the exact plan has already been explicitly approved, reference that decision instead of asking again. Do not infer plan approval merely from approval to work on a task or batch. In a Tron run (`R-TRON`) the approved milestone plus the answered sweep (`SWEEP-<milestone>.md`) count as plan approval for every task of the run, size-L included; a new public contract or an ownership or permission change still needs a ruling (frame 'Must come back'). For tasks created before the label existed, treat broad work across several workflows or subsystems as large. Smaller work without a boundary change keeps the proportional planning above. Independent review still follows `R-REVIEW`.
 
 Planning is a phase, not automatically a separate Planner agent.
 
@@ -449,7 +449,7 @@ Typical review triggers include:
 
 For coherent low/medium-risk batches, one independent review at the batch boundary can be more efficient than a reviewer after every task. High-risk tasks may still require task-level review before the batch continues.
 
-**In a Tron run** (`R-TRON`) the runner's evaluator counts as this independent review only when its brief covers the trigger and the full diff (no part cut for size); otherwise the task notes say `Review: open (<trigger>)` and the user reviews after the run. Never turn a waiver into a run question.
+**In a Tron run** (`R-TRON`) the runner's evaluator counts as this independent review only when its brief covers the trigger and the full diff; the report names every evaluation whose brief was cut or shortened, and such a task with a review trigger is reviewed by the user after the run. A worker never asks for a review waiver during the run.
 
 The reviewer's input should be compact: task intent, relevant acceptance criteria, diff/change set, verification results, and relevant project rules. Do not forward the implementer's complete conversation history.
 <!-- RULE:R-REVIEW:END -->
@@ -526,7 +526,7 @@ They should stop or escalate when:
 
 `BLOCKED` is a valid outcome. Autonomy does not authorize inventing missing product decisions.
 
-**In a Tron run** (`R-TRON`) the decision frame (`docs/agent/DECISION_FRAME.md`) comes before stop-and-ask: a reversible choice inside the task's ACs that the frame or a precedent covers is a decision the user already made; decide it and record it (`Assumption: ...`). The frame's 'Must come back' items and invariants still stop the task (draft question, Blocked).
+**In a Tron run** (`R-TRON`) the decision frame (`docs/agent/DECISION_FRAME.md`) comes before stop-and-ask: a reversible choice inside the task's ACs is decided and recorded (`Assumption: ... (basis: ...)`, `R-TRON`), not asked; a missing basis is allowed and the report lists it for the user. The frame's 'Must come back' items and invariants still stop the task (draft question, Blocked).
 <!-- RULE:R-AUTONOMY:END -->
 
 <!-- RULE:R-LEARNING:START -->
@@ -677,7 +677,7 @@ Generated code is cheap to produce and expensive to change; without deliberate d
 - **Propose missing tools:** when work would clearly benefit from a tool or framework that is not set up yet (the same browser, API or UI check done by hand a second time, recurring style fixes, no test runner for new logic), propose it unasked before continuing by hand: what it is, why, cost (install, setup time, maintenance) and a recommendation. Installing it is the user's decision; until then continue with what exists.
 - **Check for overlap first:** before adding a new script, skill, agent or rule, check whether an existing system can absorb it (TASK-345); note the result in one sentence in the task (`Overlap: none` or `Overlap: merged into X`).
 - **No speculative structure:** introduce an abstraction only for two real uses, and no dependency for about 20 lines of code.
-- **Owned interfaces:** a new or changed public interface or module boundary is a decision for the user (propose, then agree); the inside of a module can be delegated. In a Tron run (`R-TRON`) an additive, internal, backward-compatible interface is decided by the agent and recorded with a `Decision: ...` line in the task notes; a breaking or public contract, ownership, permissions or a migration comes back (draft question, Blocked). Treat low-risk modules as gray boxes tested from outside; money, security and personal data get closer scrutiny and review (`R-REVIEW`).
+- **Owned interfaces:** a new or changed public interface or module boundary is a decision for the user (propose, then agree); the inside of a module can be delegated. In a Tron run (`R-TRON`) an additive, internal (no contract others call), backward-compatible interface is decided by the agent and recorded with a `Decision: ...` line in the task notes; the report lists every such line for the user's review. A breaking or public contract, ownership, permissions or a migration comes back (draft question, Blocked). Treat low-risk modules as gray boxes tested from outside; money, security and personal data get closer scrutiny and review (`R-REVIEW`).
 - **Module map (`docs/ARCHITECTURE.md`, create once the project has about three modules):** one page: module, purpose, public interface, gray box or scrutinized, how it is tested. Update it in the task that changes a boundary. Load it instead of reading code to orient.
 - **Glossary (optional, `docs/GLOSSARY.md`):** only if the user asked for it at setup or the domain has many terms or several languages (e.g. German UI, English code): term, definition, code name, UI text. Use these terms in tasks, code and UI text; add a term when it appears.
 - **TDD** (test, make it pass, refactor in small steps) is recommended for logic-heavy code, not for throwaway UI or prototypes.

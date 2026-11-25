@@ -346,7 +346,7 @@ def parse_task(text):
     return (m.group(1).strip("'\"") if m else None), acs, (notes.group(1) if notes else "")
 
 
-PROBE = re.compile(r"\[probe: *(TASK-\d+#\d+)\] *$")
+PROBE = re.compile(r"\[probe: (TASK-\d+#\d+)\]$")  # exactly the form scripts/check-backlog.sh counts
 
 
 def is_probe(ac_text):
@@ -365,6 +365,20 @@ def probe_problem(root, task_id, n, ac_text):
                        cwd=root, capture_output=True, text=True)
     k = len(r.stdout.splitlines())
     return None if k == 1 else f"AC#{n} is a probe but the code has {k} 'probe.py fire {want}' call(s), not exactly one (docs/agent/PROBES.md)"
+
+
+def retarget_probes(path, task_id):
+    """A runner-made task (Doctor split, split-out) got AC texts verbatim: its probe markers must name its own id and AC numbers."""
+    text = path.read_text()
+    block = re.search(r"<!-- AC:BEGIN -->(.*?)<!-- AC:END -->", text, re.S)
+    if block:
+        new = re.sub(r"(?m)^(- \[[ xX]\] #(\d+) .*?)\[probe: TASK-\d+#\d+\]$", lambda m: f"{m.group(1)}[probe: {task_id}#{m.group(2)}]", block.group(1))
+        if new != block.group(1):
+            path.write_text(text[:block.start(1)] + new + text[block.end(1):])
+
+
+def without_probe(ac_text):
+    return PROBE.sub("", ac_text).strip()
 
 
 def ac_hash(text):
@@ -520,7 +534,7 @@ def gate(root, tron, task_id, base, acs_before, start_commit, branch, refs0):
                     fails.append({"check": "evidence", "reason": f"AC#{n} has no 'AC#{n}: E2 <pointer>' line in the notes"})
             if not acs:
                 fails.append({"check": "ac", "reason": "task has no acceptance criteria"})
-            elif all(is_probe(t) for _, _, t in acs):
+            elif all(not ticked and is_probe(t) for ticked, _, t in acs):
                 fails.append({"check": "ac", "reason": "every acceptance criterion is a usage probe ([probe: TASK-n#k]); at least one must be proven in the run"})
             for l in notes.splitlines():
                 if re.match(r"\s*AC#\d+: E2\b", l) and re.search(r"extrapolat|estimat", l, re.I):
@@ -678,7 +692,7 @@ def assumptions(root, ids, start_commit=None):
             if start_commit:
                 old = {l.strip() for l in parse_task(start_text(root, i, start_commit) or "")[2].splitlines()}
             for l in dict.fromkeys(l.strip() for l in parse_task(files[i].read_text())[2].splitlines()):
-                if re.match(r"Assumption:", l) and l not in old:
+                if re.match(r"(?:Assumption|Decision):", l) and l not in old:  # TASK-420: R-DESIGN 'Decision:' lines too
                     out.append(f"{i}: {l}")
     return out
 
@@ -703,7 +717,7 @@ def precedents(root):
 
 def ruled_by(line, precs):
     """The precedent whose kind and ruling contain at least 60 % (and at least two) of the assumption's content words, else None."""
-    m = re.search(r"Assumption:\s*(.*?)\s*(?:\(basis:[^)]*\)\s*)?$", line)
+    m = re.search(r"(?:Assumption|Decision):\s*(.*?)\s*(?:\(basis:[^)]*\)\s*)?$", line)
     words = content_words(m.group(1) if m else line)
     best = None
     for pid, kind, ruling in precs:
@@ -883,7 +897,14 @@ def write_brief(root, tron, journal, target, base, g, task_ids, intent, reduced=
               "", "## Hints from the runner", "Placeholder hits: " + json.dumps((g or {}).get("placeholders", [])),
               "Deleted files: " + json.dumps((g or {}).get("deleted_files", []))]
     al = assumptions(root, task_ids)
-    parts += ["", "## Assumption list of this run", "\n".join(al) or "(none recorded)"]
+    parts += ["", "## Assumption and decision list of this run", "\n".join(al) or "(none recorded)"]
+    cut = ("short brief (diff stat only)" if reduced else "diff cut for size" if len(diff) > DIFF_BUDGET and target != "milestone"
+           else "diff parts cut for size" if target == "milestone" and "(nothing: every part is shown in full)" not in parts else None)
+    cov = journal.setdefault("brief_cut", {})
+    if cut:  # TASK-420 row 11: such an evaluation is no independent review (R-REVIEW)
+        cov[target] = cut
+    else:
+        cov.pop(target, None)
     path = root / JOURNAL_DIR / f"brief-{journal['run_id']}-{target}{'-short' if reduced else ''}.md"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(parts) + "\n")
@@ -1107,6 +1128,9 @@ def split_out_acs(root, parent, ac_texts, title, body, waits_for=()):
         except (OSError, KeyError):
             pass
         raise TronError(f"could not remove the split-out ACs from {parent}: {(r.stderr or r.stdout).strip()[:200]}")
+    files = task_files(root)
+    for i in (nid, parent):  # TASK-420: probe markers follow the moved and the renumbered ACs
+        retarget_probes(files[i], i)
     release_parent(root, parent, nid)
     return nid
 
@@ -1272,10 +1296,11 @@ def _create_subtasks(root, journal, parent, parent_text, subtasks, milestone, la
         if not new:
             raise TronError(f"backlog created no task file for a subtask of {parent}")
         made.append(new[-1])
+        retarget_probes(task_files(root)[new[-1]], new[-1])  # TASK-420: a probe moved into a subtask names the subtask
     files = task_files(root)
     parent_acs = [t for _, _, t in parse_task(parent_text)[1]]
-    got = {t for i in made for _, _, t in parse_task(files[i].read_text())[1]}
-    if got != {t.strip() for t in parent_acs}:
+    got = {without_probe(t) for i in made for _, _, t in parse_task(files[i].read_text())[1]}
+    if got != {without_probe(t) for t in parent_acs}:
         raise TronError(f"the subtasks of {parent} do not carry exactly the parent's ACs; check {', '.join(made)}")
     git_ok(root, "add", "-A", "--", "backlog")
     if subprocess.run(["git", "diff", "--cached", "--quiet"], cwd=root).returncode:
@@ -1298,9 +1323,10 @@ def close_split_parents(root, tron, journal):
         acs = parse_task(f.read_text())[1]
         cmd = ["backlog", "task", "edit", pid, "-s", "Done"]
         notes = []
-        for _, n, _ in acs:
+        for _, n, t in acs:
             cmd += ["--check-ac", str(n)]
-            notes.append(f"AC#{n}: E2 carried by {', '.join(subs)}; each subtask passed the runner's gate")
+            notes.append(f"AC#{n}: usage probe moved to a subtask ({', '.join(subs)}), open there until real use proves it" if is_probe(t)
+                         else f"AC#{n}: E2 carried by {', '.join(subs)}; each subtask passed the runner's gate")
         r = sh(cmd + ["--append-notes", "\n".join(notes + [f"Closed by the Tron runner: all subtasks of the Doctor's split are accepted ({', '.join(subs)})"])], root)
         if r.returncode:
             raise TronError(f"could not close {pid}: {(r.stderr or r.stdout).strip()[:200]}")
@@ -1566,6 +1592,11 @@ def duration(s):
         return None
 
 
+def is_decision(line):
+    """A 'Decision:' line (R-DESIGN in a Tron run: an additive internal interface the agent decided); the user reviews each one."""
+    return bool(re.match(r"(?:TASK-\d+: )?Decision:", line.strip()))
+
+
 def questions_block(root, journal, al, precs=()):
     """Every open item of a run as one numbered list with options and a recommendation, answered compactly (e.g. '1a, 3b').
     TASK-419: follow-up drafts and basis-none lines a precedent already rules are no questions; the other basis-none lines are one veto list."""
@@ -1578,9 +1609,9 @@ def questions_block(root, journal, al, precs=()):
         else:
             q.append(f"{title} ({rel}) a) answer it as the draft proposes, then run again (it resumes) b) leave the task Blocked. "
                      "Recommendation: a because the run cannot go on without the answer")
-    veto = [a for a in al if (assumption_basis(a) or "none").lower() == "none" and not ruled_by(a, precs)]
+    veto = [a for a in al if (is_decision(a) or (assumption_basis(a) or "none").lower() == "none") and not ruled_by(a, precs)]
     if veto:
-        q.append(f"Assumptions without a basis ({len(veto)}): a) keep all (each becomes a PRECEDENTS line) b) veto some: name them, e.g. `b: V1, V3`, "
+        q.append(f"Assumptions without a basis and interface decisions ({len(veto)}): a) keep all (each becomes a PRECEDENTS line) b) veto some: name them, e.g. `b: V1, V3`, "
                  "and say what you want instead (task and PRECEDENTS line). Recommendation: a unless one contradicts what you want"
                  + "".join(f"\n   - V{k}: {clip(a, 200)}" for k, a in enumerate(veto, 1)))
     if not journal.get("defects_reviewed"):
@@ -1612,6 +1643,9 @@ def build_report(root, journal, tron):
             f"- Preview start command: `{start_cmd}`",
             f"- Preview URL: {tron.get('preview_url', 'not configured')}",
             "- The first core flows are tested by you: " + (", ".join(acc) or "(no accepted task)")]
+    bc = journal.get("brief_cut", {})
+    out += [f"- Evaluator saw only part of the diff, so it is no independent review (R-REVIEW): " + ", ".join(f"{k} ({v})" for k, v in bc.items())
+            + "; review these yourself when they carry a review trigger"] if bc else []
     out += [f"- Unattended retro (analysis): {journal['retro']}"] if journal.get("retro") else []
     out += [f"- Unattended retro failed: {journal['retro_error']}"] if journal.get("retro_error") else []
     out += [f"- The run ended by an error: {journal['error']}. Run again to continue after fixing it"
@@ -3663,6 +3697,11 @@ def check_milestone(root, milestone, cfg_path=None, smoke=True, uid=None):
             continue
         if not acs:
             fails.append(f"{tid}: no acceptance criteria")
+        elif all(not ticked and is_probe(t) for ticked, _, t in acs):  # TASK-420: the gate would fail it after a whole session
+            fails.append(f"{tid}: every acceptance criterion is a usage probe; at least one must be provable in the run")
+        for _, n, t in acs:
+            if is_probe(t) and PROBE.search(t).group(1) != f"{tid}#{n}":
+                fails.append(f"{tid} AC#{n}: probe marker must be '[probe: {tid}#{n}]' (docs/agent/PROBES.md)")
         if not any(re.fullmatch(r"size-[sml]", l) for l in labels_of(text)):
             fails.append(f"{tid}: no size label (size-S, size-M or size-L)")
     if tron.get("sweep", True) is not False:
