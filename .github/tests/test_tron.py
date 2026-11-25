@@ -950,6 +950,35 @@ class Tron(unittest.TestCase):
         text = drafts[0].read_text(); self.assertIn("Decide x", text); self.assertIn("x as a or b?", text)
         self.assertIn("draft-1", t["reason"])
 
+    def test_worker_block_never_gets_a_repair_session_whatever_the_doctor_says(self):  # TASK-404 AC#1/AC#2
+        for verdict, beh in (({"verdict": "retry_with_hint", "diagnosis": "x", "hint": "try again"}, "note_only"),
+                             ({"verdict": "environment_problem", "diagnosis": "tool missing"}, "draft_block")):
+            with self.subTest(verdict=verdict["verdict"]):
+                if verdict["verdict"] != "retry_with_hint":
+                    self.setUp()
+                self.with_doctor({"TASK-1": [verdict]})
+                self.behavior({"TASK-1": beh})
+                self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
+                t = self.journal()["tasks"]["TASK-1"]
+                self.assertEqual(t["state"], "blocked", t)
+                self.assertEqual([c["task"] for c in self.calls()].count("TASK-1"), 1)  # the worker session only
+                self.assertEqual([c["task"] for c in self.calls()].count("baseline"), 0)
+                self.assertEqual(self.doctor_calls(), ["TASK-1"])
+                drafts = list((self.proj / "backlog/drafts").glob("draft-*"))
+                self.assertEqual(len(drafts), 1)  # one question for the user
+                self.assertIn("draft-1", t["reason"])
+                if beh == "note_only":
+                    self.assertIn("need a decision", drafts[0].read_text())
+
+    def test_worker_block_without_doctor_still_asks_one_question(self):  # TASK-404 AC#2
+        self.behavior({"TASK-1": "note_only"})
+        self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
+        t = self.journal()["tasks"]["TASK-1"]
+        self.assertEqual((t["state"], [c["task"] for c in self.calls()].count("TASK-1")), ("blocked", 1))
+        drafts = list((self.proj / "backlog/drafts").glob("draft-*"))
+        self.assertEqual(len(drafts), 1); self.assertIn("need a decision", drafts[0].read_text())
+        self.assertIn("draft-1", t["reason"])
+
     def test_e1_only_ac_for_a_sweep_gap_is_split_out_after_the_first_session(self):  # TASK-419 AC#3
         self.two_acs()
         (self.proj / "docs/agent/tron").mkdir(parents=True, exist_ok=True)

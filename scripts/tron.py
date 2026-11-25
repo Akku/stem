@@ -2178,6 +2178,15 @@ def run_loop(root, tron, args, milestone, jpath, run_id, ctx=None):
             journal["in_progress"]["acs_before"] = acs_before
             journal.setdefault("split_out", []).append({"task": task_id, "new": nid, "acs": [a.strip() for a in so], "question": question})
             return nid, None
+        def worker_question(wb):
+            """TASK-404: the one question for a task the worker blocked on purpose: its own draft, else a runner draft from its reason."""
+            d = task_draft(root, journal, task_id, base)
+            dn = d.name.split(" ")[0] if d else write_question_draft(
+                root, journal, f"Question about {task_id}: the worker blocked it",
+                f"Run {journal['run_id']}: the worker blocked {task_id} on purpose.\n\nReason: {wb}\n\nAnswer it, then unblock {task_id}.",
+                "tron-doctor", task_id=task_id, since=base)
+            ladder.append({"step": "draft question", "result": dn}); persist()
+            return dn
         if rip and rip.get("ladder") is not None:
             persist()
         while True:
@@ -2274,10 +2283,13 @@ def run_loop(root, tron, args, milestone, jpath, run_id, ctx=None):
                     print(f"run stopped: {dv['damage']}", file=sys.stderr); return 4
                 if "none" in dv:
                     ladder.append({"step": "doctor", "result": "no verdict"})
-                    outcome = ("blocked", fail_reason + " (the Doctor gave no verdict)"); break
+                    outcome = ("blocked", fail_reason + " (the Doctor gave no verdict)" + (f"; question: {worker_question(wb)}" if wb else "")); break
                 v = dv["verdict"]
                 ladder.append({"step": "doctor", "result": v, "diagnosis": dv["diagnosis"][:300]})
                 split_done = False
+                if wb and (v == "retry_with_hint" or (v == "environment_problem" and not str(dv.get("missing") or "").strip())):
+                    # TASK-404: a block on purpose never gets a repair or baseline session; the worker's reason becomes the one question
+                    outcome = ("blocked", f"{stall}; no repair session (Doctor: {v}); question: {worker_question(wb)}"); break
                 if v == "retry_with_hint":
                     hint, limit, stall = dv["hint"], max(limit, repairs + 1), None
                     persist()
@@ -2351,7 +2363,7 @@ def run_loop(root, tron, args, milestone, jpath, run_id, ctx=None):
                     journal["in_progress"]["split_plan"] = split_plan; persist()
                     outcome = ("blocked", "split by the Doctor: " + dv["diagnosis"][:200]); break
             if stall:
-                outcome = ("blocked", stall); break
+                outcome = ("blocked", stall + (f"; question: {worker_question(wb)}" if wb else "")); break
             last_sig = sig
             repairs += 1
             if repairs > limit:
@@ -2369,7 +2381,7 @@ def run_loop(root, tron, args, milestone, jpath, run_id, ctx=None):
         state, reason = outcome
         if state == "blocked":
             wn = worker_notes(root, task_id)
-            if re.search(r"\bblock(ed)?\b", wn, re.I):  # the worker blocked on purpose: its reason is the reason
+            if re.search(r"\bblock(ed)?\b", wn, re.I) and not reason.startswith("the worker blocked"):  # the worker blocked on purpose: its reason is the reason
                 reason = "the worker blocked the task on purpose: " + wn[:300].replace("\n", " ") + (f"; {reason}" if "Doctor" in reason else "")
             journal["blocking"] = {"task": task_id, "base": base, "reason": reason, "repairs": repairs, "split_plan": split_plan, "ladder": ladder}
             write_journal(jpath, journal)
