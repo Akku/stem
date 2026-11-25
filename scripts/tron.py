@@ -897,7 +897,7 @@ def write_brief(root, tron, journal, target, base, g, task_ids, intent, reduced=
               "", "## Hints from the runner", "Placeholder hits: " + json.dumps((g or {}).get("placeholders", [])),
               "Deleted files: " + json.dumps((g or {}).get("deleted_files", []))]
     al = assumptions(root, task_ids)
-    parts += ["", "## Assumption and decision list of this run", "\n".join(al) or "(none recorded)"]
+    parts += ["", "## Assumption list of this run (Decision: lines included)", "\n".join(al) or "(none recorded)"]
     cut = ("short brief (diff stat only)" if reduced else "diff cut for size" if len(diff) > DIFF_BUDGET and target != "milestone"
            else "diff parts cut for size" if target == "milestone" and "(nothing: every part is shown in full)" not in parts else None)
     cov = journal.setdefault("brief_cut", {})
