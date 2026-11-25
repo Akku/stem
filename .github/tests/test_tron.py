@@ -910,6 +910,32 @@ class Tron(unittest.TestCase):
         rep = (self.proj / "docs/agent/tron/REPORT-one.md").read_text()
         self.assertIn("then run again (it resumes) b)", rep); self.assertNotIn("this run is complete", rep)
 
+    def test_new_run_names_kept_work_of_an_earlier_run(self):  # TASK-431 AC#1/AC#2
+        self.config({"max_repairs": 0})
+        self.behavior({"TASK-1": ["dirty"]})
+        self.tron("run", "--milestone", "m-1", "--run-id", "one")
+        j = self.journal(); self.assertTrue(j["complete"])
+        kept = j["tasks"]["TASK-1"]["kept"]; self.assertTrue(kept.get("branch") or kept.get("stash"))
+        self.release("TASK-1"); self.behavior({})
+        n = len(self.calls())
+        self.tron("run", "--milestone", "m-1", "--run-id", "two")
+        p = [c["prompt"] for c in self.calls()[n:] if c["task"] == "TASK-1"][0]
+        self.assertIn("in an earlier run of this milestone", p)
+        for v in kept.values(): self.assertIn(v, p)
+
+    def test_new_run_skips_kept_work_that_is_gone(self):  # TASK-431 AC#2
+        self.config({"max_repairs": 0})
+        self.behavior({"TASK-1": ["dirty"]})
+        self.tron("run", "--milestone", "m-1", "--run-id", "one")
+        kept = self.journal()["tasks"]["TASK-1"]["kept"]
+        if kept.get("branch"): git(self.proj, "branch", "-D", kept["branch"])
+        if kept.get("stash"): git(self.proj, "stash", "drop")
+        self.release("TASK-1"); self.behavior({})
+        n = len(self.calls())
+        self.tron("run", "--milestone", "m-1", "--run-id", "two")
+        p = [c["prompt"] for c in self.calls()[n:] if c["task"] == "TASK-1"][0]
+        self.assertNotIn("released it since", p)
+
     def test_resume_leaves_a_sweep_skipped_task_settled(self):  # TASK-402 AC#2
         d = self.proj / "docs/agent/tron"; d.mkdir(parents=True, exist_ok=True)
         (d / "SWEEP-m-1.md").write_text("# Sweep: m-1\n## Questions\n- none\n\nDecision (user): the run skips TASK-2.\n")
