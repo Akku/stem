@@ -1216,12 +1216,35 @@ class Tron(unittest.TestCase):
         self.assertEqual(s["evaluator"]["verdict"], "pass")
         self.assertIn("evaluator", [f["check"] for f in [x for x in self.journal()["sessions"] if x["role"] == "worker"][0]["gate_after_evaluator"]["failures"]])
 
-    def test_evaluator_without_verdict_counts_as_fail(self):
-        self.with_evaluator("task", max_repairs=0)
+    def test_evaluator_without_verdict_retries_short_then_blocks_without_repair(self):  # TASK-419 AC#4
+        self.with_evaluator("task", max_repairs=3)
         self.evaluator_plan({"TASK-1": ["none"]})
         self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
-        self.assertEqual(self.journal()["tasks"]["TASK-1"]["state"], "blocked")
-        self.assertEqual(self.eval_calls(), ["TASK-1", "TASK-1"])  # one retry
+        t = self.journal()["tasks"]["TASK-1"]
+        self.assertEqual((t["state"], t["repairs"]), ("blocked", 0)); self.assertIn("evaluator gave no verdict", t["reason"])
+        self.assertEqual(self.eval_calls(), ["TASK-1", "TASK-1"])  # one retry, then no worker repair
+        self.assertEqual([c["task"] for c in self.calls()], ["TASK-1"])
+        briefs = (self.td / "brief_copy.txt").read_text().split("# Evaluator brief")
+        self.assertIn("Short brief: the earlier evaluator session", briefs[2]); self.assertNotIn("Short brief", briefs[1])
+        self.assertIn("evaluator gave no verdict", (self.proj / f"docs/agent/tron/REPORT-{self.journal()['run_id']}.md").read_text())
+
+    def test_evaluator_short_retry_gives_the_verdict(self):  # TASK-419 AC#4
+        self.with_evaluator("task")
+        self.evaluator_plan({"TASK-1": ["none", "pass"]})
+        self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
+        self.assertEqual(self.journal()["tasks"]["TASK-1"], {"state": "accepted", "repairs": 0})
+
+    def test_milestone_without_verdict_ends_the_run_for_re_evaluation(self):  # TASK-419 AC#4
+        self.with_evaluator("milestone", max_repairs=2)
+        self.evaluator_plan({"milestone": ["none"]})
+        r = self.tron("run", "--milestone", "m-1", "--run-id", "r1")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        j = self.journal()
+        self.assertFalse(j["complete"]); self.assertIn("run again to re-evaluate", j["stop_reason"])
+        self.assertEqual([x for x in j["sessions"] if x["task"] == "milestone" and x["role"] == "worker"], [])
+        self.evaluator_plan({"milestone": ["none", "none", "pass"]})
+        r = self.tron("run", "--milestone", "m-1", "--run-id", "r1")
+        self.assertEqual(r.returncode, 0, r.stderr); self.assertTrue(self.journal()["complete"])
 
     def test_evaluator_artifacts_are_set_aside_in_a_stash_and_the_run_goes_on(self):
         self.with_evaluator("task")
@@ -1343,6 +1366,16 @@ class Tron(unittest.TestCase):
         self.assertFalse(j["complete"]); self.assertIn("milestone evaluation failed", j["stop_reason"])
         self.assertEqual(self.eval_calls(), ["milestone", "milestone"])
         self.assertEqual([x.get("repair") for x in j["sessions"] if x["task"] == "milestone" and x["role"] == "worker"], [1])
+
+    def test_milestone_repair_prompt_carries_duties_and_frame(self):  # TASK-419 AC#4
+        (self.proj / "docs/agent/DECISION_FRAME.md").write_text("# Decision frame\n\n## May decide alone\n- Naming.\n")
+        git(self.proj, "add", "-A"); git(self.proj, "commit", "-qm", "frame")
+        self.with_evaluator("milestone", max_repairs=1)
+        self.evaluator_plan({"milestone": ["fail", "pass"]})
+        self.tron("run", "--milestone", "m-1")
+        p = [c["prompt"] for c in self.calls() if c["task"] == "milestone"][0]
+        for needle in ("Commit the fix", "clean working tree", "## May decide alone\n- Naming.", "never block the task"):
+            self.assertIn(needle, p)
 
     def test_milestone_brief_groups_diff_by_task_and_lists_cut_parts(self):  # TASK-297
         self.with_evaluator("milestone", max_repairs=1, brief_diff_chars=300)

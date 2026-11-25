@@ -39,6 +39,10 @@ BASELINE_DUTIES = ("Before you end: run the verification command at least 3 time
                    "Then commit the fix (one commit, message starting with 'baseline:') and end on a clean working tree: "
                    "no uncommitted or untracked files; the runner's gate fails on a dirty tree.")
 
+# TASK-419: a milestone repair runs outside any task, so it gets the duties the gate checks and the decision frame (run_session adds it only for TASK-n)
+MILESTONE_REPAIR_DUTIES = ("Before you end: run the verification command and claim green only if it passed. Commit the fix (one commit, "
+                           "message starting with 'milestone:'; the runner judges only committed work, a repair without a commit ends the run) "
+                           "and end on a clean working tree: no uncommitted or untracked files; the runner's gate fails on a dirty tree.")
 
 API_CODES = (429, 500, 502, 503, 504, 529)
 API_RE = re.compile(r"rate.?limit|overloaded|too many requests|\b(429|502|503|504|529)\b|temporarily unavailable|ECONNRESET", re.I)
@@ -678,8 +682,9 @@ def milestone_diff(root, tron, journal, base, task_ids, stat, ex):
     return out
 
 
-def write_brief(root, tron, journal, target, base, g, task_ids, intent):
-    """The evaluator's only input besides the repository: intent, ACs, diff, verification, invariants, hints, assumptions."""
+def write_brief(root, tron, journal, target, base, g, task_ids, intent, reduced=False):
+    """The evaluator's only input besides the repository: intent, ACs, diff, verification, invariants, hints, assumptions.
+    reduced: the retry after a missing verdict (TASK-419) gets the diff stat and the commands instead of the diff text."""
     files = task_files(root)
     parts = [f"# Evaluator brief: {target} (run {journal['run_id']})", "", "## Intent", intent, "", "## Acceptance criteria"]
     for i in task_ids:
@@ -700,7 +705,13 @@ def write_brief(root, tron, journal, target, base, g, task_ids, intent):
     if g is None:
         g = {"placeholders": scan_placeholders(root, base), "deleted_files": [f for f in deleted_paths(root, base) if not f.startswith("backlog/")]}
     parts += ["", "## Verification by the runner", f"exit code {code}", tail, "", f"## Diff since {base[:12]}"]
-    if target == "milestone":
+    if reduced:
+        rng = journal.get("task_ranges", {})
+        parts += ["Short brief: the earlier evaluator session for this target gave no verdict, so the diff text is left out. "
+                  f"Read only what you need: `git diff --no-renames {base} -- . ':(exclude)backlog'`.", "```", stat.strip(), "```"]
+        parts += [f"- {i}: `git diff --no-renames {rng[i][0]} {rng[i][1]} -- . ':(exclude)backlog'`" for i in task_ids
+                  if target == "milestone" and rng.get(i) and rng[i][0] != rng[i][1]]
+    elif target == "milestone":
         parts += milestone_diff(root, tron, journal, base, task_ids, stat, ex)
     else:
         parts += [f"Full diff: git diff {base} -- . ':(exclude)backlog' (the text below is cut at {DIFF_BUDGET} characters; task files are left out)",
@@ -713,7 +724,7 @@ def write_brief(root, tron, journal, target, base, g, task_ids, intent):
               "Deleted files: " + json.dumps((g or {}).get("deleted_files", []))]
     al = assumptions(root, task_ids)
     parts += ["", "## Assumption list of this run", "\n".join(al) or "(none recorded)"]
-    path = root / JOURNAL_DIR / f"brief-{journal['run_id']}-{target}.md"
+    path = root / JOURNAL_DIR / f"brief-{journal['run_id']}-{target}{'-short' if reduced else ''}.md"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(parts) + "\n")
     return path
@@ -736,17 +747,26 @@ def stash_artifacts(root, journal, target):
     return name if len(git_ok(root, "stash", "list").splitlines()) > n0 else None
 
 
+NO_VERDICT_RETRY = ("The previous evaluator session for {target} ended without the final json block, so it gave no verdict. This brief is shorter "
+                    "(diff stat and commands instead of the diff text). Check only what you need for a verdict and end your answer with the final "
+                    "```json block of .claude/agents/evaluator.md now, even if some checks are unfinished: an AC you could not check is a "
+                    "not_verifiable finding.")
+
+
 def evaluate(root, tron, journal, jpath, target, base, g, task_ids, intent, abort_check):
-    """One evaluator session. Returns {'verdict','findings','assumption_flags','file'} or {'damage': reason} or {'unavailable': reason}."""
-    brief = write_brief(root, tron, journal, target, base, g, task_ids, intent)
-    prompt = (f"You are the independent evaluator of an unattended Tron mode run. Read .claude/agents/evaluator.md and follow it exactly. "
-              f"Your brief is {brief.relative_to(root)}. Do not change any file in the project.")
+    """One evaluator session, plus one retry with a short brief when the verdict is missing (TASK-419). Returns
+    {'verdict','findings','assumption_flags','file'}, {'none': reason, 'file'} (no verdict twice), {'damage': reason} or {'unavailable': reason}."""
     if not tron.get("evaluator_cmd"):
         print("tron: no evaluator_cmd configured: the evaluator runs with the worker command (Edit and Write allowed); "
               "read-only is only enforced by the tree check afterwards", file=sys.stderr)
     before = tree_state(root)
     verdict = None
-    for attempt in (1, 2):  # a missing verdict gets one retry, then counts as a fail
+    for attempt in (1, 2):  # a missing verdict gets one retry with a short brief; still none goes back to evaluation, never to a worker
+        brief = write_brief(root, tron, journal, target, base, g, task_ids, intent, reduced=attempt == 2)
+        prompt = (f"You are the independent evaluator of an unattended Tron mode run. Read .claude/agents/evaluator.md and follow it exactly. "
+                  f"Your brief is {brief.relative_to(root)}. Do not change any file in the project.")
+        if attempt == 2:
+            prompt += " " + NO_VERDICT_RETRY.format(target=target)
         entry, up = sessions_with_retry(root, tron, "evaluator", target, journal["run_id"], journal["milestone"], journal, jpath, prompt, abort_check=abort_check)
         text = entry.pop("_out", "")
         if not up:
@@ -761,15 +781,17 @@ def evaluate(root, tron, journal, jpath, target, base, g, task_ids, intent, abor
             entry["evaluator"]["artifacts_stash"] = stash
         if verdict:
             break
-    if not verdict:
-        verdict = {"verdict": "fail", "assumption_flags": [], "checked": [], "findings": [{"ac": "-", "location": "evaluator output", "kind": "defect",
-                   "scenario": "the evaluator gave no parseable verdict (final json block missing); treated as fail"}]}
+    none = not verdict
+    if none:
+        verdict = {"verdict": None, "assumption_flags": [], "checked": [], "findings": []}
     n = sum(1 for f in (root / JOURNAL_DIR).glob(f"verdict-{journal['run_id']}-{target}-*.json")) + 1
     vpath = root / JOURNAL_DIR / f"verdict-{journal['run_id']}-{target}-{n}.json"
     vpath.write_text(json.dumps(dict(verdict, target=target, at=now(), denied=entry.get("denied"), tail=(text or "")[-2000:]), indent=1) + "\n")
     entry["evaluator"]["file"] = str(vpath.relative_to(root))
     write_risk_drafts(root, target, verdict.get("risks") or [], journal)
     write_journal(jpath, journal)
+    if none:
+        return {"none": "the evaluator gave no verdict twice (final json block missing, also after a short brief)", "file": str(vpath.relative_to(root))}
     return dict(verdict, file=str(vpath.relative_to(root)))
 
 
@@ -1425,7 +1447,7 @@ def build_report(root, journal, tron):
         except ValueError:
             continue
         restricted = f"; restricted check: {v['denied']} denied tool call(s), the verdict may rest on reading only" if v.get("denied") else ""
-        out.append(f"- {v.get('target')}: {v.get('verdict')} ({len(v.get('findings', []))} finding(s){restricted}) [{vf.name}]")
+        out.append(f"- {v.get('target')}: {v.get('verdict') or 'no verdict'} ({len(v.get('findings', []))} finding(s){restricted}) [{vf.name}]")
         for fi in v.get("findings", []):
             out.append(f"  - {fi.get('ac', '-')} at {fi.get('location', '?')}: {fi.get('scenario', '')}")
         for a in v.get("assumption_flags", []):
@@ -1635,6 +1657,10 @@ def milestone_evaluation(root, tron, journal, jpath, accepted, start_commit, max
         if "damage" in ev:
             journal["aborted"] = "gate damage: " + ev["damage"]; journal["damage"] = True; fin(journal["aborted"])
             print(f"run stopped: {ev['damage']}", file=sys.stderr); return 4
+        if "none" in ev:  # TASK-419: no repair session for a missing verdict; the next run judges the same state again
+            fin(f"milestone evaluation gave no verdict ({ev['none']}; {ev['file']}): run again to re-evaluate")
+            print(f"milestone {milestone}: evaluator gave no verdict; run again to re-evaluate", file=sys.stderr)
+            return 0
         if ev["verdict"] == "pass" and not ev["assumption_flags"]:
             journal["milestone_verdict"] = "pass"; journal["milestone_repairs"] = 0; write_journal(jpath, journal)
             print(f"milestone {milestone}: evaluator says pass; {ev['file']}")
@@ -1652,7 +1678,8 @@ def milestone_evaluation(root, tron, journal, jpath, accepted, start_commit, max
         base, acs_before = head(root), snapshot_acs(root)
         journal["in_progress"] = {"task": "baseline", "base": base, "acs_before": acs_before}
         prompt = ("The independent evaluation of the milestone found problems (unattended Tron mode session, STEM_TRON=1; read R-TRON first). "
-                  f"Fix exactly these findings and nothing else (repair {repairs + 1} of {max_repairs}):\n" + g["failures"][0]["detail"])
+                  f"Fix exactly these findings and nothing else (repair {repairs + 1} of {max_repairs}):\n" + g["failures"][0]["detail"]
+                  + "\n\n" + MILESTONE_REPAIR_DUTIES + decision_prompt(root))
         entry, up = sessions_with_retry(root, tron, "worker", "milestone", run_id, milestone, journal, jpath, prompt, abort_check=no_count)
         if not up:
             fin(entry.get("retry_aborted") or "API unavailable after retries"); return 0
@@ -1901,6 +1928,9 @@ def run_loop(root, tron, args, milestone, jpath, run_id, ctx=None):
                     if "damage" in ev:
                         journal["aborted"] = "gate damage: " + ev["damage"]; journal["damage"] = True; fin(journal["aborted"])
                         print(f"run stopped: {ev['damage']}", file=sys.stderr); return 4
+                    if "none" in ev:  # TASK-419: a missing verdict says nothing about the work, so no worker repair
+                        print(f"{task_id}: {ev['none']}; {ev['file']}")
+                        outcome = ("blocked", f"evaluator gave no verdict: {ev['none']} ({ev['file']}); no repair session, the work is kept for a new evaluation"); break
                     if ev["verdict"] == "fail" or ev["assumption_flags"]:
                         g = entry["gate_after_evaluator"] = verdict_failure(ev)
                         print(f"{task_id}: evaluator says fail ({len(ev['findings'])} finding(s)); {ev['file']}")
