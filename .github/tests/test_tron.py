@@ -886,6 +886,30 @@ class Tron(unittest.TestCase):
         p = [c["prompt"] for c in self.calls()[n:] if c["task"] == "TASK-1"][0]
         self.assertNotIn("released it since", p)
 
+    def test_new_run_after_a_complete_run_offers_a_released_task(self):  # TASK-429 AC#1/AC#2
+        self.config({"max_repairs": 0})
+        self.behavior({"TASK-1": ["draft_block"]})
+        self.tron("run", "--milestone", "m-1", "--run-id", "one")
+        j = self.journal(); self.assertTrue(j["complete"]); self.assertEqual(j["tasks"]["TASK-1"]["state"], "blocked")
+        rep = (self.proj / "docs/agent/tron/REPORT-one.md").read_text()
+        self.assertIn("then run again (this run is complete: a new run on the same branch picks the released task up)", rep)
+        self.assertNotIn("(it resumes)", rep)
+        self.release("TASK-1"); self.behavior({})
+        n = len(self.calls())
+        r = self.tron("run", "--milestone", "m-1", "--run-id", "two")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual([c["task"] for c in self.calls()[n:] if c["task"] != "baseline"], ["TASK-1", "TASK-3"])
+        j2 = json.loads((self.proj / "docs/agent/tron/run-two.json").read_text())
+        self.assertEqual(j2["branch"], j["branch"]); self.assertEqual(j2["tasks"]["TASK-1"]["state"], "accepted")
+
+    def test_draft_question_of_a_stopped_run_says_it_resumes(self):  # TASK-429 AC#1
+        self.config({"max_repairs": 0})
+        self.behavior({"TASK-1": ["draft_block"]})
+        self.tron("run", "--milestone", "m-1", "--run-id", "one", "--max-tasks", "1")
+        self.assertFalse(self.journal()["complete"])
+        rep = (self.proj / "docs/agent/tron/REPORT-one.md").read_text()
+        self.assertIn("then run again (it resumes) b)", rep); self.assertNotIn("this run is complete", rep)
+
     def test_resume_leaves_a_sweep_skipped_task_settled(self):  # TASK-402 AC#2
         d = self.proj / "docs/agent/tron"; d.mkdir(parents=True, exist_ok=True)
         (d / "SWEEP-m-1.md").write_text("# Sweep: m-1\n## Questions\n- none\n\nDecision (user): the run skips TASK-2.\n")

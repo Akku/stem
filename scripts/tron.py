@@ -1635,7 +1635,9 @@ def questions_block(root, journal, al, precs=()):
         if re.search(r"^\s*-\s*tron-risk\s*$", text, re.M):
             q.append(f"{title} ({rel}) a) accept the risk b) create a task for it. Recommendation: b because it touches a 'Must come back' line of the frame")
         else:
-            q.append(f"{title} ({rel}) a) answer it as the draft proposes, then run again (it resumes) b) leave the task Blocked. "
+            again = ("run again (this run is complete: a new run on the same branch picks the released task up)" if journal.get("complete")
+                     else "run again (it resumes)")  # TASK-429: a complete run is never resumed
+            q.append(f"{title} ({rel}) a) answer it as the draft proposes, then {again} b) leave the task Blocked. "
                      "Recommendation: a because the run cannot go on without the answer")
     veto = [a for a in al if (is_decision(a) or (assumption_basis(a) or "none").lower() == "none") and not ruled_by(a, precs)]
     if veto:
