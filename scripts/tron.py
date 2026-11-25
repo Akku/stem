@@ -346,6 +346,27 @@ def parse_task(text):
     return (m.group(1).strip("'\"") if m else None), acs, (notes.group(1) if notes else "")
 
 
+PROBE = re.compile(r"\[probe: *(TASK-\d+#\d+)\] *$")
+
+
+def is_probe(ac_text):
+    """An AC with a usage probe marker '[probe: TASK-n#k]' (docs/agent/PROBES.md) can only be proven by later real use:
+    it may stay open after a run (TASK-420 row 17)."""
+    return bool(PROBE.search(ac_text))
+
+
+def probe_problem(root, task_id, n, ac_text):
+    """None when the open AC is a valid usage probe as scripts/check-backlog.sh counts it: the marker names this task and AC,
+    and exactly one 'probe.py fire <id>' call exists in the committed code (backlog, docs and .github excluded); else the reason."""
+    want = f"{task_id}#{n}"
+    if PROBE.search(ac_text).group(1) != want:
+        return f"AC#{n} has a probe marker for another id; it must be '[probe: {want}]' (docs/agent/PROBES.md)"
+    r = subprocess.run(["git", "grep", "-h", "-F", f"probe.py fire {want} ", "HEAD", "--", ".", ":!backlog", ":!docs", ":!.github"],
+                       cwd=root, capture_output=True, text=True)
+    k = len(r.stdout.splitlines())
+    return None if k == 1 else f"AC#{n} is a probe but the code has {k} 'probe.py fire {want}' call(s), not exactly one (docs/agent/PROBES.md)"
+
+
 def ac_hash(text):
     acs = parse_task(text)[1]
     return hashlib.sha256("\n".join(f"{n} {s}" for _, n, s in acs).encode()).hexdigest()
@@ -487,13 +508,20 @@ def gate(root, tron, task_id, base, acs_before, start_commit, branch, refs0):
             status, acs, notes = parse_task(path.read_text()) if path else (None, [], "")
             if status != "Done":
                 fails.append({"check": "status", "reason": f"status is {status}, not Done"})
-            for ticked, n, _ in acs:
+            for ticked, n, t in acs:
+                if not ticked and is_probe(t):  # TASK-420 row 17: a usage probe stays open; the report lists it
+                    why = probe_problem(root, task_id, n, t)
+                    if why:
+                        fails.append({"check": "ac", "reason": why})
+                    continue
                 if not ticked:
                     fails.append({"check": "ac", "reason": f"AC#{n} is not ticked"})
                 elif not re.search(rf"^\s*AC#{n}: E2 +\S", notes, re.M):
                     fails.append({"check": "evidence", "reason": f"AC#{n} has no 'AC#{n}: E2 <pointer>' line in the notes"})
             if not acs:
                 fails.append({"check": "ac", "reason": "task has no acceptance criteria"})
+            elif all(is_probe(t) for _, _, t in acs):
+                fails.append({"check": "ac", "reason": "every acceptance criterion is a usage probe ([probe: TASK-n#k]); at least one must be proven in the run"})
             for l in notes.splitlines():
                 if re.match(r"\s*AC#\d+: E2\b", l) and re.search(r"extrapolat|estimat", l, re.I):
                     fails.append({"check": "evidence", "reason": f"extrapolated or estimated figure graded E2: '{l.strip()[:100]}'; measure it for real or grade it E1"})
@@ -722,6 +750,8 @@ def e1_only_acs(text):
     _, acs, notes = parse_task(text)
     out = []
     for _, n, t in acs:
+        if is_probe(t):
+            continue  # stays open in the task, never split out
         m = re.search(rf"^\s*AC#{n}: E1\b(.*)$", notes, re.M)
         if m and not re.search(rf"^\s*AC#{n}: E2 +\S", notes, re.M):
             out.append((n, t, m.group(1).strip()))
@@ -807,6 +837,9 @@ def milestone_diff(root, tron, journal, base, task_ids, stat, ex):
     return out
 
 
+PROBE_NOTE = " (probe AC: only later real use proves it; it stays open after the run, do not judge it)"
+
+
 def write_brief(root, tron, journal, target, base, g, task_ids, intent, reduced=False):
     """The evaluator's only input besides the repository: intent, ACs, diff, verification, invariants, hints, assumptions.
     reduced: the retry after a missing verdict (TASK-419) gets the diff stat and the commands instead of the diff text."""
@@ -815,7 +848,7 @@ def write_brief(root, tron, journal, target, base, g, task_ids, intent, reduced=
     for i in task_ids:
         if i in files:
             _, acs, _ = parse_task(files[i].read_text())
-            parts += [f"### {i}"] + [f"- AC#{n}: {s}" for _, n, s in acs]
+            parts += [f"### {i}"] + [f"- AC#{n}: {s}" + (PROBE_NOTE if is_probe(s) else "") for _, n, s in acs]
     plat = scenario_platform(scenario_text(root, tron, journal["milestone"]))
     parts += ["", "## Acceptance platform", platform_note(plat)] if plat else []
     if target == "milestone":
@@ -901,7 +934,7 @@ def evaluate(root, tron, journal, jpath, target, base, g, task_ids, intent, abor
         if tree_state(root) != before:
             return {"damage": f"evaluator session for {target} changed HEAD, branches or tracked files"}
         stash = stash_artifacts(root, journal, target)
-        expected = [f"AC#{n}" for i in task_ids[:1] for _, n, _ in parse_task(task_files(root)[i].read_text())[1]] if target != "milestone" else None
+        expected = [f"AC#{n}" for i in task_ids[:1] for _, n, t in parse_task(task_files(root)[i].read_text())[1] if not is_probe(t)] if target != "milestone" else None
         verdict = parse_verdict(text, expected)
         entry["evaluator"] = {"target": target, "verdict": verdict["verdict"] if verdict else None}
         if stash:
@@ -1647,6 +1680,9 @@ def build_report(root, journal, tron):
             out.append(f"- {i}: split by the Doctor into {', '.join(v.get('subtasks', []))}; closes when all of them pass (not closed yet" + "".join(f"; {x} is {tasks.get(x, {}).get('state', 'not run')}" for x in v.get("subtasks", []) if tasks.get(x, {}).get("state") != "accepted") + ")")
             out.append(f"  - ladder: {steps(v)}")
     out += ["(none)"] if not blk and not any(v["state"] == "split" for v in tasks.values()) else []
+    probes = [(i, n, t) for i in acc if files.get(i) for ticked, n, t in parse_task(files[i].read_text())[1] if not ticked and is_probe(t)]
+    if probes:  # TASK-420 row 17: open by design, proven later by real use
+        out += ["", "## Probe ACs left open (info; later real use proves them)", ""] + [f"- {i} AC#{n}: {t}" for i, n, t in probes]
     so = journal.get("split_out", [])
     if so:  # TASK-373: info, not a question; the new task carries the open decision
         out += ["", "## Split out for you (info; the run went on)", ""]

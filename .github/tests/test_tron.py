@@ -964,6 +964,50 @@ class Tron(unittest.TestCase):
         self.assertIn("PHP runtime", j["split_out"][0]["question"])
         self.assertIn("were moved to TASK-4", [c for c in self.calls() if c["task"] == "TASK-1"][1]["prompt"])
 
+    def probe_ac(self, text="#2 the retro metric drops [probe: TASK-1#2]", calls=1):
+        f = self.proj / "backlog/tasks/task-1 - x.md"
+        f.write_text(f.read_text().replace("- [ ] #1 it works\n", "- [ ] #1 it works\n- [ ] " + text + "\n"))
+        (self.proj / "scripts/feature.sh").write_text("python3 scripts/probe.py fire TASK-1#2 --at scripts/feature.sh\n" * calls)
+        git(self.proj, "add", "-A"); git(self.proj, "commit", "-qm", "probe ac")
+
+    def test_probe_ac_stays_open_passes_the_gate_and_is_listed_in_the_report(self):  # TASK-420 AC#5
+        self.probe_ac()
+        self.with_evaluator("task")
+        self.tron("run", "--milestone", "m-1", "--run-id", "r1", "--max-tasks", "1")
+        self.assertEqual(self.journal()["tasks"]["TASK-1"]["state"], "accepted")
+        self.assertTrue(self.gate_of("TASK-1")["passed"])
+        self.assertIn("- [ ] #2 the retro metric drops", (self.proj / "backlog/tasks/task-1 - x.md").read_text())
+        rep = (self.proj / "docs/agent/tron/REPORT-r1.md").read_text()
+        self.assertIn("## Probe ACs left open (info; later real use proves them)\n\n- TASK-1 AC#2: the retro metric drops [probe: TASK-1#2]", rep)
+        self.assertIn("AC#2: the retro metric drops [probe: TASK-1#2] (probe AC: only later real use proves it", (self.td / "brief_copy.txt").read_text())
+
+    def test_probe_ac_needs_its_own_id_and_exactly_one_fire_call(self):  # TASK-420 AC#5, same allowance as check-backlog.sh
+        for text, calls, why in (("#2 metric drops [probe: TASK-1#2]", 0, "0 'probe.py fire TASK-1#2' call(s)"),
+                                 ("#2 metric drops [probe: TASK-1#2]", 2, "2 'probe.py fire TASK-1#2' call(s)"),
+                                 ("#2 metric drops [probe: TASK-9#2]", 1, "must be '[probe: TASK-1#2]'"),
+                                 ("#2 metric drops [probe: usage later]", 1, "AC#2 is not ticked")):
+            with self.subTest(text=text, calls=calls):
+                self.setUp(); self.probe_ac(text, calls)
+                self.config({"max_repairs": 0})
+                self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
+                self.assertIn(why, self.journal()["tasks"]["TASK-1"]["reason"])
+
+    def test_gate_fails_when_every_ac_is_a_probe(self):  # TASK-420 AC#5
+        f = self.proj / "backlog/tasks/task-1 - x.md"
+        f.write_text(f.read_text().replace("- [ ] #1 it works\n", "- [ ] #1 it works [probe: TASK-1#1]\n"))
+        git(self.proj, "add", "-A"); git(self.proj, "commit", "-qm", "probe only")
+        self.config({"max_repairs": 0})
+        self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
+        self.assertIn("every acceptance criterion is a usage probe", self.journal()["tasks"]["TASK-1"]["reason"])
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("tron_mod", str(pathlib.Path(__file__).resolve().parents[2] / "scripts/tron.py"))
+        m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+        self.assertFalse(m.is_probe("it works [probe: later]")); self.assertFalse(m.is_probe("[probe: TASK-1#1] it works"))
+        self.assertTrue(m.is_probe("metric drops [probe: TASK-3#2]"))
+        txt = ("---\nstatus: Done\n---\n<!-- AC:BEGIN -->\n- [x] #1 a\n- [ ] #2 b [probe: TASK-1#2]\n- [x] #3 c\n<!-- AC:END -->\n"
+               "<!-- SECTION:NOTES:BEGIN -->\nAC#1: E2 x\nAC#2: E1 not measurable yet\nAC#3: E1 read only\n<!-- SECTION:NOTES:END -->\n")
+        self.assertEqual([n for n, _, _ in m.e1_only_acs(txt)], [3])
+
     def test_doctor_environment_gap_splits_out_the_e1_acs_and_the_task_goes_on(self):  # TASK-419 AC#3
         self.two_acs()
         self.with_doctor({"TASK-1": [{"verdict": "environment_problem", "diagnosis": "no php", "missing": "php runtime"}]}, max_repairs=1)
