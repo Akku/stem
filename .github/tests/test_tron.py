@@ -716,6 +716,21 @@ class Tron(unittest.TestCase):
         r = self.crash_then_repair(stop_record=False)
         self.assertEqual(r.returncode, 4, r.stdout + r.stderr); self.assertIn("protected", self.journal()["aborted"])
 
+    def test_worker_prompt_carries_decision_frame_and_precedents(self):  # TASK-416
+        sys.path.insert(0, str(ROOT / "scripts")); import tron
+        self.assertEqual(tron.decision_prompt(self.proj), "")  # no frame file: nothing added
+        (self.proj / "docs/agent/DECISION_FRAME.md").write_text("# Decision frame\n\nDefault list.\n\n## May decide alone\n- Naming.\n\n## Must come back\n- Release.\n")
+        (self.proj / "docs/agent/PRECEDENTS.md").write_text("# Precedents\n\nFormat: `P-<n> | ...`\n\nP-1 | 2026-11-25 | naming | use kebab-case | sweep\n")
+        git(self.proj, "add", "-A"); git(self.proj, "commit", "-qm", "frame")
+        r = self.tron("run", "--milestone", "m-1", "--run-id", "r1")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        prompts = [c["prompt"] for c in self.calls() if c["task"].startswith("TASK-")]
+        self.assertTrue(prompts)
+        for p in prompts:
+            for needle in ("never block the task", "## May decide alone\n- Naming.", "## Must come back\n- Release.", "P-1 | 2026-11-25 | naming"):
+                self.assertIn(needle, p)
+            self.assertNotIn("Default list.", p); self.assertNotIn("Format: `P-", p)
+
     def test_detach_runs_in_its_own_session_and_waits(self):
         """TASK-366: --detach starts the run as its own process session with a log; the waiter returns its exit code."""
         wrap = self.bin / "wrap"

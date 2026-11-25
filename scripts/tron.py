@@ -252,6 +252,8 @@ def run_session(root, tron, role, task_id, run_id, milestone, prompt=None):
         prompt = tron.get("prompt", DEFAULT_PROMPT).replace("{task_id}", task_id)
         if role == "worker" and re.fullmatch(r"TASK-\d+", task_id) and SWEEP_ID.fullmatch(milestone or ""):
             prompt += predecided_prompt(root, milestone, task_id)
+    if role == "worker" and re.fullmatch(r"TASK-\d+", task_id):  # first session and repairs alike
+        prompt += decision_prompt(root)
     cmd = fill(command_for(tron, role), {"prompt": prompt, "session_id": session_id, "task_id": task_id,
                                          "run_id": run_id, "milestone": milestone})
     env = dict(os.environ, STEM_TRON="1", STEM_TRON_RUN=run_id, STEM_TRON_TASK=task_id, STEM_TRON_ROLE=role)
@@ -2088,6 +2090,21 @@ def sweep_predecided(text, task_id=None):
     sec = re.search(rf"^{PREDECIDED}\s*$(.*?)(?=^## |\Z)", text, re.M | re.S)
     out = [(m.group(1), m.group(2), m.group(3), m.group(4)) for m in SWEEP_A.finditer(sec.group(1))] if sec else []
     return [a for a in out if task_id is None or a[1] == task_id]
+
+
+def decision_prompt(root):
+    """Worker prompt addition (TASK-416): the decision frame and the precedents, so the worker decides instead of blocking.
+    Run logs showed workers never opened DECISION_FRAME.md or PRECEDENTS.md although R-TRON told them to search both."""
+    f = root / "docs/agent/DECISION_FRAME.md"
+    frame = re.sub(r"\A#[^\n]*\n+(?:[^#\n][^\n]*\n+)*", "", f.read_text()).strip() if f.is_file() else ""
+    if not frame:
+        return ""
+    prec = [l.strip() for l in read_rel(root, "docs/agent/PRECEDENTS.md").splitlines() if re.match(r"\s*(?:[-*]\s*)?P-\d+", l)]
+    return ("\n\nDecision frame (docs/agent/DECISION_FRAME.md and the user's precedents; already here, no need to open the files). "
+            "A decision under 'May decide alone' or covered by a precedent is yours: take the option you would recommend, record "
+            "'Assumption: <decision> (basis: <frame line or P-n>)' in the task notes and go on; never block the task or write a draft "
+            "question for it. Only an item under 'Must come back' or an invariant stops the task.\n\n" + frame
+            + ("\n\n## Precedents\n" + "\n".join(prec) if prec else ""))
 
 
 def predecided_prompt(root, milestone, task_id):
