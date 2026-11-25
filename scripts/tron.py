@@ -116,7 +116,7 @@ def is_blocked(text, blocked_status="Blocked"):
 
 
 def ready_tasks(root, milestone, blocked_status="Blocked"):
-    """Ready tasks of the milestone in backlog order (unblocked, dependencies done; Blocked tasks are never offered again)."""
+    """Ready tasks of the milestone in backlog order (unblocked, dependencies done; Blocked tasks are not offered)."""
     r = sh(["backlog", "task", "list", "-m", milestone, "--ready", "--plain"], root)
     if r.returncode:
         raise TronError(f"backlog task list failed: {(r.stderr or r.stdout).strip()[:300]}")
@@ -139,7 +139,7 @@ def task_deps(text):
 
 def stranded_by(root, milestone, blocked):
     """Open milestone tasks that wait for a Blocked task directly or indirectly: {task: blocked task it waits for} (TASK-296).
-    The runner is serial and never offers a Blocked task again, so these never become ready in this run."""
+    The runner is serial and offers a Blocked task again only after the user released it and resumes the run (TASK-402)."""
     deps = {}
     for tid, f in task_files(root).items():
         text = f.read_text()
@@ -1651,6 +1651,9 @@ def build_report(root, journal, tron):
     bc = journal.get("brief_cut", {})
     out += [f"- Evaluator saw only part of the diff, so it is no independent review (R-REVIEW): " + ", ".join(f"{k} ({v})" for k, v in bc.items())
             + "; review these yourself when they carry a review trigger"] if bc else []
+    ro = journal.get("reoffered", {})
+    out += ["- Offered again after you released them (counted once, by the new outcome): " + ", ".join(
+        f"{i} (earlier block: {clip(str(v[-1].get('reason', '')), 80)})" for i, v in ro.items())] if ro else []
     out += [f"- Unattended retro (analysis): {journal['retro']}"] if journal.get("retro") else []
     out += [f"- Unattended retro failed: {journal['retro_error']}"] if journal.get("retro_error") else []
     out += [f"- The run ended by an error: {journal['error']}. Run again to continue after fixing it"
@@ -2054,7 +2057,7 @@ def run_loop(root, tron, args, milestone, jpath, run_id, ctx=None):
         journal["tasks"][task_id] = {"state": "blocked", "reason": reason, "repairs": repairs, "kept": kept, "stranded": stranded}
         journal.pop("blocking", None); journal.pop("in_progress", None)
         write_journal(jpath, journal)
-        print(f"{task_id}: BLOCKED ({reason})" + (f"; stranded (never ready in this run): {', '.join(stranded)}" if stranded else ""))
+        print(f"{task_id}: BLOCKED ({reason})" + (f"; stranded (ready only after you release it and run again): {', '.join(stranded)}" if stranded else ""))
 
     def do_split(task_id, plan, ladder):
         """Subtasks of the Doctor's split; a failure becomes a draft question, never a half-made split."""
@@ -2083,13 +2086,17 @@ def run_loop(root, tron, args, milestone, jpath, run_id, ctx=None):
 
     swf = root / f"docs/agent/tron/SWEEP-{milestone}.md"
     sweep_skips = sweep_skipped(swf.read_text()) if swf.is_file() else set()
+    # TASK-402: a task this run blocked before the resume comes back once the user released it (no Blocked status or label);
+    # sweep skips stay settled, and a task blocked again in this resume is not offered a second time
+    released = {i for i, v in journal["tasks"].items() if v.get("state") == "blocked" and not v.get("skipped")}
+    offer = lambda: [t for t in ready_tasks(root, milestone, blocked_status) if t in acs0 and (t not in journal["tasks"] or t in released)]
     no_count = lambda: stop_reason(count_tasks=False)  # limits that end a session in flight (not the task count)
     while True:
         for pid in close_split_parents(root, tron, journal):
             print(f"{pid}: closed, all subtasks of its split are accepted")
         write_journal(jpath, journal)
         task_resumed = resume_ip is not None and resume_ip.get("task") != "baseline" and resume_ip.get("task") not in journal["tasks"]
-        todo = [] if task_resumed else [t for t in ready_tasks(root, milestone, blocked_status) if t not in journal["tasks"] and t in acs0]
+        todo = [] if task_resumed else offer()
         skip = [t for t in todo if t in sweep_skips]  # TASK-379: Blocked by the runner itself, no session, no cost
         if skip:
             for t in skip:
@@ -2145,6 +2152,10 @@ def run_loop(root, tron, args, milestone, jpath, run_id, ctx=None):
             task_id = todo[0]
             base, acs_before = head(root), snapshot_acs(root)
             repairs, last_sig = 0, None
+            if task_id in released:  # the earlier block moves to the history: the task is counted once, by its new outcome
+                released.discard(task_id)
+                journal.setdefault("reoffered", {}).setdefault(task_id, []).append(journal["tasks"].pop(task_id))
+                print(f"{task_id}: released by the user since it was blocked; offered again")
         journal["in_progress"] = {"task": task_id, "base": base, "acs_before": acs_before, "repairs": repairs, "last_sig": last_sig}
         prompt = None
         outcome = None
@@ -2407,7 +2418,7 @@ def run_loop(root, tron, args, milestone, jpath, run_id, ctx=None):
             if nb:
                 journal["tasks"][task_id]["warnings"] = [f"assumption without a basis: {a[:160]}" for a in nb]
         write_journal(jpath, journal)
-        if state == "accepted" and pause_after == "task" and [t for t in ready_tasks(root, milestone, blocked_status) if t not in journal["tasks"] and t in acs0]:
+        if state == "accepted" and pause_after == "task" and offer():
             fin("pause_after task")
             print(f"paused after {task_id} (pause_after task); review: git log --oneline {start_commit[:8]}..HEAD; run again to continue")
             return 0

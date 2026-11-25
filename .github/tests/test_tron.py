@@ -652,7 +652,7 @@ class Tron(unittest.TestCase):
         self.assertEqual(j["tasks"]["TASK-2"]["state"], "accepted")  # the independent task still runs
         self.assertNotIn("TASK-3", j["tasks"]); self.assertNotIn("TASK-4", j["tasks"])
         self.assertEqual(j["stop_reason"], "no ready task left; stranded: TASK-3 waits for Blocked TASK-1, TASK-4 waits for Blocked TASK-1")
-        self.assertIn("stranded (never ready in this run): TASK-3, TASK-4", r.stdout)
+        self.assertIn("stranded (ready only after you release it and run again): TASK-3, TASK-4", r.stdout)
         rep = (self.proj / "docs/agent/tron/REPORT-r1.md").read_text()
         self.assertIn("- stranded: TASK-3, TASK-4 wait(s) for TASK-1", rep); self.assertIn("stranded: TASK-3 waits for Blocked TASK-1", rep)
 
@@ -831,6 +831,45 @@ class Tron(unittest.TestCase):
         calls = len(self.calls())
         r = self.tron("run", "--milestone", "m-1", "--run-id", "two")
         self.assertEqual(len(self.calls()), calls, r.stdout)
+
+    def release(self, tid):  # the user releases a Blocked task: status To Do, label 'blocked' removed
+        f = self.proj / f"backlog/tasks/task-{tid.split('-')[1]} - x.md"
+        f.write_text(re.sub(r"(?m)^status: .*$", "status: To Do", f.read_text()).replace("  - blocked\n", ""))
+        st = json.loads((self.proj / "state.json").read_text())
+        for x in st["tasks"]:
+            if x["id"] == tid: x["status"] = "To Do"
+        (self.proj / "state.json").write_text(json.dumps(st))
+        git(self.proj, "add", "-A"); git(self.proj, "commit", "-qm", "release " + tid)
+
+    def test_resume_offers_a_released_blocked_task_and_its_stranded_dependents(self):  # TASK-402 AC#1/AC#2
+        self.behavior({"TASK-1": "noop", "TASK-2": "noop"})
+        self.tron("run", "--milestone", "m-1", "--run-id", "one", "--max-tasks", "2")
+        j = self.journal()
+        self.assertFalse(j["complete"]); self.assertEqual([j["tasks"][t]["state"] for t in ("TASK-1", "TASK-2")], ["blocked", "blocked"])
+        self.assertNotIn("TASK-3", j["tasks"])  # stranded behind TASK-1
+        self.release("TASK-1")
+        self.behavior({})
+        r = self.tron("run", "--milestone", "m-1", "--run-id", "one")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        j = self.journal()
+        self.assertEqual([j["tasks"][t]["state"] for t in ("TASK-1", "TASK-2", "TASK-3")], ["accepted", "blocked", "accepted"])
+        self.assertEqual([c["task"] for c in self.calls()], ["TASK-1", "TASK-2", "TASK-1", "TASK-3"])  # TASK-2 still Blocked: untouched
+        self.assertEqual(list(j["reoffered"]), ["TASK-1"]); self.assertEqual(j["reoffered"]["TASK-1"][0]["state"], "blocked")
+        rep = next((self.proj / "docs/agent/tron").glob("REPORT-*.md")).read_text()
+        self.assertIn("Offered again after you released them (counted once, by the new outcome): TASK-1", rep)
+        self.assertNotIn("- TASK-1", rep.split("## Blocked tasks")[1].split("\n## ")[0])  # counted once: accepted, not also blocked
+
+    def test_resume_leaves_a_sweep_skipped_task_settled(self):  # TASK-402 AC#2
+        d = self.proj / "docs/agent/tron"; d.mkdir(parents=True, exist_ok=True)
+        (d / "SWEEP-m-1.md").write_text("# Sweep: m-1\n## Questions\n- none\n\nDecision (user): the run skips TASK-2.\n")
+        git(self.proj, "add", "-A"); git(self.proj, "commit", "-qm", "sweep")
+        self.tron("run", "--milestone", "m-1", "--run-id", "one", "--max-tasks", "1")
+        self.assertEqual(self.journal()["tasks"]["TASK-2"]["skipped"], "sweep")
+        self.release("TASK-2")
+        self.tron("run", "--milestone", "m-1", "--run-id", "one")
+        j = self.journal()
+        self.assertNotIn("TASK-2", [c["task"] for c in self.calls()]); self.assertEqual(j["tasks"]["TASK-2"]["skipped"], "sweep")
+        self.assertNotIn("reoffered", j)
 
     def test_review_fingerprint_sees_content_of_untracked_files(self):
         sys.path.insert(0, str(ROOT / "scripts"))
