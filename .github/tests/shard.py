@@ -2,6 +2,9 @@
 stem-check.py can run shards of one file in parallel. Without the variable all tests run as with unittest.main()."""
 import os, sys, unittest
 
+# TASK-430: every test file imports this module, so a local test run and its subprocesses never fire usage probes (docs/agent/PROBES.md)
+os.environ["STEM_TEST"] = "1"
+
 
 def main(verbosity=1):
     spec = os.environ.get("STEM_TEST_SHARD")

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Usage probes (docs/agent/PROBES.md): prove by a log line that a feature ran in a real session.
   probe.py fire <TASK-n#k> --at <location>   append a line to docs/agent/probes.jsonl; never fails the caller;
-                                             writes nothing when STEM_TEST=1 or CI is set (test runs never confirm)
+                                             writes nothing when STEM_TEST=1, CI or STEM_TRON=1 is set (test and Tron runs never confirm)
   probe.py report                            one line for session start: 'probes: N open, M fired (ids)'; silent without probes
   probe.py orphans [--sessions N]            open probes older than N sessions (default 10; session = distinct commit date after the marker was added)
 Log line keys: id, ts, at (no content). Probes are unchecked ACs with '[probe: <task>#<ac>]' in the Acceptance Criteria section."""
@@ -19,7 +19,7 @@ def root():
 
 def fire(args):
     try:
-        if os.environ.get("STEM_TEST") == "1" or os.environ.get("CI"): return 0
+        if os.environ.get("STEM_TEST") == "1" or os.environ.get("CI") or os.environ.get("STEM_TRON") == "1": return 0  # TASK-430: only user-triggered use counts
         if not args or not re.fullmatch(ID, args[0]) or "--at" not in args or args.index("--at") + 1 >= len(args): return 0
         at = args[args.index("--at") + 1][:200]
         line = json.dumps({"id": args[0], "ts": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "at": at},

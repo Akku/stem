@@ -25,7 +25,7 @@ python3 scripts/probe.py fire TASK-221#3 --at scripts/session-start.sh:61
 
 - `--at` is the source location of the call (file, optional `:line` or a name). One call per id.
 - `fire` never fails the caller: any error is swallowed, exit 0.
-- `fire` writes nothing when `STEM_TEST=1` or `CI` is set, so test runs never confirm. Nobody fires by hand.
+- `fire` writes nothing when `STEM_TEST=1`, `CI` or `STEM_TRON=1` is set, so test runs and unattended Tron runs never confirm: a probe proves user-triggered use. The test files set `STEM_TEST=1` themselves (`.github/tests/shard.py`). Nobody fires by hand.
 
 ## Log: `docs/agent/probes.jsonl`
 Git-versioned, one JSON object per firing, append-only:

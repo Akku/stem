@@ -940,7 +940,7 @@ class Probes(SandboxRepo):
         self.task(n, status=status, extra=self.AC.format("\n".join(lines)))
 
     def fire(self, pid, extra_env=None, at="scripts/x.sh:1"):
-        env = {"STEM_TEST": "", "CI": ""}; env.update(extra_env or {})
+        env = {"STEM_TEST": "", "CI": "", "STEM_TRON": ""}; env.update(extra_env or {})
         return run(["python3", "scripts/probe.py", "fire", pid, "--at", at], self.repo, dict(self.env, **env))
 
     def log(self):
@@ -950,10 +950,17 @@ class Probes(SandboxRepo):
     def test_fire_writes_three_keys_and_skips_tests(self):
         self.assertEqual(self.fire("TASK-1#1", {"STEM_TEST": "1"}).returncode, 0)
         self.assertEqual(self.fire("TASK-1#1", {"CI": "true"}).returncode, 0)
+        self.assertEqual(self.fire("TASK-1#1", {"STEM_TRON": "1"}).returncode, 0)  # TASK-430: an unattended run is no user use
         self.assertEqual(self.log(), [])
         self.assertEqual(self.fire("TASK-1#1").returncode, 0)
         (rec,) = self.log()
         self.assertEqual(sorted(rec), ["at", "id", "ts"]); self.assertEqual((rec["id"], rec["at"]), ("TASK-1#1", "scripts/x.sh:1"))
+
+    def test_test_files_set_stem_test(self):  # TASK-430 AC#2: the shared test module sets STEM_TEST=1 for the run and its subprocesses
+        env = {k: v for k, v in os.environ.items() if k != "STEM_TEST"}
+        code = "import sys; sys.path.insert(0, sys.argv[1]); import shard, subprocess; print(subprocess.run([sys.executable, '-c', 'import os; print(os.environ.get(\\'STEM_TEST\\'))'], capture_output=True, text=True).stdout.strip())"
+        r = subprocess.run([sys.executable, "-c", code, str(ROOT / ".github/tests")], capture_output=True, text=True, env=env)
+        self.assertEqual(r.stdout.strip(), "1", r.stderr)
 
     def test_fire_never_fails_on_bad_input(self):
         for args in ([], ["nonsense", "--at", "x"], ["TASK-1#1"], ["TASK-1#1", "--at"]):
