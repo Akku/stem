@@ -974,6 +974,30 @@ class Tron(unittest.TestCase):
         self.assertEqual([x["step"] for x in t["ladder"]][:3], ["doctor", "environment gap", "environment split out"])
         self.assertEqual(j["split_out"][0]["new"], "TASK-4")
 
+    def test_prompts_carry_the_evidence_form_report_the_revert_and_doctor_the_precedents(self):  # TASK-419 AC#5
+        (self.proj / "docs/agent").mkdir(parents=True, exist_ok=True)
+        (self.proj / "docs/agent/PRECEDENTS.md").write_text("# Precedents\n\nP-4 | 2026-11-20 | format | CSV with semicolons | report r0\n")
+        git(self.proj, "add", "-A"); git(self.proj, "commit", "-qm", "precedents")
+        self.with_doctor({"TASK-1": [{"verdict": "needs_user", "diagnosis": "d", "question": "q?"}]})
+        self.behavior({"TASK-1": "no_evidence", "TASK-2": ["no_evidence", "ok"]})
+        self.tron("run", "--milestone", "m-1", "--run-id", "r1", "--max-tasks", "2")
+        p2 = [c["prompt"] for c in self.calls() if c["task"] == "TASK-2"]
+        for pr in p2:
+            self.assertIn("'AC#<n>: E2 <command or log pointer>'", pr)
+        self.assertIn("repair 1 of", p2[1])
+        self.assertIn("P-4 | 2026-11-20 | format | CSV with semicolons", (self.td / "doctor_brief.txt").read_text())
+        rep = (self.proj / "docs/agent/tron/REPORT-r1.md").read_text()
+        a, b = self.journal()["task_ranges"]["TASK-2"]
+        shas = git(self.proj, "rev-list", "--reverse", f"{a}..{b}").stdout.split()
+        self.assertEqual(len(shas), 2)
+        line = next(l for l in rep.splitlines() if l.startswith("- commits:"))
+        self.assertIn(", ".join(x[:10] for x in shas), line)
+        cmd = re.search(r"undo with `(git diff .+)`$", line).group(1)
+        self.assertIn("docs/agent/tron/run-r1.json", git(self.proj, "show", "--name-only", shas[0]).stdout)  # the case a plain git revert stops on
+        r = subprocess.run(["sh", "-c", cmd], cwd=self.proj, capture_output=True, text=True, env=dict(os.environ, **GIT_ENV))  # the undo works on this disposable checkout
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("status: To Do", (self.proj / "backlog/tasks/task-2 - x.md").read_text())
+
     def test_runner_error_mid_run_ends_cleanly_and_resumes(self):
         """TASK-365 (shadowrun field report): a commit-msg hook rejecting the draft commit raised TronError and left
         no stop_reason, no report and a staged draft. Now the run ends like a stop and a resume goes on."""

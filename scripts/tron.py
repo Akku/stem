@@ -23,7 +23,12 @@ ROLES = ("worker", "evaluator", "doctor", "planner", "retro", "applier")
 DEFAULT_PROMPT = ("Work on backlog task {task_id} following AGENTS.md. This is an unattended Tron mode session "
                   "(STEM_TRON=1): read R-TRON first and follow it; nobody answers questions. Work on this one task only. "
                   "If a tool call is denied (a project that still limits Bash to an allowlist), that command form is not allowed, not Bash as a whole: "
-                  "run one command per call, never chained with &&, ;, | or a subshell, or use another command.")
+                  "run one command per call, never chained with &&, ;, | or a subshell, or use another command. "
+                  "EVIDENCE_FORM")
+EVIDENCE_FORM = ("Evidence (the gate checks this form exactly): for every AC append one notes line 'AC#<n>: E2 <command or log pointer>', "
+                 "e.g. 'AC#1: E2 scripts/run.sh test PASS .agent-logs/<file>.log'; tick the AC only with that line. A check you could only "
+                 "read or reason about is 'AC#<n>: E1 <why>' and does not pass the gate.")
+DEFAULT_PROMPT = DEFAULT_PROMPT.replace("EVIDENCE_FORM", EVIDENCE_FORM)
 JOURNAL_DIR = pathlib.Path("docs/agent/tron")
 # files a session must not change (tier 3 of the retro changes, R-TRON): the gate itself, the config, the decision frame, the invariants,
 # the judging and diagnosing agents, security and deny rules
@@ -1077,7 +1082,8 @@ def doctor_brief(root, tron, journal, task_id, base, intent, acs):
         if not g.get("failures"):
             parts.append("- gate passed")
     parts += ["", "## Diff so far (against the state before the task, capped)", "```diff", git_ok(root, "diff", base, "--", ".", *EXCLUDE)[:12000], "```", "",
-              "## Invariants", read_rel(root, "docs/agent/INVARIANTS.md")[:3000], "", "## Decision frame", read_rel(root, "docs/agent/DECISION_FRAME.md")[:3000]]
+              "## Invariants", read_rel(root, "docs/agent/INVARIANTS.md")[:3000], "", "## Decision frame", read_rel(root, "docs/agent/DECISION_FRAME.md")[:3000],
+              "", "## Precedents (the user's earlier rulings; a question they answer is no needs_user)", read_rel(root, "docs/agent/PRECEDENTS.md")[:3000]]
     path = root / JOURNAL_DIR / f"brief-{journal['run_id']}-doctor-{task_id}.md"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(parts) + "\n")
@@ -1302,6 +1308,7 @@ def repair_prompt(tron, task_id, gate_result, n, limit):
             log += f["detail"].splitlines()
     if log:
         lines += ["Last log lines:"] + log[-40:]
+    lines.append(EVIDENCE_FORM)  # TASK-419 row 13: also when a project prompt replaces DEFAULT_PROMPT
     return tron.get("prompt", DEFAULT_PROMPT).replace("{task_id}", task_id) + "\n\n" + "\n".join(lines)
 
 
@@ -1554,6 +1561,13 @@ def build_report(root, journal, tron):
         _, acs, notes = parse_task(f.read_text())
         out.append(f"### {i}")
         out += [f"- ladder: {steps(journal['tasks'][i])}"] if journal["tasks"].get(i, {}).get("ladder") else []
+        rg = journal.get("task_ranges", {}).get(i)
+        if rg:  # TASK-419 row 14: what to revert when the user rejects this task
+            try:
+                shas = [x[:10] for x in git_ok(root, "rev-list", "--reverse", f"{rg[0]}..{rg[1]}").split()] if rg[0] != rg[1] else []
+            except TronError:
+                shas = ["(range not in this checkout)"]
+            out.append(f"- commits: {', '.join(shas) or '(none)'}" + (f"; undo with `{undo_command(i, rg[0], rg[1])}`" if shas else ""))
         for ticked, n, text in acs:
             ev = re.search(rf"^\s*AC#{n}: (E\d.*)$", notes, re.M)
             out.append(f"- [{'x' if ticked else ' '}] AC#{n} {text}" + (f" (evidence: {ev.group(1)[:160]})" if ev else " (no evidence line)"))
@@ -1647,6 +1661,13 @@ def build_report(root, journal, tron):
                                          else "unknown until you answer the defects question (`tron.py defect`, or `--none`)"))
     out.append("")
     return "\n".join(out)
+
+
+def undo_command(task_id, base, tip):
+    """TASK-419 row 14: undo one accepted task. Not 'git revert <range>': sessions may commit the runner's journal, whose live
+    copy is always ahead, so a revert stops on it. The reverse patch leaves the runner files (docs/agent/tron) alone."""
+    return (f"git diff --binary {base[:10]} {tip[:10]} -- . ':(exclude)docs/agent/tron' | git apply -R --3way && "
+            f"git commit -qm 'Revert {task_id} (Tron run)'")
 
 
 def cmd_report(args):
