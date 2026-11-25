@@ -45,7 +45,9 @@ class ContextCheck(Sandbox):
         self.assertIn("threshold 130k", r.stdout)
         self.assertIn("interrupt it at a sensible point", r.stdout)
         urgent = self.check([assistant("claude-sonnet-5-5", 10000), assistant("claude-sonnet-5-5", 205000)])
-        self.assertIn("interrupt your work at the next sensible point", urgent.stdout)
+        self.assertIn("interrupt your work at the next sensible point", urgent.stdout)  # claude-*-5-x: 1M window (TASK-418)
+        old = self.check([assistant("claude-sonnet-4-6", 150000), assistant("claude-sonnet-4-6", 185000)])
+        self.assertIn("threshold 180k", old.stdout)  # older 200k model: at most 90 % of the window
 
     def test_subagent_records_are_ignored(self):
         r = self.check([assistant("claude-sonnet-5-5", 10000), assistant("claude-sonnet-5-5", 190000, sidechain=True)])

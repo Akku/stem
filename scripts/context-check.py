@@ -15,7 +15,14 @@ import hooklib, transcripts
 BASE = int(os.environ.get("CONTEXT_WARN_TOKENS", "130000"))  # first notice: fixed floor (TASK-413)
 URGENT = 200000  # second notice no earlier than this (TASK-413)
 GROWTH = 50000
-WINDOW = 200000  # any claude-* model without a "[1m]" marker; other models: unknown
+WINDOW = 200000  # older claude-* models without a "[1m]" marker; other models: unknown
+
+def claude_window(model):
+    """1M for Claude 5.x and Opus 4.7+ (1M by default, no [1m] marker; TASK-418) or a "[1m]" marker, else 200k."""
+    if "[1m]" in model: return 1000000
+    m = re.match(r"claude-(opus|sonnet|haiku)-(\d+)-(\d+)", model)
+    if m and (int(m.group(2)) >= 5 or (m.group(1) == "opus" and (int(m.group(2)), int(m.group(3))) >= (4, 7))): return 1000000
+    return WINDOW
 
 def usage_of(r):
     """(context tokens, model or window marker) of a Claude assistant record or a Codex token_count event, else None."""
@@ -52,8 +59,7 @@ def threshold(first, model):
     """max(130k, first-turn + 50k) (TASK-413); with a known window at most 90 % of it."""
     t = max(BASE, (first or 0) + GROWTH)
     if model.startswith("codex:"): window = int(model[6:]) if model[6:].isdigit() else 0
-    elif "[1m]" in model: window = 1000000
-    elif model.startswith("claude-"): window = WINDOW
+    elif "[1m]" in model or model.startswith("claude-"): window = claude_window(model)
     else: window = 0  # unknown model: window unknown, no cap
     return min(t, window * 9 // 10) if window else t
 
