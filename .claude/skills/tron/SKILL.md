@@ -12,7 +12,7 @@ Send the setup items in ONE numbered message (`R-BATCHING`), each with the defau
 1. Milestone and tasks: the ready tasks in order; every task has acceptance criteria and a `size-*` label (name the ones that lack them and your fix).
 2. Decision frame (`docs/agent/DECISION_FRAME.md`): the lines you would change for this milestone, or "as is".
 3. Invariants (`docs/agent/INVARIANTS.md`): the project-specific lines you would add.
-4. Acceptance scenario: `docs/agent/tron/ACCEPTANCE-<milestone>.md` (or `tron.acceptance_scenario`): what the user would click or run to judge the result; draft it (after the sweep, from its draft scenario).
+4. Acceptance scenario: `docs/agent/tron/ACCEPTANCE-<milestone>.md` (or `tron.acceptance_scenario`): what the user would click or run to judge the result, with a first line `Platform: <name>` (the one platform the user judges on; the check fails without it, and the evaluator judges only there); draft it (after the sweep, from its draft scenario).
 5. Limits and evaluator: default `max_cost`, `max_hours`, `max_tasks`, evaluator mode (`off|milestone|task`), `pause_after`; the user approves the budget with the go (section 2), not here.
 6. Start-and-smoke command: `smoke_cmd` or `preview_cmd`/`preview_url` for the product.
 7. Commands: the configured command of every role (`worker_cmd`, `evaluator_cmd`, ...; a missing one falls back to `worker_cmd`) and `verify_cmd`. Recommended permission setup: run inside the STEM sandbox (`scripts/sandbox.sh`) with `--permission-mode bypassPermissions` in the role commands, so no permission prompt can stop the run. Never propose a narrow `--allowedTools` list or `dontAsk` for a run; when the config has one, propose switching to the sandbox setup (the check warns).

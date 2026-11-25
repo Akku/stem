@@ -46,7 +46,7 @@ BASELINE_DUTIES = ("Before you end: run the verification command at least 3 time
 
 # TASK-419: a milestone repair runs outside any task, so it gets the duties the gate checks and the decision frame (run_session adds it only for TASK-n)
 MILESTONE_REPAIR_DUTIES = ("Before you end: run the verification command and claim green only if it passed. Commit the fix (one commit, "
-                           "message starting with 'milestone:'; the runner judges only committed work, a repair without a commit ends the run) "
+                           "message starting with 'Tron run: milestone repair'; the runner judges only committed work, a repair without a commit ends the run) "
                            "and end on a clean working tree: no uncommitted or untracked files; the runner's gate fails on a dirty tree.")
 
 API_CODES = (429, 500, 502, 503, 504, 529)
@@ -569,6 +569,21 @@ def scenario_text(root, tron, milestone):
     return t or None
 
 
+PLATFORM_RE = re.compile(r"^\s*(?:[-*]\s*)?\**Platform:?\**:?\s*(\S.*?)\s*$", re.M | re.I)
+
+
+def scenario_platform(text):
+    """The 'Platform: <name>' line of an acceptance scenario (TASK-419 row 19), or None."""
+    m = PLATFORM_RE.search(text or "")
+    return m.group(1) if m else None
+
+
+def platform_note(platform):
+    return (f"Acceptance platform: {platform} (the scenario's 'Platform:' line, approved before the run). Only this platform counts: "
+            f"exercise every AC and scenario step on {platform}. A flow that works only on another platform does not meet the AC: "
+            f"report it as a defect naming {platform}, not as a pass.")
+
+
 SCENARIO_CONFLICT = "acceptance scenario"  # prefix of an assumption flag's conflict that a repair session can fix (TASK-382)
 
 
@@ -788,6 +803,8 @@ def write_brief(root, tron, journal, target, base, g, task_ids, intent, reduced=
         if i in files:
             _, acs, _ = parse_task(files[i].read_text())
             parts += [f"### {i}"] + [f"- AC#{n}: {s}" for _, n, s in acs]
+    plat = scenario_platform(scenario_text(root, tron, journal["milestone"]))
+    parts += ["", "## Acceptance platform", platform_note(plat)] if plat else []
     if target == "milestone":
         parts += ["", "## Milestone acceptance scenario", read_rel(root, scenario_path(tron, journal["milestone"]))]
     else:  # TASK-382: an assumption that contradicts the scenario fails here, not after the whole milestone
@@ -2419,7 +2436,11 @@ SWEEP_NOT_QUESTIONS = ("## Not questions",
                        f"- An AC that needs the user's judgement, real data or an interface decision is no question either: list it under '{NEEDS_USER}' "
                        "(the run cannot meet it alone; it is split out before the run).",
                        f"- A reversible decision the decision frame covers (task order and dependencies, reuse of existing code, splitting a large task, "
-                       f"skipping 'waiting' tasks, additive data changes) is no question: list it under '{PREDECIDED}' with its frame basis.")
+                       f"skipping 'waiting' tasks, additive data changes) is no question: list it under '{PREDECIDED}' with its frame basis.",
+                       "", "## Acceptance platform",
+                       "- Start the draft acceptance scenario with 'Platform: <name>', the one platform the user judges the milestone on "
+                       "(e.g. browser web app, Python CLI, WordPress plugin). When the milestone's flows live on more than one platform, ask it as a "
+                       "question: which platform the scenario uses, or a split into one scenario per platform. During the run only that platform counts.")
 
 
 def sweep_brief(root, milestone):
@@ -3565,6 +3586,9 @@ def check_milestone(root, milestone, cfg_path=None, smoke=True, uid=None):
     sf = root / scen
     if not sf.is_file() or not sf.read_text().strip():
         fails.append(f"acceptance scenario missing or empty: {scen}")
+    elif not scenario_platform(sf.read_text()):  # TASK-419 row 19: the platform binds the evaluator during the run
+        fails.append(f"acceptance scenario names no platform: add a line 'Platform: <where the user judges the milestone, e.g. browser web app, "
+                     f"Python CLI, WordPress plugin>' to {scen} (the sweep asks it when the flows live on more than one platform)")
     files = task_files(root)
     ids = []
     for tid, f in files.items():

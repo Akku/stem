@@ -998,6 +998,20 @@ class Tron(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn("status: To Do", (self.proj / "backlog/tasks/task-2 - x.md").read_text())
 
+    def test_scenario_platform_binds_the_evaluator_and_the_planner_asks_it(self):  # TASK-419 AC#6
+        (self.proj / "docs/agent/tron").mkdir(parents=True, exist_ok=True)
+        (self.proj / "docs/agent/tron/ACCEPTANCE-m-1.md").write_text("- **Platform:** WordPress plugin\n1. open the admin page\n")
+        git(self.proj, "add", "-A"); git(self.proj, "commit", "-qm", "scenario")
+        self.with_evaluator("task")
+        self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
+        brief = (self.td / "brief_copy.txt").read_text()
+        self.assertIn("## Acceptance platform", brief); self.assertIn("Only this platform counts", brief); self.assertIn("WordPress plugin", brief)
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import tron
+        self.assertIn("## Acceptance platform", tron.sweep_brief(self.proj, "m-1"))
+        self.assertIsNone(tron.scenario_platform("1. run it\n"))
+        self.assertIn("Platform: <", (ROOT / ".claude/agents/planner.md").read_text())
+
     def test_runner_error_mid_run_ends_cleanly_and_resumes(self):
         """TASK-365 (shadowrun field report): a commit-msg hook rejecting the draft commit raised TronError and left
         no stop_reason, no report and a staged draft. Now the run ends like a stop and a resume goes on."""
@@ -1981,7 +1995,7 @@ class Check(unittest.TestCase):
         (self.proj / "backlog/tasks").mkdir(parents=True)
         (self.proj / "docs/agent/DECISION_FRAME.md").write_text("frame\n")
         (self.proj / "docs/agent/INVARIANTS.md").write_text("inv\n")
-        (self.proj / "docs/agent/tron/ACCEPTANCE-m-9.md").write_text("scenario\n")
+        (self.proj / "docs/agent/tron/ACCEPTANCE-m-9.md").write_text("Platform: Python CLI\nscenario\n")
         self.task("TASK-1")
         self.cfg()
         git(self.proj, "init", "-q", "-b", "main")
@@ -2123,6 +2137,10 @@ class Check(unittest.TestCase):
 
     def test_no_scenario(self):
         (self.proj / "docs/agent/tron/ACCEPTANCE-m-9.md").unlink(); self.commit(); self.fails_with("acceptance scenario missing")
+
+    def test_scenario_without_platform_fails(self):  # TASK-419 AC#6
+        (self.proj / "docs/agent/tron/ACCEPTANCE-m-9.md").write_text("run the app and add a note\n"); self.commit()
+        self.fails_with("acceptance scenario names no platform")
 
     def test_dirty_tree(self):
         (self.proj / "junk.txt").write_text("x"); self.fails_with("working tree is not clean")

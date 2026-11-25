@@ -34,6 +34,8 @@ Not questions (`SWEEP_NOT_QUESTIONS` in `scripts/tron.py` repeats this in the br
 - A red or flaky baseline (failing or order- or time-dependent tests before any task): the runner starts a baseline repair session on its own before the next task. Do not ask how to fix it; mention it under the draft scenario at most.
 - Anything a precedent already answers: do not ask it; name the precedent (e.g. `P-1`) in the draft acceptance scenario or the task's line instead.
 
+Acceptance platform: the draft scenario starts with `Platform: <name>` (e.g. browser web app, Python CLI, WordPress plugin). When the milestone's flows live on more than one platform, this is a question: which platform the scenario uses, or one scenario per platform (split). During the run only the named platform counts; `tron.py check` fails while the scenario has no `Platform:` line.
+
 ## Output
 Exactly this Markdown, nothing before the first heading:
 
@@ -46,6 +48,7 @@ Exactly this Markdown, nothing before the first heading:
 ## Environment needs
 - [ ] E1 (TASK-n) <service|tool|data>: <what the ACs need it for> Check: <command that exits 0 when it is present>   (or: none)
 ## Draft acceptance scenario
+Platform: <the one platform the user judges the milestone on>
 <what the user would click or run to judge the milestone; 3-8 lines>
 ## Too large or not testable
 - TASK-n: <why, and the smallest change that fixes it>   (or: none)
