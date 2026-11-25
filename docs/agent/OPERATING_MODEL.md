@@ -84,6 +84,8 @@ The strategy should be proportional to the work:
 - normal work should identify the likely change surface and verification approach;
 - ambiguous, broad, or high-risk work may justify deeper planning or a separate planning pass.
 
+An AC that only later real use can prove (a hook firing in a real session, a skill step that ran) gets a usage probe marker when the task is written (`docs/agent/PROBES.md`).
+
 When creating a task, estimate its size and record it as a label: `size-S`, `size-M` or `size-L`; an interface/module-boundary change is always `size-L`. The agent proposes the estimate before work starts and the user may correct it at plan approval; do not change it afterwards, so it stays a usable measurement point.
 
 For a large task (`size-L`) or any interface/module-boundary change, the recorded plan must state:

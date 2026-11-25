@@ -1,6 +1,6 @@
 # Usage probes (design)
 
-Read when an acceptance criterion (AC) can only be proven by real use of the finished work in a later session, or when session start reports `probes:`. Rule text: `R-LIFECYCLE` 1.5, `R-VERIFY`. Status: design (TASK-221); the script `scripts/probe.py` and the reports follow.
+Read when an acceptance criterion (AC) can only be proven by real use of the finished work in a later session, or when session start reports `probes:`. Rule text: `R-LIFECYCLE` 1.5, `R-VERIFY`. Script: `scripts/probe.py` (fire, report, orphans).
 
 ## Idea
 Some ACs wait for usage ("the hook fires in a real session", "retro step X ran"). Today they stay open until the user checks by hand. A **probe** is one call in the built feature that appends a line to a log when the feature really runs. The task may go Done; the AC stays open with a marker; a later session finds the log line, adds the evidence and closes the AC.

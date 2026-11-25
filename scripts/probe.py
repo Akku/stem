@@ -63,7 +63,7 @@ def report(base):
     done = fired_ids(base)
     fired = [i for i, _ in probes if i in done]
     msg = f"probes: {len(probes) - len(fired)} open, {len(fired)} fired"
-    if fired: msg += f" ({', '.join(fired)}): check the log line, add the evidence line, close the AC, remove marker and probe call (docs/agent/PROBES.md)"
+    msg += f" ({', '.join(fired)}): check the log line, add the evidence line, close the AC, remove marker and probe call (docs/agent/PROBES.md)" if fired else " (docs/agent/PROBES.md)"
     print(msg)
     return 0
 

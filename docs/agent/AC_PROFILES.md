@@ -8,6 +8,8 @@ Read only when the retro topic `ac-profile` is given, or to check what the proje
 | standard | enough to cover the result and the main error or boundary case; depends on the task | result plus the main error or boundary case; each AC checkable by a command or a short look | E2 where code runs, E1 for docs and design | team or product work, default |
 | strict | as many as the requirements need: every required behaviour traceable to an AC | each behaviour, error and edge case, relevant non-functional limits (performance, data, security) | E2 for every code AC with a reproducible pointer; open if not proven | scientific, regulated, safety-relevant, libraries others depend on |
 
+An AC that only later real use can prove may carry a usage probe marker in any profile (`docs/agent/PROBES.md`).
+
 ## Retro procedure
 1. Recommend a profile from what you know (vision doc, user statements, kind of project) and say why in one sentence. Private or exploratory: light. Scientific or regulated: strict. Unsure: standard.
 2. Take the next real To Do task and show its ACs written in all three profiles (short, side by side). Do not create or change tasks for this.

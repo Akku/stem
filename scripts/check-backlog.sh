@@ -28,7 +28,7 @@ for f in "${files[@]}"; do
     calls=$(git grep --cached -h -F "probe.py fire $tid#$n " -- . ':!backlog' ':!docs' ':!.github' 2>/dev/null | wc -l | tr -d ' ')
     [ "$calls" = 1 ] && open=$((open - 1))
   done < <(sed -n '/<!-- AC:BEGIN -->/,/<!-- AC:END -->/p' "$f" | grep '^- \[ \] #')
-  if [ "$open" -gt 0 ]; then echo "$id: Done with $open unchecked box(es)"; bad=1; fi
+  if [ "$open" -gt 0 ]; then echo "$id: Done with $open unchecked box(es) (an AC only later real use can prove: usage probe, docs/agent/PROBES.md)"; bad=1; fi
   if [ -n "$cutoff" ] && ! grep -q '^Outcome:' "$f"; then
     upd=$(awk -F"'" '/^updated_date:/{print substr($2,1,16); exit}' "$f")
     if [ -n "$upd" ] && [ ! "$upd" \< "$cutoff" ]; then noout+=("$id"); fi

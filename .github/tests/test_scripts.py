@@ -854,7 +854,7 @@ class SessionStart(SandboxRepo):
 
     def test_check_backlog_problem_is_shown(self):
         self.task(1, extra="- [ ] #1 open box")
-        self.assertIn("TASK-1: Done with 1 unchecked box", self.start())
+        out = self.start(); self.assertIn("TASK-1: Done with 1 unchecked box", out); self.assertIn("docs/agent/PROBES.md", out)
 
     def test_waiting_task_reboot_condition(self):
         self.task(1, status="In Progress", extra="Wait: reboot-since 2026-10-23T02:40Z file-exists logs/a.log -- check AC3")
@@ -972,7 +972,7 @@ class Probes(SandboxRepo):
         r = lambda: run(["python3", "scripts/probe.py", "report"], self.repo, self.env).stdout
         self.probe_task(1, ["- [ ] #1 plain"]); self.assertEqual(r(), "")
         self.probe_task(1, ["- [ ] #1 a [probe: TASK-1#1]", "- [ ] #2 b [probe: TASK-1#2]", "- [x] #3 c [probe: TASK-1#3]", "- [ ] #4 d [probe: TASK-9#4]"])
-        self.assertEqual(r().strip(), "probes: 2 open, 0 fired")
+        self.assertEqual(r().strip(), "probes: 2 open, 0 fired (docs/agent/PROBES.md)")
         self.fire("TASK-1#2")
         out = r(); self.assertIn("1 open, 1 fired (TASK-1#2)", out); self.assertIn("close the AC", out)
 
