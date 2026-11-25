@@ -18,6 +18,7 @@ For each task ask: what would a worker have to decide that the frame, an invaria
 - tasks that depend on each other without saying so;
 - an AC the run cannot meet alone: it needs the user's judgement (taste, "feels right", approval), real data the project does not hold, or an interface or ownership decision. List it under `## Needs the user`, not as a question; it is split out before the run.
 - what its ACs need from the run environment for E2 evidence beyond the code and plain tests: a service (database, server, queue), a tool or runtime version, test data or a git-ignored file, network access. List them under `## Environment needs`, one line per need, with the command that proves it is present; the calling agent checks and fixes it before the run, so no worker meets the gap mid-run.
+- an AC only later real use can prove (a hook fires in a real session, a skill step runs in a later session): list it under `## Usage probes` with the marker `[probe: TASK-n#k]` (`docs/agent/PROBES.md`), so it is set before the run; never for an AC that already carries a marker or needs the user's judgement (that one goes under `## Needs the user`).
 Do not ask what the frame already allows to decide alone. Do not suggest redesigns.
 
 ## Question or pre-decided assumption
@@ -54,6 +55,8 @@ Platform: <the one platform the user judges the milestone on>
 - TASK-n: <why, and the smallest change that fixes it>   (or: none)
 ## Needs the user
 - [ ] N1 (TASK-n AC#k) <judgement|real data|interface>: <why the run cannot meet it> Split: <the AC as its own task outside the milestone, and what stays>
+## Usage probes
+- U1 (TASK-n AC#k) <why only later real use proves it> Marker: [probe: TASK-n#k]   (or: none)
 ```
 
-Questions are numbered Q1, Q2, ... one line each, every one tied to a task, with a recommendation. Pre-decided assumptions are numbered A1, A2, ... one line each, tied to a task, without a checkbox, ending in `(basis: frame: ...)`. No questions: write `- none` under `## Questions` (no checkbox); the same for `## Pre-decided assumptions`, `## Environment needs` and `## Needs the user`. E lines are numbered E1, E2, ... one need per line, tied to a task, with a `Check:` command. Each N line names exactly one AC.
+Questions are numbered Q1, Q2, ... one line each, every one tied to a task, with a recommendation. Pre-decided assumptions are numbered A1, A2, ... one line each, tied to a task, without a checkbox, ending in `(basis: frame: ...)`. No questions: write `- none` under `## Questions` (no checkbox); the same for `## Pre-decided assumptions`, `## Environment needs`, `## Needs the user` and `## Usage probes`. U lines are numbered U1, U2, ... without a checkbox; the marker names the same task and AC as the line. E lines are numbered E1, E2, ... one need per line, tied to a task, with a `Check:` command. Each N line names exactly one AC.

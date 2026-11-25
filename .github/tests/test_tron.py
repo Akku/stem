@@ -2453,6 +2453,23 @@ class Check(unittest.TestCase):
         sys.path.insert(0, str(ROOT / "scripts")); import tron
         self.assertEqual(tron.sweep_env_needs("# Sweep: m-9\n## Questions\n- none\n"), [])
 
+    def test_sweep_lists_usage_probe_candidates_and_rejects_mismatched_markers(self):  # TASK-425
+        r = self.sweep("# Sweep: m-9\n## Questions\n- none\n## Usage probes\n"
+                       "- U1 (TASK-1 AC#2) the hook fires only in a later real session Marker: [probe: TASK-1#2]\n")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("1 usage-probe candidate(s) (TASK-1 AC#2)", r.stdout); self.assertIn("before the run", r.stdout)
+        sys.path.insert(0, str(ROOT / "scripts")); import tron
+        self.assertEqual(tron.sweep_probes((self.proj / "docs/agent/tron/SWEEP-m-9.md").read_text()),
+                         [("U1", "TASK-1", 2, "the hook fires only in a later real session", "TASK-1#2")])
+        self.assertEqual(tron.sweep_probes("# Sweep: m-9\n## Questions\n- none\n## Usage probes\n- none\n"), [])
+        for bad in ("- U1 (TASK-1 AC#2) later use Marker: [probe: TASK-1#3]\n", "- U1 TASK-1: later use\n"):
+            (self.proj / "docs/agent/tron/SWEEP-m-9.md").unlink(missing_ok=True); self.commit()
+            r = self.sweep("# Sweep: m-9\n## Questions\n- none\n## Usage probes\n" + bad)
+            self.assertNotEqual(r.returncode, 0); self.assertIn("malformed '## Usage probes'", r.stdout + r.stderr)
+        self.assertIn("## Usage probes", tron.sweep_brief(self.proj, "m-9"))
+        self.assertIn("## Usage probes", (ROOT / ".claude/agents/planner.md").read_text())
+        self.assertIn("Usage probes` lines (U<n>)", (ROOT / ".claude/skills/tron/SKILL.md").read_text())
+
     def test_sweep_needs_user_item_of_a_done_task_does_not_block(self):
         self.sweep("# Sweep: m-9\n## Questions\n- none\n## Needs the user\n- [ ] N1 (TASK-1 AC#1) real data: needs the live feed\n")
         f = next((self.proj / "backlog/tasks").glob("task-1 - *.md")); f.write_text(re.sub(r"(?m)^status: .*$", "status: Done", f.read_text()))

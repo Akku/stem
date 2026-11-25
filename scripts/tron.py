@@ -2413,6 +2413,9 @@ SWEEP_E = re.compile(r"^\s*-\s*\[(.)\]\s*(E\d+)\s*\((TASK-\d+)\)\s*(\S.*)$", re.
 ENV_NEEDS = "## Environment needs"
 # TASK-369: a reversible decision the frame covers is no question; the planner states it as a pre-decided assumption the user may veto
 PREDECIDED = "## Pre-decided assumptions"
+# TASK-425: an AC only later real use can prove gets its usage-probe marker before the run (docs/agent/PROBES.md); ACs are frozen during it
+USAGE_PROBES = "## Usage probes"
+SWEEP_U = re.compile(r"^\s*-\s*(U\d+)\s*\((TASK-\d+) AC#(\d+)\)\s*(.+?)\s*Marker:\s*\[probe: (TASK-\d+#\d+)\]\s*$", re.M)
 SWEEP_A = re.compile(r"^\s*-\s*(A\d+)\s*\((TASK-\d+)\)\s*(.+?)\s*\(basis:\s*(frame:[^)]*\S)\s*\)\s*$", re.M)
 
 
@@ -2492,6 +2495,12 @@ def sweep_env_needs(text):
     return out
 
 
+def sweep_probes(text):
+    """Lines of the '## Usage probes' section: (id, task, ac, why, marker id). A sweep without the section yields nothing."""
+    sec = re.search(rf"^{USAGE_PROBES}\s*$(.*?)(?=^## |\Z)", text, re.M | re.S)
+    return [(m.group(1), m.group(2), int(m.group(3)), m.group(4), m.group(5)) for m in SWEEP_U.finditer(sec.group(1))] if sec else []
+
+
 def sweep_open(text):
     """Number of questions without a tick and a non-empty 'Answer:' line in their own block."""
     ms = list(SWEEP_Q.finditer(text))
@@ -2534,6 +2543,9 @@ SWEEP_NOT_QUESTIONS = ("## Not questions",
                        "(the run cannot meet it alone; it is split out before the run).",
                        f"- A reversible decision the decision frame covers (task order and dependencies, reuse of existing code, splitting a large task, "
                        f"skipping 'waiting' tasks, additive data changes) is no question: list it under '{PREDECIDED}' with its frame basis.",
+                       f"- An AC only later real use can prove (a hook fires in a real session, a skill step runs later) is no question: list it under "
+                       f"'{USAGE_PROBES}' with the marker [probe: TASK-n#k] (docs/agent/PROBES.md); not for an AC that already carries a marker "
+                       "or needs the user's judgement.",
                        "", "## Acceptance platform",
                        "- Start the draft acceptance scenario with 'Platform: <name>', the one platform the user judges the milestone on "
                        "(e.g. browser web app, Python CLI, WordPress plugin). When the milestone's flows live on more than one platform, ask it as a "
@@ -2604,6 +2616,12 @@ def cmd_sweep(args):
            and not SWEEP_A.match(l)]
     if bad:
         raise TronError(f"sweep has malformed '{PREDECIDED}' lines (must be '- A<n> (TASK-n) <decision> (basis: frame: ...)'); bad: {bad[:2]}")
+    up = re.search(rf"^{USAGE_PROBES}\s*$(.*?)(?=^## |\Z)", body, re.M | re.S)
+    bad = [l for l in (up.group(1).splitlines() if up else []) if re.match(r"\s*[-*]\s*\S", l) and not re.match(r"\s*[-*]\s*none\s*$", l)
+           and not ((m := SWEEP_U.match(l)) and m.group(5) == f"{m.group(2)}#{m.group(3)}")]
+    if bad:
+        raise TronError(f"sweep has malformed '{USAGE_PROBES}' lines (must be '- U<n> (TASK-n AC#k) <why> Marker: [probe: TASK-n#k]' "
+                        f"with the marker naming that task and AC); bad: {bad[:2]}")
     out.write_text(body + "\n")
     n = sweep_open(body)
     pre = sweep_predecided(body)
@@ -2612,6 +2630,10 @@ def cmd_sweep(args):
     flagged = sweep_needs_user(body)
     if flagged:
         print(f"{len(flagged)} AC(s) need the user ({', '.join(f'{t} AC#{a} {k}' for _, t, a, k, _ in flagged)}): run 'python3 scripts/tron.py split-out --milestone {args.milestone}' (no question)")
+    probes = sweep_probes(body)
+    if probes:
+        print(f"{len(probes)} usage-probe candidate(s) ({', '.join(f'{t} AC#{a}' for _, t, a, _, _ in probes)}): show them with the A list to veto; "
+              "append the marker to each kept AC before the run (ACs are frozen during it; docs/agent/PROBES.md, skill tron)")
     envs = sweep_env_needs(body)
     if envs:
         print(f"{len(envs)} environment need(s) (E1..): check each in the environment the run uses and fix the gap or decide it with the user (skill tron, 'Environment check')")
