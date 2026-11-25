@@ -3760,6 +3760,11 @@ def check_milestone(root, milestone, cfg_path=None, smoke=True, uid=None):
                 if not done and tid in open_ids:
                     fails.append(f"{tid} needs {need[:100]} in the run environment ({sw.name} {eid}): check it where the run happens, install or configure it, "
                                  f"or decide split, skip or block with the user, then tick {eid} '[x]' and add 'Checked: <result>'")
+            for uid, tid, ac, _, _ in sweep_probes(sw.read_text()):  # TASK-427: the marker must be set before the run freezes the ACs
+                acs = {n: t for _, n, t in parse_task(files[tid].read_text())[1]} if tid in open_ids else {}
+                if tid in open_ids and not (is_probe(acs.get(ac, "")) and PROBE.search(acs[ac]).group(1) == f"{tid}#{ac}"):
+                    warns.append(f"{tid} AC#{ac} is kept as a usage probe ({sw.name} {uid}) but has no marker '[probe: {tid}#{ac}]': "
+                                 f"append it to the AC before the run (ACs are frozen during it), or veto {uid} by removing the line")
     dirty = tree_dirty(root)
     if dirty:
         fails.append(f"working tree is not clean ({len(dirty)} change(s), first: {dirty[0].strip()[:80]})")

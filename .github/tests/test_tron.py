@@ -2464,6 +2464,20 @@ class Check(unittest.TestCase):
         sk = (ROOT / ".claude/skills/tron/SKILL.md").read_text()
         self.assertIn("split-out --milestone", sk); self.assertIn("ONE info list, no question", sk)
 
+    def test_check_warns_about_a_kept_usage_probe_without_its_marker(self):  # TASK-427
+        self.task("TASK-2", acs="- [ ] #1 it works\n- [ ] #2 the hook fires in a real session\n")
+        r = self.sweep("# Sweep: m-9\n## Questions\n- none\n## Usage probes\n"
+                       "- U1 (TASK-2 AC#2) only a later session fires the hook Marker: [probe: TASK-2#2]\n")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr); self.commit()
+        r = self.check(); self.assertEqual(r.returncode, 0, r.stdout + r.stderr)  # a warning, not a failure
+        self.assertEqual(r.stdout.count("is kept as a usage probe"), 1); self.assertIn("TASK-2 AC#2", r.stdout)
+        self.task("TASK-2", acs="- [ ] #1 it works\n- [ ] #2 the hook fires in a real session [probe: TASK-2#2]\n"); self.commit()
+        self.assertNotIn("is kept as a usage probe", self.check().stdout)  # marker set
+        self.task("TASK-2", acs="- [ ] #1 it works\n- [ ] #2 the hook fires in a real session\n")
+        f = self.proj / "docs/agent/tron/SWEEP-m-9.md"
+        f.write_text(f.read_text().replace("- U1 (TASK-2 AC#2) only a later session fires the hook Marker: [probe: TASK-2#2]\n", "- none\n")); self.commit()
+        self.assertNotIn("is kept as a usage probe", self.check().stdout)  # line vetoed (removed)
+
     def test_sweep_environment_need_is_caught_before_the_run_and_check_follows_the_tick(self):  # TASK-395
         r = self.sweep("# Sweep: m-9\n## Questions\n- none\n## Environment needs\n"
                        "- [ ] E1 (TASK-1) postgres service: AC#1 needs real query results Check: pg_isready\n- [ ] E2 (TASK-2) none beyond tests\n")
