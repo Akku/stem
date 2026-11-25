@@ -609,15 +609,72 @@ def parse_verdict(text, expected_acs=None):
     return v
 
 
-def assumptions(root, ids):
+def assumptions(root, ids, start_commit=None):
+    """'Assumption:' lines of the tasks; with start_commit only the lines this run added (TASK-419: older lines were ruled before)."""
     out = []
     files = task_files(root)
     for i in ids:
         if i in files:
-            for l in parse_task(files[i].read_text())[2].splitlines():
-                if re.match(r"\s*Assumption:", l):
-                    out.append(f"{i}: {l.strip()}")
+            old = set()
+            if start_commit:
+                old = {l.strip() for l in parse_task(start_text(root, i, start_commit) or "")[2].splitlines()}
+            for l in dict.fromkeys(l.strip() for l in parse_task(files[i].read_text())[2].splitlines()):
+                if re.match(r"Assumption:", l) and l not in old:
+                    out.append(f"{i}: {l}")
     return out
+
+
+STOPWORDS = set("the and for with from that this when then than into only each every will would should must have has are was were not but "
+                "use uses used using task tasks line lines one two its it's any all also more less same other none basis assumption".split())
+
+
+def content_words(text):
+    return {w for w in re.findall(r"[a-z0-9][a-z0-9_.-]*[a-z0-9]", text.lower()) if len(w) >= 4 and w not in STOPWORDS}
+
+
+def precedents(root):
+    """[(id, kind, ruling)] of docs/agent/PRECEDENTS.md lines 'P-n | date | kind | ruling | source'."""
+    out = []
+    for l in read_rel(root, "docs/agent/PRECEDENTS.md").splitlines():
+        parts = [x.strip() for x in re.sub(r"^\s*(?:[-*]\s*)?", "", l).split("|")]
+        if len(parts) >= 4 and re.fullmatch(r"P-\d+", parts[0]):
+            out.append((parts[0], parts[2], parts[3]))
+    return out
+
+
+def ruled_by(line, precs):
+    """The precedent whose kind and ruling contain at least 60 % (and at least two) of the assumption's content words, else None."""
+    m = re.search(r"Assumption:\s*(.*?)\s*(?:\(basis:[^)]*\)\s*)?$", line)
+    words = content_words(m.group(1) if m else line)
+    best = None
+    for pid, kind, ruling in precs:
+        hit = len(words & content_words(f"{kind} {ruling}"))
+        if hit >= 2 and hit >= 0.6 * len(words) and (best is None or hit > best[1]):
+            best = (pid, hit)
+    return best[0] if best else None
+
+
+FOLLOW_UP = re.compile(r"^\s*-\s*(?:tron-)?follow-?up\s*$", re.M | re.I)
+
+
+def run_drafts(root, journal):
+    """[(rel, title, text)] of the drafts this run added, in number order."""
+    d, out = root / "backlog/drafts", []
+    if not d.is_dir():
+        return out
+    added = set(git_ok(root, "diff", "--name-only", "--diff-filter=A", journal["start_commit"], "HEAD", "--", "backlog/drafts").splitlines())
+    for rel in sorted(added, key=lambda r: int(m.group(1)) if (m := re.search(r"draft-(\d+)", r)) else 0):
+        p = root / rel
+        if p.is_file():
+            text = p.read_text()
+            title = re.search(r"^title: *(.+?) *$", text, re.M)
+            out.append((rel, title.group(1).strip(chr(39) + chr(34)) if title else rel, text))
+    return out
+
+
+def is_follow_up(title, text):
+    """A draft labelled follow-up (or titled 'Follow-up: ...') is information for later, never a run question (TASK-419 row 12)."""
+    return bool(FOLLOW_UP.search(text.split("\n---", 1)[0]) or re.match(r"follow-?up\b", title, re.I))
 
 
 ASSUMPTION_BASIS = re.compile(r"\(basis:\s*([^)]*?)\s*\)\s*$", re.I)
@@ -1369,28 +1426,23 @@ def duration(s):
         return None
 
 
-def questions_block(root, journal, al):
-    """Every open item of a run as one numbered list with options and a recommendation, answered compactly (e.g. '1a, 3b')."""
+def questions_block(root, journal, al, precs=()):
+    """Every open item of a run as one numbered list with options and a recommendation, answered compactly (e.g. '1a, 3b').
+    TASK-419: follow-up drafts and basis-none lines a precedent already rules are no questions; the other basis-none lines are one veto list."""
     q = []
-    d = root / "backlog/drafts"
-    if d.is_dir():
-        added = set(git_ok(root, "diff", "--name-only", "--diff-filter=A", journal["start_commit"], "HEAD", "--", "backlog/drafts").splitlines())
-        for rel in sorted(added, key=lambda r: int(m.group(1)) if (m := re.search(r"draft-(\d+)", r)) else 0):
-            p = root / rel
-            if not p.is_file():
-                continue
-            text = p.read_text()
-            title = re.search(r"^title: *(.+?) *$", text, re.M)
-            title = title.group(1).strip(chr(39) + chr(34)) if title else rel
-            if re.search(r"^\s*-\s*tron-risk\s*$", text, re.M):
-                q.append(f"{title} ({rel}) a) accept the risk b) create a task for it. Recommendation: b because it touches a 'Must come back' line of the frame")
-            else:
-                q.append(f"{title} ({rel}) a) answer it as the draft proposes, then run again (it resumes) b) leave the task Blocked. "
-                         "Recommendation: a because the run cannot go on without the answer")
-    for a in al:
-        if (assumption_basis(a) or "none").lower() == "none":
-            q.append(f"Assumption without a basis: {a[:200]} a) keep it (becomes a PRECEDENTS line) b) correct it (task and PRECEDENTS line). "
-                     "Recommendation: a unless it contradicts what you want")
+    for rel, title, text in run_drafts(root, journal):
+        if is_follow_up(title, text):
+            continue
+        if re.search(r"^\s*-\s*tron-risk\s*$", text, re.M):
+            q.append(f"{title} ({rel}) a) accept the risk b) create a task for it. Recommendation: b because it touches a 'Must come back' line of the frame")
+        else:
+            q.append(f"{title} ({rel}) a) answer it as the draft proposes, then run again (it resumes) b) leave the task Blocked. "
+                     "Recommendation: a because the run cannot go on without the answer")
+    veto = [a for a in al if (assumption_basis(a) or "none").lower() == "none" and not ruled_by(a, precs)]
+    if veto:
+        q.append(f"Assumptions without a basis ({len(veto)}): a) keep all (each becomes a PRECEDENTS line) b) veto some: name them, e.g. `b: V1, V3`, "
+                 "and say what you want instead (task and PRECEDENTS line). Recommendation: a unless one contradicts what you want"
+                 + "".join(f"\n   - V{k}: {clip(a, 200)}" for k, a in enumerate(veto, 1)))
     if not journal.get("defects_reviewed"):
         q.append("Did you find defects in the accepted tasks? a) none b) yes: name the task and what is wrong. "
                  "Recommendation: answer after trying the acceptance scenario")
@@ -1457,11 +1509,13 @@ def build_report(root, journal, tron):
     if not vfiles and not journal.get("risk_notes"):
         out.append("(no evaluator verdict in this run)")
     out += ["", "## Assumptions made", ""]
-    al = assumptions(root, list(tasks))
+    al, precs = assumptions(root, list(tasks), journal.get("start_commit")), precedents(root)
     groups = {}
     for a in al:
         b = assumption_basis(a)
-        groups.setdefault(b.lower() if b and b.lower() == "none" else (b or "none"), []).append(a if b is not None else a + "  [no basis named]")
+        p = ruled_by(a, precs) if (b or "none").lower() == "none" else None
+        key = f"none, already ruled by {p} (info)" if p else b.lower() if b and b.lower() == "none" else (b or "none")
+        groups.setdefault(key, []).append(a if b is not None else a + "  [no basis named]")
     for b in sorted(groups, key=lambda k: (k != "none", k)):
         out += [f"Basis: {b}" + (" (needs your ruling)" if b == "none" else "")] + [f"- {a}" for a in groups[b]] + [""]
     out += [] if al else ["(none recorded)"]
@@ -1484,7 +1538,10 @@ def build_report(root, journal, tron):
         out += ["", "## Split out for you (info; the run went on)", ""]
         out += [f"- {x['task']}: {len(x['acs'])} AC(s) moved to {x['new']} (labels waiting, tron-user), which carries the open decision: "
                 f"{x['question'][:200]}. Nothing to answer now; decide it when you pick up {x['new']}." for x in so]
-    out += ["", "## Questions for you", ""] + questions_block(root, journal, al)
+    fu = [(rel, title) for rel, title, text in run_drafts(root, journal) if is_follow_up(title, text)]
+    if fu:  # TASK-419 row 12: follow-ups are for later, not run questions
+        out += ["", "## Follow-ups (info; nothing to answer now)", ""] + [f"- {title} ({rel})" for rel, title in fu]
+    out += ["", "## Questions for you", ""] + questions_block(root, journal, al, precs)
     out += ["", "## Cost and time", ""]
     tot, part = cost_of(sess)
     wall = journal.get("wall_seconds")

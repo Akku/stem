@@ -1459,7 +1459,8 @@ class Tron(unittest.TestCase):
         block = rep.split("## Questions for you")[1].split("\n## ")[0]
         self.assertIn("e.g. `1a, 3b`", block)
         self.assertIn("1. Question from the Doctor about TASK-2: which format? (backlog/drafts/draft-1 - q.md) a) answer it", block)
-        self.assertIn("2. Assumption without a basis: TASK-1: Assumption: CSV is fine (basis: none) a) keep it", block)
+        self.assertIn("2. Assumptions without a basis (1): a) keep all", block)
+        self.assertIn("   - V1: TASK-1: Assumption: CSV is fine (basis: none)", block)
         self.assertIn("3. Did you find defects in the accepted tasks? a) none b) yes", block)
         self.assertIn("4. Apply the example verdict D1 (example verdict for D1 (TASK-1)) to .claude/agents/evaluator.md? a) accept b) reject", block)
         self.assertNotIn("5.", block); self.assertNotIn("comma", block); self.assertNotIn("D2", block)
@@ -1467,6 +1468,28 @@ class Tron(unittest.TestCase):
         j["defects_reviewed"] = "2026-11-23T10:00:00Z"; j["retro_changes"] = []
         (self.proj / "docs/agent/tron/run-s1.json").write_text(json.dumps(j)); self.tron("report", "--run-id", "s1")
         self.assertNotIn("Did you find defects", (self.proj / "docs/agent/tron/REPORT-s1.md").read_text())
+
+    def test_report_asks_only_this_runs_unruled_assumptions_as_one_veto_list(self):  # TASK-419 AC#1
+        f = self.proj / "backlog/tasks/task-1 - x.md"
+        f.write_text(f.read_text().replace("<!-- SECTION:NOTES:BEGIN -->\n", "<!-- SECTION:NOTES:BEGIN -->\nAssumption: old ruling from an earlier run (basis: none)\n"))
+        (self.proj / "docs/agent/PRECEDENTS.md").write_text("# Precedents\n\nP-7 | 2026-11-20 | export format | CSV export uses semicolon separators | report r1\n")
+        git(self.proj, "add", "-A"); git(self.proj, "commit", "-qm", "before the run")
+        self.sample_journal()
+        f.write_text(f.read_text().replace("Assumption: CSV is fine\n", "Assumption: CSV is fine (basis: none)\nAssumption: export uses semicolon separators (basis: none)\n"
+                                           "Assumption: dates in ISO format (basis: none)\n"))
+        d = self.proj / "backlog/drafts"; d.mkdir(parents=True, exist_ok=True)
+        (d / "draft-1 - f.md").write_text("---\nid: DRAFT-1\ntitle: 'Load real customer data later'\nstatus: Draft\nlabels:\n  - follow-up\n---\n")
+        (d / "draft-2 - q.md").write_text("---\nid: DRAFT-2\ntitle: 'Question from the Doctor about TASK-2: which format?'\nstatus: Draft\nlabels:\n  - tron-doctor\n---\n")
+        git(self.proj, "add", "-A"); git(self.proj, "commit", "-qm", "run work")
+        self.tron("report", "--run-id", "s1")
+        rep = (self.proj / "docs/agent/tron/REPORT-s1.md").read_text()
+        block = rep.split("## Questions for you")[1].split("\n## ")[0]
+        self.assertIn("1. Question from the Doctor about TASK-2", block)
+        self.assertIn("2. Assumptions without a basis (2): a) keep all", block)
+        self.assertIn("V1: TASK-1: Assumption: CSV is fine", block); self.assertIn("V2: TASK-1: Assumption: dates in ISO format", block)
+        self.assertNotIn("semicolon", block); self.assertNotIn("old ruling", rep); self.assertNotIn("Load real customer data", block)
+        self.assertIn("Basis: none, already ruled by P-7 (info)", rep)
+        self.assertIn("## Follow-ups (info; nothing to answer now)\n\n- Load real customer data later (backlog/drafts/draft-1 - f.md)", rep)
 
     def test_report_groups_assumptions_by_basis_none_first(self):
         self.sample_journal()
