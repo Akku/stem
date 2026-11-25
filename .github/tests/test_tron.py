@@ -861,6 +861,31 @@ class Tron(unittest.TestCase):
         self.assertIn("Offered again after you released them (counted once, by the new outcome): TASK-1", rep)
         self.assertNotIn("- TASK-1", rep.split("## Blocked tasks")[1].split("\n## ")[0])  # counted once: accepted, not also blocked
 
+    def test_reoffered_task_prompt_names_the_kept_work(self):  # TASK-428 AC#1
+        self.behavior({"TASK-1": ["no_evidence", "dirty", "no_evidence"]})
+        self.tron("run", "--milestone", "m-1", "--run-id", "one", "--max-tasks", "1")
+        kept = self.journal()["tasks"]["TASK-1"]["kept"]
+        self.assertTrue(kept)
+        self.release("TASK-1")
+        self.behavior({})
+        n = len(self.calls())
+        self.assertEqual(self.tron("run", "--milestone", "m-1", "--run-id", "one").returncode, 0)
+        p = [c["prompt"] for c in self.calls()[n:] if c["task"] == "TASK-1"][0]
+        self.assertIn("released it since", p)
+        for v in kept.values(): self.assertIn(v, p)
+        others = [c["prompt"] for c in self.calls()[n:] if c["task"] not in ("TASK-1", "baseline")]
+        self.assertTrue(others); self.assertFalse(any("released it since" in x for x in others))
+
+    def test_reoffered_task_without_kept_work_gets_the_plain_prompt(self):  # TASK-428 AC#1
+        self.behavior({"TASK-1": "noop"})
+        self.tron("run", "--milestone", "m-1", "--run-id", "one", "--max-tasks", "1")
+        self.assertFalse(self.journal()["tasks"]["TASK-1"].get("kept"))
+        self.release("TASK-1"); self.behavior({})
+        n = len(self.calls())
+        self.tron("run", "--milestone", "m-1", "--run-id", "one")
+        p = [c["prompt"] for c in self.calls()[n:] if c["task"] == "TASK-1"][0]
+        self.assertNotIn("released it since", p)
+
     def test_resume_leaves_a_sweep_skipped_task_settled(self):  # TASK-402 AC#2
         d = self.proj / "docs/agent/tron"; d.mkdir(parents=True, exist_ok=True)
         (d / "SWEEP-m-1.md").write_text("# Sweep: m-1\n## Questions\n- none\n\nDecision (user): the run skips TASK-2.\n")

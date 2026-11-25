@@ -1508,6 +1508,18 @@ def block_task(root, tron, task_id, base, reason, journal, refs0):
     return kept
 
 
+def reoffer_prompt(tron, task_id, journal):
+    """TASK-428: the first worker prompt of a task re-offered after its release names the work its earlier block kept; None otherwise."""
+    kept = (journal.get("reoffered", {}).get(task_id) or [{}])[-1].get("kept") or {}
+    if task_id in journal["tasks"] or not kept:
+        return None
+    where = " and ".join(x for x in ((f"backup branch {kept['branch']}" if kept.get("branch") else ""),
+                                     (f"git stash named '{kept['stash']}'" if kept.get("stash") else "")) if x)
+    return (tron.get("prompt", DEFAULT_PROMPT).replace("{task_id}", task_id) + "\n\n"
+            f"This task was blocked earlier in this run and the user has released it since. The failed work of that attempt is kept in the {where}: "
+            "read it first and reuse what holds up instead of starting from zero; do not merge it blindly, and leave the branch and the stash in place.")
+
+
 def find_journal(root, milestone, run_id):
     d = root / JOURNAL_DIR
     if run_id:
@@ -2168,7 +2180,7 @@ def run_loop(root, tron, args, milestone, jpath, run_id, ctx=None):
                 journal.setdefault("reoffered", {}).setdefault(task_id, []).append(journal["tasks"].pop(task_id))
                 print(f"{task_id}: released by the user since it was blocked; offered again")
         journal["in_progress"] = {"task": task_id, "base": base, "acs_before": acs_before, "repairs": repairs, "last_sig": last_sig}
-        prompt = None
+        prompt = reoffer_prompt(tron, task_id, journal) if not resume_ip_task else None
         outcome = None
         limit, ladder, doctored, hint, split_plan, split_e1 = max_repairs, [], False, None, None, False
         rip = resume_ip_task if resume_ip_task and resume_ip_task["task"] == task_id else None
