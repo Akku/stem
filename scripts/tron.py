@@ -716,12 +716,17 @@ def precedents(root):
 
 
 def ruled_by(line, precs):
-    """The precedent whose kind and ruling contain at least 60 % (and at least two) of the assumption's content words, else None."""
+    """The precedent whose kind and ruling contain at least 60 % (and at least two) of the line's content words, else None.
+    The match must also hold from the precedent's side (TASK-424): its kind shares a content word with the line, or at least
+    half of its content words are in the line, so a short line is not 'ruled' by an unrelated broad precedent."""
     m = re.search(r"(?:Assumption|Decision):\s*(.*?)\s*(?:\(basis:[^)]*\)\s*)?$", line)
     words = content_words(m.group(1) if m else line)
     best = None
     for pid, kind, ruling in precs:
-        hit = len(words & content_words(f"{kind} {ruling}"))
+        pw = content_words(f"{kind} {ruling}")
+        hit = len(words & pw)
+        if not (words & content_words(kind) or hit >= 0.5 * len(pw)):
+            continue
         if hit >= 2 and hit >= 0.6 * len(words) and (best is None or hit > best[1]):
             best = (pid, hit)
     return best[0] if best else None

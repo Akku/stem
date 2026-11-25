@@ -1694,6 +1694,16 @@ class Tron(unittest.TestCase):
         self.assertRegex(rep, r"\| worker \| 1 \| [^|]+ \| [^|]+ \| unknown \|")
         self.assertIn("Sessions with denied tool calls", rep); self.assertIn("TASK-1 evaluator: 2 (", rep)
 
+    def test_ruled_by_needs_the_precedent_side_to_match_too(self):  # TASK-424
+        sys.path.insert(0, str(ROOT / "scripts")); import tron
+        broad = [("P-9", "general", "keep tests fast and readable, keep docs short, code simple, reviews quick, commits small and naming consistent")]
+        self.assertIsNone(tron.ruled_by("Assumption: keep tests fast (basis: none)", broad))
+        self.assertIsNone(tron.ruled_by("Decision: keep tests fast", broad))
+        by_kind = [("P-7", "export format", "CSV export uses semicolon separators, ISO dates, UTF-8 encoding and quoted text fields")]
+        self.assertEqual(tron.ruled_by("Decision: export dates as ISO dates", by_kind), "P-7")
+        two_sided = [("P-3", "misc", "tests keep fast")]
+        self.assertEqual(tron.ruled_by("Assumption: keep tests fast (basis: none)", two_sided), "P-3")
+
     def test_count_denials_reads_string_and_block_content(self):  # TASK-378
         sys.path.insert(0, str(ROOT / "scripts")); import tron
         f = self.tmp / "t.jsonl"
