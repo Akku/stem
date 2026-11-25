@@ -96,9 +96,9 @@ def main():
     except Exception: pass
     urgent = tokens >= THRESHOLD * 1.5
     print("CONTEXT NOTICE (%s): the context holds about %dk tokens (threshold %dk, session started at %dk). %s" % ("run.sh" if quiet else "hook", tokens // 1000, THRESHOLD // 1000, (first or 0) // 1000,
-          "Hand off at the next task end, even inside a related batch (R-BATCHING)." if urgent else
-          "Do not interrupt the current task. When it is finished, check: hand off only if at least ~5 turns of unrelated work are ahead; continue in this session if the rest is short, closely related (batch) or needs hard-won context."),
-          "Hand-off (R-BATCHING): run the handoff skill; it always ends by starting a fresh session yourself, detached (no fork of this conversation) and stopping. Inside an approved batch do it without asking; otherwise tell the user (in their language) the context is large and that they may say Handoff.")
+          "Do not wait for the task end: interrupt your work at the next sensible point and hand off the rest to a new session, even inside a related batch. Finish first only if very little is left." if urgent else
+          "If at least ~5 turns of the current task remain, interrupt it at a sensible point and hand off the rest to a new session. Otherwise finish it, then hand off only if at least ~5 turns of unrelated work are ahead. Continue in this session if the rest is short, closely related (batch) or needs hard-won context."),
+          "Hand-off (R-BATCHING, which defines a sensible point): run the handoff skill; it always ends by starting a fresh session yourself, detached (no fork of this conversation) and stopping. Inside an approved batch do it without asking; otherwise tell the user (in their language) the context is large and that they may say Handoff.")
     return 0
 
 if __name__ == "__main__":

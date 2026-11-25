@@ -42,6 +42,9 @@ class ContextCheck(Sandbox):
         r = self.check([assistant("claude-sonnet-5-5", 10000), assistant("claude-sonnet-5-5", 70000)])
         self.assertIn("CONTEXT NOTICE", r.stdout)
         self.assertIn("threshold 60k", r.stdout)
+        self.assertIn("interrupt it at a sensible point", r.stdout)
+        urgent = self.check([assistant("claude-sonnet-5-5", 10000), assistant("claude-sonnet-5-5", 95000)])
+        self.assertIn("interrupt your work at the next sensible point", urgent.stdout)
 
     def test_subagent_records_are_ignored(self):
         r = self.check([assistant("claude-sonnet-5-5", 10000), assistant("claude-sonnet-5-5", 190000, sidechain=True)])
