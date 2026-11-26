@@ -2356,7 +2356,7 @@ class Check(unittest.TestCase):
     def test_ready(self):
         r = self.check()
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertIn("READY", r.stdout); self.assertIn("start: scripts/tron.py run --milestone m-9", r.stdout)
+        self.assertIn("READY", r.stdout); self.assertIn("start: scripts/tron.py run --milestone m-9", r.stdout); self.assertIn("2 h", r.stdout); self.assertIn("WITHOUT -d", r.stdout)
 
     # TASK-388: preflight (start conditions of an unattended run) inside the check
     def test_preflight_root_stops_at_once(self):

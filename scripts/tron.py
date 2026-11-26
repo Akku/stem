@@ -3974,6 +3974,8 @@ def cmd_check(args):
         print(f"  {role}: {' '.join(c) if c else '(falls back to worker_cmd)'}")
     print(f"  verify: {' '.join(tron['verify_cmd'])}")
     print(f"start: scripts/tron.py run --milestone {args.milestone} --detach")
+    print("how: start it as a background command that notifies on exit (Bash run_in_background; in the sandbox docker exec WITHOUT -d); "
+          "read the log head after 1-2 min (run id, settled count, first task); check status every 2 h while it runs (skill tron, section 2)")
     return 0
 
 
