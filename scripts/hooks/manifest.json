@@ -48,7 +48,7 @@
     {
       "id": "detach-reminder",
       "script": "scripts/detach-reminder.py",
-      "purpose": "Reminder to detach a session started for a handoff (Claude desktop app only)",
+      "purpose": "Reminder to detach a session started for a handoff; says keep linked when the brief makes it report back (Claude desktop app only)",
       "fallback": "not applicable outside the Claude desktop app",
       "wiring": {
         "claude-code": {"event": "PostToolUse", "matcher": "mcp__ccd_session__start_session"}

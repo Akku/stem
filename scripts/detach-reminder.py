@@ -13,8 +13,15 @@ try:
     text = json.dumps(data.get("tool_response", ""))
     m = re.search(r"local_[0-9a-f]{8}-[0-9a-f-]{27}", text)
     if not m or "started" not in text.lower(): sys.exit(0)
-    msg = (f"Hand-off: session {m.group(0)} was started. If it is a fresh independent session (not one that must report back), "
-           f"call detach_session with session_id \"{m.group(0)}\" now (R-BATCHING).")
+    brief = json.dumps(data.get("tool_input", "")).lower()
+    sid = m.group(0)
+    if "do not report back" in brief or "never message or answer the starting session" in brief:
+        msg = f"Hand-off: session {sid} was started and must not report back. Call detach_session with session_id \"{sid}\" now (R-BATCHING)."
+    elif re.search(r"report(s|ing)? (back )?to the starter|batch subsession|report back", brief):
+        msg = f"Subsession {sid} was started and must report back: keep it linked, do not call detach_session (R-BATCHING, Batch execution)."
+    else:
+        msg = (f"Hand-off: session {sid} was started. If it is a fresh independent session (a handoff, not one that must report back), "
+               f"call detach_session with session_id \"{sid}\" now; a batch subsession or other session that must report back stays linked (R-BATCHING).")
     hooklib.emit_context("PostToolUse", msg)
 except Exception:
     pass

@@ -919,8 +919,8 @@ class SessionStart(SandboxRepo):
 
 
 class DetachReminder(unittest.TestCase):
-    def run_hook(self, name, resp):
-        r = subprocess.run([sys.executable, str(ROOT / "scripts/detach-reminder.py")], input=json.dumps({"tool_name": name, "tool_response": resp}), capture_output=True, text=True)
+    def run_hook(self, name, resp, tool_input=""):
+        r = subprocess.run([sys.executable, str(ROOT / "scripts/detach-reminder.py")], input=json.dumps({"tool_name": name, "tool_response": resp, "tool_input": tool_input}), capture_output=True, text=True)
         self.assertEqual(r.returncode, 0)
         return r.stdout
 
@@ -928,6 +928,13 @@ class DetachReminder(unittest.TestCase):
         out = self.run_hook("mcp__ccd_session__start_session", {"text": "Session started: local_9fba1ca7-f86e-4b22-8699-7acdf0890fa8"})
         msg = json.loads(out)["hookSpecificOutput"]["additionalContext"]
         self.assertIn('detach_session with session_id "local_9fba1ca7-f86e-4b22-8699-7acdf0890fa8"', msg)
+
+    def test_distinguishes_report_back_from_handoff(self):
+        resp = {"text": "Session started: local_9fba1ca7-f86e-4b22-8699-7acdf0890fa8"}
+        ctx = lambda brief: json.loads(self.run_hook("mcp__ccd_session__start_session", resp, {"prompt": brief}))["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("keep it linked", ctx("Report to the starter only when the task is finished."))
+        self.assertNotIn("keep it linked", ctx("Never message or answer the starting session (do not report back)."))
+        self.assertIn("Call detach_session", ctx("Never message or answer the starting session (do not report back)."))
 
     def test_silent_for_other_tools_and_proposals(self):
         self.assertEqual(self.run_hook("Bash", {"text": "started local_9fba1ca7-f86e-4b22-8699-7acdf0890fa8"}), "")
