@@ -1503,6 +1503,30 @@ class Tron(unittest.TestCase):
         v = m.parse_verdict(blk({"verdict": "fail", "findings": [{"kind": "risk"}, {"kind": "defect"}]}), None)
         self.assertEqual((v["verdict"], len(v["findings"]), len(v["risks"])), ("fail", 1, 1))
 
+    def test_baseline_failures_are_known_to_the_evaluator_and_new_ones_stay_findings(self):  # TASK-436 AC#1, AC#2
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import tron
+        out_start = "not ok 1 - test_old\nok 2 - fine\nFAIL: test_flaky\n"
+        self.assertEqual(tron.failing_tests(out_start), ["test_flaky", "test_old"])
+        journal = {"baseline_tests": {"commit": "x", "failing": ["test_old"], "flaky": ["test_flaky"], "exit": [1, 1]}}
+        sec = "\n".join(tron.known_before_run(journal, "not ok 1 - test_old\nnot ok 3 - test_new\n"))
+        self.assertIn("Known before the run", sec)
+        self.assertIn('Failing now and already known: ["test_old"]', sec)  # pre-existing failure: risk only
+        self.assertIn('NEW since the run start (a finding as usual): ["test_new"]', sec)  # new failure: still a finding
+        self.assertEqual(tron.known_before_run({}, "not ok 1 - a"), [])  # no baseline recorded: brief unchanged
+        self.assertEqual(tron.known_before_run({"baseline_tests": {"failing": [], "flaky": []}}, "x"), [])
+
+    def test_red_baseline_is_stored_in_the_journal(self):  # TASK-436 AC#1
+        v = self.bin / "verify"
+        v.write_text("#!/bin/sh\necho 'not ok 1 - test_old'\nexit 1\n"); v.chmod(0o755)
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import tron
+        j = {}
+        tron.record_baseline(self.proj, {"verify_cmd": [str(v)]}, j)
+        self.assertEqual(j["baseline_tests"]["failing"], ["test_old"])
+        self.assertEqual(j["baseline_tests"]["exit"], [1, 1])
+        self.assertIn("test_old", "\n".join(tron.known_before_run(j, "")))
+
     def test_evaluator_brief_holds_assumptions_and_hints(self):
         self.with_evaluator("task")
         self.behavior({"TASK-1": "placeholder"})

@@ -495,12 +495,51 @@ def scan_placeholders(root, base):
     return hits
 
 
-def verify(root, tron):
+def verify(root, tron, full=False):
+    """(exit code, last 40 lines); full=True returns the whole output instead (for parsing failing test names)."""
     try:
         r = subprocess.run(tron["verify_cmd"], cwd=root, capture_output=True, text=True)
     except OSError as e:
         return 127, f"verify_cmd could not start: {e}"
-    return r.returncode, "\n".join(((r.stdout or "") + (r.stderr or "")).strip().splitlines()[-40:])[-4000:]
+    out = ((r.stdout or "") + (r.stderr or "")).strip()
+    return r.returncode, out if full else "\n".join(out.splitlines()[-40:])[-4000:]
+
+
+# TASK-436: a failing test line of the usual runners (TAP "not ok", pytest/unittest "FAIL"/"FAILED"/"ERROR", mocha/jest "✗"/"✖"/"×")
+FAIL_LINE = re.compile(r"^\s*(?:not ok \d+\s*-?\s*|(?:FAIL|FAILED|ERROR)[:\s]+|[✗✖×]\s*)(\S.*?)\s*$")
+
+
+def failing_tests(text):
+    """Sorted names of the failing tests in verification output (best effort; empty when the runner's format is not recognised)."""
+    return sorted({m.group(1)[:200] for l in (text or "").splitlines() for m in [FAIL_LINE.match(l)] if m})
+
+
+def record_baseline(root, tron, journal):
+    """Run start, red verification: store which tests fail before any task (journal 'baseline_tests'). A second run tells flaky
+    (fails in one run only) from steadily failing. Stored once per run; the evaluator reports these as risk only, not as run defects."""
+    if "baseline_tests" in journal:
+        return
+    c1, o1 = verify(root, tron, full=True)
+    c2, o2 = verify(root, tron, full=True) if c1 else (0, "")
+    a, b = set(failing_tests(o1)), set(failing_tests(o2))
+    journal["baseline_tests"] = {"commit": head(root), "failing": sorted(a & b) if c2 else sorted(a), "flaky": sorted(a ^ b) if c1 and c2 else [],
+                                 "exit": [c1, c2]}
+
+
+def known_before_run(journal, output):
+    """Brief section: what failed before the run and which of the current failures are new (TASK-436)."""
+    bt = journal.get("baseline_tests")
+    if not bt or not (bt["failing"] or bt["flaky"]):
+        return []
+    now = set(failing_tests(output))
+    known = set(bt["failing"]) | set(bt["flaky"])
+    out = ["", "## Known before the run (report as risk only, not as a defect of this run)",
+           "Failing at run start: " + json.dumps(bt["failing"]), "Flaky at run start (failed in one of two runs): " + json.dumps(bt["flaky"])]
+    if now:
+        out += ["Failing now and already known: " + json.dumps(sorted(now & known)),
+                "Failing now and NEW since the run start (a finding as usual): " + json.dumps(sorted(now - known))]
+    out += ["A test of these two lists is a risk remark, never a `defect` and no reason to fail an AC; a failure outside them stays a finding."]
+    return out
 
 
 def protected_paths(root, tron):
@@ -890,13 +929,14 @@ def write_brief(root, tron, journal, target, base, g, task_ids, intent, reduced=
         parts += ["", "## Milestone acceptance scenario (whole milestone; this task covers only part of it)", scen,
                   f"An assumption of this task with basis none that contradicts a step of this scenario is an assumption flag with the conflict "
                   f"'{SCENARIO_CONFLICT}: <step>'. Steps this task does not touch are not findings."] if scen else []
-    code, tail = verify(root, tron)
+    code, full_out = verify(root, tron, full=True)
+    tail = "\n".join(full_out.splitlines()[-40:])[-4000:]
     ex = EXCLUDE + [":(exclude)backlog"]  # task files carry the implementer's notes and evidence claims
     diff = git_ok(root, "diff", "--no-renames", base, "--", ".", *ex)
     stat = git_ok(root, "diff", "--no-renames", "--stat", base, "--", ".", *ex)
     if g is None:
         g = {"placeholders": scan_placeholders(root, base), "deleted_files": [f for f in deleted_paths(root, base) if not f.startswith("backlog/")]}
-    parts += ["", "## Verification by the runner", f"exit code {code}", tail, "", f"## Diff since {base[:12]}"]
+    parts += ["", "## Verification by the runner", f"exit code {code}", tail] + known_before_run(journal, full_out) + ["", f"## Diff since {base[:12]}"]
     if reduced:
         rng = journal.get("task_ranges", {})
         parts += ["Short brief: the earlier evaluator session for this target gave no verdict, so the diff text is left out. "
@@ -2183,6 +2223,7 @@ def run_loop(root, tron, args, milestone, jpath, run_id, ctx=None):
             return 0
         if not task_resumed and verify(root, tron)[0]:  # baseline: a red branch gets a repair session before the next task
             print("baseline verification failed; starting a repair session")
+            record_baseline(root, tron, journal)
             base, acs_before = head(root), snapshot_acs(root)
             journal["in_progress"] = {"task": "baseline", "base": base, "acs_before": acs_before}
             entry, up = sessions_with_retry(root, tron, "worker", "baseline", run_id, milestone, journal, jpath,
