@@ -126,6 +126,8 @@ if beh == "decision":  # TASK-420: R-DESIGN in a Tron run
     s3 = open(f).read(); open(f, "w").write(s3.replace("AC#1: E2 fake evidence\\n", "AC#1: E2 fake evidence\\nDecision: export() gets an optional sep parameter (basis: R-DESIGN)\\n"))
 if beh == "assume_nobasis":
     s3 = open(f).read(); open(f, "w").write(s3.replace("AC#1: E2 fake evidence\\n", "AC#1: E2 fake evidence\\nAssumption: CSV is fine\\nAssumption: sep is comma (basis: P-3)\\n"))
+if beh == "decide_nobasis":  # TASK-438
+    s3 = open(f).read(); open(f, "w").write(s3.replace("AC#1: E2 fake evidence\\n", "AC#1: E2 fake evidence\\nDecision: export() gets a sep parameter\\n"))
 if beh == "overwrite_notes":
     s3 = open(f).read(); open(f, "w").write(re.sub(r"(?s)<!-- SECTION:NOTES:BEGIN -->.*<!-- SECTION:NOTES:END -->", "<!-- SECTION:NOTES:BEGIN -->\\nAC#1: E2 fake evidence\\n<!-- SECTION:NOTES:END -->", s3))
 if beh == "protected":
@@ -1630,6 +1632,23 @@ class Tron(unittest.TestCase):
         self.assertEqual(j["tasks"]["TASK-1"]["state"], "accepted"); self.assertEqual(j["tasks"]["TASK-1"]["repairs"], 1)
         repair = [json.loads(l) for l in (self.td / "calls.log").read_text().splitlines() if json.loads(l)["task"] == "TASK-1"][1]["prompt"]
         self.assertIn("assumption conflicts: CSV is fine (acceptance scenario: step 2 exports JSON); drop the assumption", repair)
+
+    def test_basis_none_decision_line_brings_the_task_evaluator_too(self):  # TASK-438
+        self.with_evaluator("milestone"); self.scenario()
+        self.behavior({"TASK-1": "decide_nobasis"})
+        self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
+        self.assertIn("TASK-1", self.eval_calls())
+        sys.path.insert(0, str(ROOT / "scripts")); import tron
+        n = "<!-- SECTION:NOTES:BEGIN -->\n%s\n<!-- SECTION:NOTES:END -->"
+        self.assertEqual(len(tron.unfounded_assumptions(n % "Decision: a (basis: none)\nDecision: b\nAssumption: c")), 3)
+        self.assertEqual(tron.unfounded_assumptions(n % "Decision: a (basis: R-DESIGN)\nAssumption: c (basis: P-3)"), [])
+
+    def test_milestone_repair_prompt_asks_for_the_defect_class(self):  # TASK-435
+        self.with_evaluator("milestone", max_repairs=1)
+        self.evaluator_plan({"milestone": ["fail", "pass"]}); self.behavior({"milestone": "ok"})
+        self.tron("run", "--milestone", "m-1")
+        prompts = [json.loads(l)["prompt"] for l in (self.td / "calls.log").read_text().splitlines() if json.loads(l)["task"] == "milestone"]
+        self.assertTrue(prompts and all("every other place with the same cause" in p and "Same class:" in p for p in prompts))
 
     def test_other_assumption_flags_still_block_and_no_scenario_means_no_extra_evaluation(self):  # TASK-382
         self.with_evaluator("milestone")

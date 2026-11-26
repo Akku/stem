@@ -47,6 +47,12 @@ BASELINE_DUTIES = ("Before you end: run the verification command at least 3 time
                    "Then commit the fix (one commit, message starting with 'baseline:') and end on a clean working tree: "
                    "no uncommitted or untracked files; the runner's gate fails on a dirty tree.")
 
+# TASK-435: each repair round fixed only the reported spot and the next round found the next spot of the same defect class
+MILESTONE_REPAIR_CLASS = ("Fix the defect class, not only the reported spot: for each finding first search the code for every other place with the same cause "
+                          "(other callers, sibling files, the same pattern on the other platform), fix them all in this one repair, and list them in the "
+                          "commit message body ('Same class: <file:line>, ...'). A place you checked and left alone gets one line with the reason. "
+                          "Changes outside the defect class stay out of scope.")
+
 # TASK-419: a milestone repair runs outside any task, so it gets the duties the gate checks and the decision frame (run_session adds it only for TASK-n)
 MILESTONE_REPAIR_DUTIES = ("Before you end: run the verification command and claim green only if it passed. Commit the fix (one commit, "
                            "message starting with 'Tron run: milestone repair'; the runner judges only committed work, a repair without a commit ends the run) "
@@ -638,9 +644,9 @@ SCENARIO_CONFLICT = "acceptance scenario"  # prefix of an assumption flag's conf
 
 
 def unfounded_assumptions(text):
-    """Assumption lines of a task's notes with basis none or no basis named."""
+    """Assumption and Decision lines (R-DESIGN, TASK-438) of a task's notes with basis none or no basis named."""
     return [l.strip() for l in parse_task(text)[2].splitlines()
-            if re.match(r"\s*Assumption:", l) and (assumption_basis(l) or "none").lower() == "none"]
+            if re.match(r"\s*(?:Assumption|Decision):", l) and (assumption_basis(l) or "none").lower() == "none"]
 
 
 FINDING_KINDS = ("defect", "invariant", "not_verifiable", "placeholder", "risk")
@@ -1988,7 +1994,7 @@ def milestone_evaluation(root, tron, journal, jpath, accepted, start_commit, max
         journal["in_progress"] = {"task": "baseline", "base": base, "acs_before": acs_before}
         prompt = ("The independent evaluation of the milestone found problems (unattended Tron mode session, STEM_TRON=1; read R-TRON first). "
                   f"Fix exactly these findings and nothing else (repair {repairs + 1} of {max_repairs}):\n" + g["failures"][0]["detail"]
-                  + "\n\n" + MILESTONE_REPAIR_DUTIES + decision_prompt(root))
+                  + "\n\n" + MILESTONE_REPAIR_CLASS + " " + MILESTONE_REPAIR_DUTIES + decision_prompt(root))
         entry, up = sessions_with_retry(root, tron, "worker", "milestone", run_id, milestone, journal, jpath, prompt, abort_check=no_count)
         if not up:
             fin(entry.get("retry_aborted") or "API unavailable after retries"); return 0
