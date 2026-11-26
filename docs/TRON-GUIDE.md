@@ -2,9 +2,7 @@
 
 [🇩🇪 Deutsch](TRON-GUIDE.de.md) · [README](../README.md#optional-tron-mode-one-milestone-built-unattended)
 
-Tron lets agent sessions build one approved milestone while you are away, for example overnight. It builds the clearly specified part and returns one report with everything that needs you. It never pushes, tags or merges: you decide what goes into `main`.
-
-**Preview.** Measured so far: a 6-task fixture costs 0.21-0.30 USD per accepted task. Three real runs on other projects: the first two cost 2.98-3.60 USD per accepted task with 42-67 % of tasks blocked (mostly an environment the sandbox lacked); the third, after the fixes for those runs, ended complete (3 of 3 tasks accepted, 0 blocked, 1.16 USD per accepted task, no defects found by the user afterwards). The independent evaluator is about half of the cost. Expect to prepare the milestone carefully.
+Tron lets agent sessions build one approved milestone while you are away, for example overnight. It builds the clearly specified part and returns one report with everything that needs you. It never pushes, tags or merges: you decide what goes into `main`. Expect to prepare the milestone carefully.
 
 ## Is it for you?
 

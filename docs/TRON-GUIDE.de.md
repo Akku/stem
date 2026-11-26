@@ -2,18 +2,16 @@
 
 [🇬🇧 English](TRON-GUIDE.md) · [README](../README.de.md#optional-tron-modus-ein-meilenstein-unbeaufsichtigt-gebaut)
 
-Mit Tron bauen Agenten-Sitzungen einen freigegebenen Meilenstein, während du weg bist, zum Beispiel über Nacht. Tron baut den klar beschriebenen Teil und liefert einen Bericht mit allem, was dich braucht. Tron pusht, taggt und mergt nie: du entscheidest, was nach `main` kommt.
-
-**Vorschau.** Bisher gemessen: ein Testprojekt mit 6 Aufgaben kostet 0,21-0,30 USD pro angenommener Aufgabe. Drei echte Läufe in anderen Projekten: die ersten beiden kosteten 2,98-3,60 USD pro angenommener Aufgabe, 42-67 % der Aufgaben blieben blockiert (meist fehlte etwas in der Sandbox-Umgebung); der dritte, nach den Korrekturen aus diesen Läufen, endete vollständig (3 von 3 Aufgaben angenommen, 0 blockiert, 1,16 USD pro angenommener Aufgabe, danach keine Fehler gefunden). Der unabhängige Evaluator macht etwa die Hälfte der Kosten aus. Rechne mit sorgfältiger Vorbereitung.
+Mit Tron bauen Agenten-Sitzungen einen freigegebenen Meilenstein, während du weg bist, zum Beispiel über Nacht. Tron baut den klar beschriebenen Teil und liefert einen Bericht mit allem, was dich braucht. Tron pusht, taggt und mergt nie: du entscheidest, was nach `main` kommt. Rechne mit sorgfältiger Vorbereitung.
 
 ## Passt es für dich?
 
 - Ja, wenn ein Meilenstein Aufgaben mit klaren, prüfbaren Akzeptanzkriterien hat und du ihn in einer Sandbox laufen lassen kannst.
-- Nein bei kleinen Projekten, vagen Zielen oder Aufgaben, die während des Laufs dein Urteil, echte Daten oder bezahlte Dienste brauchen. Tron ist standardmäßig aus; sag dem Agenten „schalte Tron ein“, um das Modul `tron` zu aktivieren.
+- Nein bei kleinen Projekten, vagen Zielen oder Aufgaben, die während des Laufs dein Urteil, echte Daten oder bezahlte Dienste brauchen. Tron ist standardmäßig aus, weil es sich noch in der Erprobungsphase befindet; sag dem Agenten „schalte Tron ein“, um das Modul `tron` zu aktivieren.
 
 ## 1. Vorbereiten (mit dem Agenten, etwa 15-30 Minuten)
 
-Sag „lass Meilenstein m-N mit Tron laufen“. Der Skill `tron`:
+Sag „lass Meilenstein X mit Tron laufen“. Der Skill `tron`:
 1. Schickt **eine Setup-Nachricht** mit Vorschlägen: Reihenfolge der Aufgaben, Entscheidungsrahmen (was die Agenten allein entscheiden dürfen und was zu dir zurückkommt), Projekt-Invarianten, Abnahmeszenario (was du klicken oder ausführen würdest, um das Ergebnis zu beurteilen, auf einer Plattform), Limits, Modelle. Antworte knapp, z. B. `ok` oder `2b, 7: sonnet`.
 2. Macht eine **Fragenrunde**: ein Planer liest den ganzen Meilenstein und entscheidet kleine Fragen vorab als Annahmen. Du legst per Nummer ein Veto ein (`Veto A2`) und beantwortest die wenigen echten Fragen. Kriterien, die dich brauchen, wandern in eigene Aufgaben, damit der Lauf nicht an ihnen hängen bleibt.
 3. Prüft die **Umgebung**: jeder Dienst, jedes Werkzeug und jede Datei, die die Aufgaben brauchen, wird vor dem Lauf in der Sandbox geprüft, nicht erst mittendrin entdeckt.
