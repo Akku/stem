@@ -460,6 +460,7 @@ Typical review triggers include:
 - broad or cross-cutting changes;
 - weak or incomplete deterministic test coverage;
 - architecture changes;
+- a new script that edits tracked files (migration, module move, generator): a line-count waiver does not apply, an independent review is required (TASK-349: waived, then 8 defects in 352/353; `pre-commit` refuses a waiver when such a script is added);
 - repeated repair loops or unresolved uncertainty;
 - generated behavior whose correctness is materially subjective.
 

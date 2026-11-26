@@ -49,11 +49,52 @@ def by_model_report(per_model, tasks):
         print(line)
     if tasks > 0: print("  all models: est cost %s%s, per accepted task %s" % ("$%.2f" % total, "" if known else " (without n/a models)", "$%.2f" % (total / tasks)))
 
+# Price table (USD per million tokens), the one place for cost estimates. Estimate from public list prices, dated; check before relying on it.
+# Matched by family name in the model id; a model without a match shows cost "n/a", never 0. Order: input, cache_write, cache_read, output.
+PRICES_DATE = "2026-11-19"
+PRICES = {"opus": (15.0, 18.75, 1.50, 75.0), "sonnet": (3.0, 3.75, 0.30, 15.0), "haiku": (1.0, 1.25, 0.10, 5.0)}
+
+def price_of(model):
+    for fam, p in PRICES.items():
+        if fam in model.lower(): return p
+    return None
+
+def est_cost(per_model):
+    """Estimated USD of all models from the price table (TASK-320: weighted cost, cache read 0.1x of input, write 1.25x, output 5x for Sonnet); None when any model is not in the table."""
+    ks = ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens", "output_tokens")
+    total = 0.0
+    for name, (_, u) in per_model.items():
+        p = price_of(name)
+        if not p: return None
+        total += sum(u[k] * c for k, c in zip(ks, p)) / 1e6
+    return total
+
+def by_model_report(per_model, tasks):
+    print("tokens per model (cost estimate from the price table in context-report.py, dated %s, USD per MTok; 'n/a' = model not in the table; 'unknown' = records without model info):" % PRICES_DATE)
+    total, known = 0.0, True
+    for name, (turns, u) in sorted(per_model.items(), key=lambda kv: -kv[1][1]["output_tokens"]):
+        ks = ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens", "output_tokens")
+        p = price_of(name)
+        cost = sum(u[k] * c for k, c in zip(ks, p)) / 1e6 if p else None
+        if cost is None: known = False
+        else: total += cost
+        line = "  %s: turns %d, input %d, cache_write %d, cache_read %d, output %d, est cost %s" % (name, turns, u[ks[0]], u[ks[1]], u[ks[2]], u[ks[3]], "$%.2f" % cost if cost is not None else "n/a")
+        if tasks > 0:
+            line += " | per accepted task: input %d, cache_read %dk, output %d, cost %s" % (u[ks[0]] // tasks, u[ks[2]] // tasks // 1000, u[ks[3]] // tasks, "$%.2f" % (cost / tasks) if cost is not None else "n/a")
+        print(line)
+    if tasks > 0: print("  all models: est cost %s%s, per accepted task %s" % ("$%.2f" % total, "" if known else " (without n/a models)", "$%.2f" % (total / tasks)))
+
 RULE_ID = re.compile(r"\bR-[A-Z][A-Z-]+[A-Z]\b")
 
 def utc_since(since): return transcripts.utc_since(since, "context-report")
 
 def project_dirs(): return transcripts.project_dirs()
+
+def project_dirs():
+    """This project's transcript folders: the main checkout's plus its worktrees' (<main>--claude-worktrees-*); also when run from a worktree. TASK-220."""
+    base = os.path.expanduser("~/.claude/projects/")
+    main = re.sub(r"[^A-Za-z0-9]", "-", os.getcwd()).split("--claude-worktrees-")[0]
+    return [base + main] + sorted(glob.glob(glob.escape(base + main) + "--claude-worktrees-*"))
 
 def main():
     args = sys.argv[1:]

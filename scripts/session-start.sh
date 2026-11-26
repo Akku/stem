@@ -93,17 +93,15 @@ if [ -d backlog/tasks ]; then
   lr=$(ls docs/agent/retros 2>/dev/null | grep -E '^[0-9]{4}-[0-9]{2}-[0-9]{2}[a-z]?\.md$' | sort | tail -1)
   lrd="${lr%.md}"; since=""; [ -n "$lr" ] && since=$(TZ=UTC git log -1 --format=%cd --date=format-local:'%Y-%m-%d %H:%M' -- "docs/agent/retros/$lr" 2>/dev/null)
   [ -z "$since" ] && [ -n "$lr" ] && since="${lr:0:10} 23:59"
-  n=0
+  n=0; . "$(dirname "$0")/done-since.sh"
   for f in backlog/tasks/task-*.md; do
     [ -f "$f" ] || continue
-    grep -q "^status: Done" "$f" || continue
-    d=$(sed -n "s/^updated_date: '\([0-9: -]*\)'.*/\1/p;s/^created_date: '\([0-9: -]*\)'.*/\1/p" "$f" | tail -1)
-    if [ -z "$since" ] || [[ "$d" > "$since" ]]; then n=$((n+1)); fi
+    done_since "$f" "$since" && n=$((n+1))
   done
   if [ -n "$lr" ] && grep -q '^## First retro' docs/agent/NEXT_RETRO.md 2>/dev/null; then
     echo "RETRO OPEN ITEMS: retro notes exist but the 'First retro' section of docs/agent/NEXT_RETRO.md is still there; process it at the next retro (do not start unasked)"
   fi
-  # threshold: 8 + 1 per 50 Done tasks in total, doubled when the newest retro run recorded 0 adopted changes and 0 open signals (R-RETRO)
+  # threshold: 8 + 1 per 50 Done tasks in total (a mature backlog needs fewer retros), doubled when the newest retro run recorded 0 adopted changes and 0 open signals (R-RETRO)
   thr="${RETRO_DUE_AFTER:-}"
   if [ -z "$thr" ]; then
     thr=$((8 + $(grep -l '^status: Done' backlog/tasks/task-*.md 2>/dev/null | wc -l) / 50)); lj=$(ls docs/agent/retro-runs/*.json 2>/dev/null | sort | tail -1)

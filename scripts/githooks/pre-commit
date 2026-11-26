@@ -51,6 +51,36 @@ if [ ${#noout[@]} -gt 0 ]; then
   exit 1
 fi
 
+# TASK-312: a task newly set to Done needs verify evidence in its notes: a line with a PASS result (e.g. 'run.sh <label> PASS <log>') or a 'user-accepted:' line.
+noev=()
+for f in "${tasks[@]}"; do
+  [ -f "$f" ] || continue
+  if git diff --cached -U0 --no-color -- "$f" | grep -q -E '^\+status: Done[[:space:]]*$' \
+     && ! git show ":$f" | grep -q -E 'PASS|^[[:space:]]*user-accepted:'; then noev+=("$f"); fi
+done
+if [ ${#noev[@]} -gt 0 ]; then
+  echo "pre-commit: task set to Done without verify evidence (no PASS line and no 'user-accepted:' line in the notes):" >&2
+  printf '  %s\n' "${noev[@]}" >&2
+  echo "Run the verification via scripts/run.sh and note its PASS result, or record 'user-accepted: <what the user accepted>'." >&2
+  exit 1
+fi
+
+# Retro 2026-11-22 (R-REVIEW): a newly added script (scripts/, not scripts/local) edits files and must not be closed with a review waiver; a Done task with a waiver line but no independent review line is refused while such a script is staged.
+if git diff --cached --name-only --diff-filter=A | grep -q -E '^scripts/[^/]+\.(py|sh)$'; then
+  norev=()
+  for f in "${tasks[@]}"; do
+    [ -f "$f" ] || continue
+    if git diff --cached -U0 --no-color -- "$f" | grep -q -E '^\+status: Done[[:space:]]*$' \
+       && git show ":$f" | grep -q -i -E 'waive' && ! git show ":$f" | grep -q -i -E 'independent .*subagent|^Review \(independent'; then norev+=("$f"); fi
+  done
+  if [ ${#norev[@]} -gt 0 ]; then
+    echo "pre-commit: a new script is staged and these tasks are Done with a review waiver but no independent review (R-REVIEW: a new script that edits files needs one):" >&2
+    printf '  %s\n' "${norev[@]}" >&2
+    echo "Run an independent review and note a line 'Review (independent ...)', or move the script commit out of this task." >&2
+    exit 1
+  fi
+fi
+
 # Secret scan: .env files and added lines that look like credentials (high-confidence patterns only).
 # Prints file names, never the matched text. Override deliberately: git commit --no-verify
 pat='-----BEGIN [A-Z ]*PRIVATE KEY-----|AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{20,}|(^|[^A-Za-z0-9])sk-(ant-)?[A-Za-z0-9_-]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|AIza[0-9A-Za-z_-]{35}|[rs]k_live_[A-Za-z0-9]{20,}'

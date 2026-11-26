@@ -70,12 +70,11 @@ if command -v gh >/dev/null 2>&1; then
   echo "CI runs since $since (conclusions):"; gh run list --limit 100 --json conclusion,createdAt --jq "[.[]|select(.createdAt>=\"$since\")]|group_by(.conclusion)|map({(.[0].conclusion):length})|add" 2>/dev/null | sed 's/^/  /'
 fi
 # Normalise by accepted work (Done tasks updated since the start date); absolute sums mislead when the amount of work differs.
+. "$(dirname "$0")/done-since.sh"
 done_p=0
 for f in "${files[@]}"; do
   [ -f "$f" ] || continue
-  grep -q '^status: Done' "$f" || continue
-  u=$(awk -F"'" '/^updated_date:/{print substr($2,1,16); exit}' "$f")
-  [ -n "$u" ] && { [ "$u" \> "$sinceutc" ] || [ "$u" = "$sinceutc" ]; } && done_p=$((done_p+1))
+  done_since "$f" "$sinceutc" && done_p=$((done_p+1))
 done
 echo "accepted tasks in period (Done, updated since $since local = $sinceutc UTC): $done_p"
 created_p=0
@@ -88,9 +87,7 @@ echo "task intake in period: $created_p created, $done_p done"
 oc_rec=0; oc_unk=0; oc_corr=0; oc_def=0
 for f in "${files[@]}"; do
   [ -f "$f" ] || continue
-  grep -q '^status: Done' "$f" || continue
-  u=$(awk -F"'" '/^updated_date:/{print substr($2,1,16); exit}' "$f")
-  [ -n "$u" ] && { [ "$u" \> "$sinceutc" ] || [ "$u" = "$sinceutc" ]; } || continue
+  done_since "$f" "$sinceutc" || continue
   line=$(grep -m1 '^Outcome:' "$f" || true)
   if [ -z "$line" ]; then continue; fi
   oc_rec=$((oc_rec+1))
@@ -99,6 +96,14 @@ for f in "${files[@]}"; do
   oc_corr=$((oc_corr+${c:-0})); oc_def=$((oc_def+${d:-0}))
 done
 echo "post-acceptance record: $oc_rec of $done_p accepted tasks have an Outcome line ($((done_p-oc_rec)) unrecorded, $oc_unk with unknown values); corrections $oc_corr, later defects $oc_def (known values only)"
+# TASK-312: accepted tasks in the period without verify evidence (no PASS line, no 'user-accepted:' line); target 0
+noev=0; noev_ids=""
+for f in "${files[@]}"; do
+  [ -f "$f" ] || continue
+  done_since "$f" "$sinceutc" || continue
+  grep -q -E 'PASS|^[[:space:]]*user-accepted:' "$f" || { noev=$((noev+1)); noev_ids="$noev_ids $(awk -F': ' '/^id:/{print $2; exit}' "$f")"; }
+done
+echo "accepted tasks without verify evidence (no PASS / user-accepted line): $noev${noev_ids:+ ($noev_ids )}"
 waiting=""
 for f in "${files[@]}"; do
   grep -q '^status: In Progress' "$f" && grep -q '^- \[ \] #' "$f" && waiting="$waiting $(awk -F': ' '/^id:/{print $2; exit}' "$f")"
