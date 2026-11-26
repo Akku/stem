@@ -3,6 +3,7 @@
 Newest first. Projects read the entries newer than their `STEM_VERSION` (see `stem-update` skill). Each entry: what changed and who benefits; renames and removals get a `Migration:` line (what to rename or delete) that `stem-update` carries out.
 
 ## Unreleased
+- **Retro-due hint counts from a same-day second retro:** `scripts/session-start.sh` also recognises retro notes named `YYYY-MM-DDb.md`; before, it counted from the day's first retro and reported RETRO DUE too early. Migration: copy `scripts/session-start.sh` (or take over the one-line regex if your copy is local-kept).
 - **STEM maintenance: CI without the Windows cell:** `stem-check` runs on Ubuntu and macOS only; the Windows cell always failed (known gap, no fix planned) and was removed so CI carries no failing check. Windows stays a documented known gap. Migration: nothing needed (`.github/` is removed at setup).
 
 ## 2.0.0

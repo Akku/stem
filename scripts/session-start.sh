@@ -89,10 +89,10 @@ else
 fi
 # retro due hint: Done tasks changed since the last retro notes commit (docs/agent/retros/YYYY-MM-DD.md)
 if [ -d backlog/tasks ]; then
-  # shellcheck disable=SC2010  # names are fixed YYYY-MM-DD.md files; the grep is the filter
-  lr=$(ls docs/agent/retros 2>/dev/null | grep -E '^[0-9]{4}-[0-9]{2}-[0-9]{2}\.md$' | sort | tail -1)
+  # shellcheck disable=SC2010  # names are fixed YYYY-MM-DD[a-z].md files; the grep is the filter
+  lr=$(ls docs/agent/retros 2>/dev/null | grep -E '^[0-9]{4}-[0-9]{2}-[0-9]{2}[a-z]?\.md$' | sort | tail -1)
   lrd="${lr%.md}"; since=""; [ -n "$lr" ] && since=$(TZ=UTC git log -1 --format=%cd --date=format-local:'%Y-%m-%d %H:%M' -- "docs/agent/retros/$lr" 2>/dev/null)
-  [ -z "$since" ] && [ -n "$lr" ] && since="${lr%.md} 23:59"
+  [ -z "$since" ] && [ -n "$lr" ] && since="${lr:0:10} 23:59"
   n=0
   for f in backlog/tasks/task-*.md; do
     [ -f "$f" ] || continue
