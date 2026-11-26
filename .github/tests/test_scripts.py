@@ -669,6 +669,28 @@ class SandboxScript(SandboxRepo):
         self.assertRegex((ROOT / "scripts/sandbox.sh").read_text(), r'img="stem-sandbox:\$ver-\$IMG_REV"')
 
 
+class CheckSelect(unittest.TestCase):
+    """.github/check_select.py: changed files -> fixture test files stem-check runs (TASK-374)."""
+    def sel(self, *files):
+        sys.path.insert(0, str(ROOT / ".github"))
+        import check_select
+        return check_select.select(list(files))
+
+    def test_text_only_selects_no_test(self):
+        self.assertEqual(self.sel("README.md", "docs/agent/OPERATING_MODEL.md", "CHANGELOG.md"), set())
+
+    def test_files_map_to_their_tests(self):
+        self.assertEqual(self.sel("scripts/tron.py"), {"test_tron.py", "test_scripts.py"})
+        self.assertEqual(self.sel("scripts/retro-run.py"), {"test_retro_run.py", "test_scripts.py"})
+        self.assertEqual(self.sel("docs/agent/TRON.md"), {"test_tron.py"})
+        self.assertEqual(self.sel(".claude/skills/retro/SKILL.md"), {"test_scripts.py"})
+
+    def test_checker_itself_or_unknown_changed_set_runs_everything(self):
+        self.assertIsNone(self.sel(".github/stem-check.py"))
+        self.assertIsNone(self.sel("README.md", ".github/workflows/stem-check.yml"))
+        self.assertIsNone(__import__("check_select").select(None))
+
+
 class RuleReach(Sandbox):
     """.github/rule-reach.py: a rule named only in the rule files (index) is reported (TASK-210)."""
     def fixture(self, extra_ref=""):

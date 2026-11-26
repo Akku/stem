@@ -125,22 +125,23 @@ if rr.returncode: err(rr.stdout.strip())
 
 # fixture tests (.github/tests): shards of all test files run in parallel (TASK-308); each shard is one process
 import os
-TRON_FILES = ("scripts/tron.py", ".github/tests/test_tron.py", ".github/tests/shard.py", ".claude/agents/", ".claude/skills/tron/",
-              "docs/agent/DECISION_FRAME.md", "docs/agent/INVARIANTS.md", "docs/agent/PRECEDENTS.md", "docs/agent/TRON.md")
-def tron_changed():
-    """True when a Tron module file differs from origin/main (committed, staged or untracked); True when unsure."""
+sys.path.insert(0, str(root / ".github"))
+import check_select
+def changed_files():
+    """Files differing from origin/main (committed, staged or untracked); None when unsure (git failed)."""
     out = []
     for cmd in (["diff", "--name-only", "origin/main"], ["ls-files", "--others", "--exclude-standard"]):
         r = subprocess.run(["git", "-C", str(root)] + cmd, capture_output=True, text=True)
-        if r.returncode: return True
-        out += r.stdout.split()
-    return any(f.startswith(TRON_FILES) for f in out)
-skip_tron = "- tron: on - " not in _idx or not os.environ.get("CI") and not os.environ.get("STEM_CHECK_ALL") and not tron_changed()
-if skip_tron: print("stem-check: test_tron.py skipped (no Tron file changed since origin/main; CI or STEM_CHECK_ALL=1 runs it)")
+        if r.returncode: return None
+        out += r.stdout.splitlines()
+    return out
+full = bool(os.environ.get("CI") or os.environ.get("STEM_CHECK_ALL"))
+selected = None if full else check_select.select(changed_files())  # None = run everything
+if selected is not None: print("stem-check: scoped run, fixture tests: " + (", ".join(sorted(selected)) or "none (text-only change)") + " (CI or STEM_CHECK_ALL=1 runs all)")
 SHARDS = (("test_scripts.py", "script fixture tests", 3), ("test_retro_run.py", "retro-run fixture tests", 1), ("test_tron.py", "tron fixture tests", 4))
 jobs = []
 for fname, label, n in SHARDS:
-    if skip_tron and fname == "test_tron.py": continue
+    if (selected is not None and fname not in selected) or (fname == "test_tron.py" and "- tron: on - " not in _idx): continue
     for i in range(n):
         env = dict(os.environ, STEM_TEST_SHARD=f"{i}/{n}")
         jobs.append((label, subprocess.Popen([sys.executable, str(root / ".github/tests" / fname)], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)))
