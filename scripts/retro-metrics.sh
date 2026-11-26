@@ -51,6 +51,8 @@ commit_stats() {  # $1 = repo path, $2 = label
   sync=$(git -C "$1" log --since="$sincefull" --format=%s | grep -ciE 'sync|update harness' || true)
   echo "$2: harness-product sync commits $sync ($([ "$all" -gt 0 ] && echo $((100*sync/all)) || echo 0) % of commits; high values mean changes exist twice)"
   echo "$2: $all commits, $hand handoff, $notask without task ID ($([ "$all" -gt 0 ] && echo $((100*notask/all)) || echo 0) %), fix/review $(git -C "$1" log --since="$sincefull" --format=%s | grep -ciE 'fix|review' || true)"
+  up=$(git -C "$1" rev-list --count '@{u}..HEAD' 2>/dev/null || echo 0)
+  if [ "${up:-0}" -gt 0 ]; then oldest=$(git -C "$1" log '@{u}..HEAD' --format=%ct | tail -1); age=$(( ( $(date +%s) - oldest ) / 86400 )); echo "$2: waiting on user: $up commit(s) not pushed, oldest $age day(s) (TASK-448)"; else echo "$2: waiting on user: no unpushed commits"; fi
 }
 commit_stats . "this repo"
 meta=$(git log --since="$sincefull" --format=%s | grep -ciE '^handoff|handoff|sync|retro|release|stem-update|process' || true)
