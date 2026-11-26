@@ -319,6 +319,17 @@ Every turn re-reads the whole carried context, so cost grows with session length
 - **Context notice without a handoff request:** the hook notice only proposes; the agent hands off per the reaction rule above (inside an approved batch without asking), otherwise tells the user (in their language) that the context is large and proposes the handoff with a continuation plan (`handoff` skill, step 0).
 
 
+### Batch execution: subsessions per task
+
+Applies to an approved batch whose tasks are independent and the tool can start sessions (Claude desktop app: `start_session`); otherwise the batch session does the tasks one after another. This is the one case where a started session reports back; the detached fresh session of a handoff (see Session length) does not.
+
+- **By size:** `size-S` tasks the batch session does itself (a session costs more than the task). `size-M`: one subsession each, a mid-tier model at medium effort in auto permission mode (the `R-ROUTING` default). `size-L`: one subsession each, the strongest available model (`R-ROUTING`: the size label is the concrete reason to escalate).
+- **Independent means:** no dependency between the tasks, no shared files or state, no shared interface decision (`R-PARALLEL`). Dependent or overlapping tasks run one after another, by the batch session or as a later subsession. Check this before starting and note the result in the batch contract.
+- **Linked, not detached:** start with `start_session` and keep the link (no `detach_session`). Pass `model` only for the batch session's own model or cheaper; a stronger one is set afterwards with `set_session_model`. Set effort and permission mode with `set_session_effort` and `set_session_permission_mode`.
+- **One worktree per writing session** (`R-STATE-COHERENCE`; product edits via `scripts/local/product-worktree.sh`); each subsession commits only its own task's files, task and code together.
+- **Brief:** task ID, "run session start, work the task per `AGENTS.md`", done criteria, and: report to the starter only when the task is finished (commit or PR link, evidence lines, open points); on a question or stop condition ask the user in the session, not the starter.
+- **Reporting:** a subsession's end-of-turn note reaches the batch session; it does not poll and does not react to intermediate notes. The user watches the subsessions for questions. The batch session checks each finished result (diff, task notes, evidence) before calling the task done, then continues with its own S tasks and the dependent tasks.
+
 ### Lightweight batch contract
 
 For a non-trivial batch, record only enough run information to keep the batch intentional:
