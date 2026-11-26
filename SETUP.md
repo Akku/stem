@@ -12,8 +12,15 @@ The ZIP route sometimes loses hidden folders (names starting with a dot are hidd
 ## 1. Understand STEM (≈2 min, do not read everything)
 Read only `AGENTS.md`. Other files are loaded on demand by rule ID. Skills live in `.claude/skills/*/SKILL.md`; Claude Code reads that folder, Codex via the symlink `.agents/skills`, DeutschlandGPT Code via `.deutschlandgpt/skills` (its instruction file `dgpt.md` points to `AGENTS.md`), others read the file directly.
 
-## 1a. User profile (ask first, before step 1b)
-Ask in one short message how the agent should write to the user: "**1** Expert (compact: results, decisions, problems only), **2** Technical (programmer: technical explanations), **3** Non-technical (plain language: what happened, why it matters, terms explained). **Recommend 2 (Technical) as the default** and say so in the message; never recommend 1 or 3 on your own judgment, the user chooses. If unsure or unanswered: 2." Then replace the whole `Communication` block in `AGENTS.md` (the three bullets after `**Communication**`) with the chosen variant below, nothing else added. Keep the last bullet (direct way to test, review or decide) in every variant.
+## 1a. Core questions (ask first; one message, only these three)
+Setup asks only three things, together in one short message, each with a recommended default; unanswered or unsure means the default:
+1. **Project goal** in 3-5 sentences (what, for whom, what "done" looks like). Technical or expert profile: add "name technical constraints if you have any (language, framework, hosting)"; non-technical: do not mention technology.
+2. **How the agent writes to you:** **1** Expert (compact), **2** Technical (default, recommended), **3** Non-technical (plain language). Never recommend 1 or 3 on your own judgment.
+3. **Backlog language:** read the backlog yourself in a web page in your language? Default: no (English). Recommend yes only if the user wants to follow progress.
+
+Everything else gets a default and is changed only when the user asks (tell the user in one sentence at the end of step 8): size **medium**, **Tron off** (and with it no sandbox offer), all agent adapters kept, no GitHub repository, confidential inputs folder `inputs/` (only if the user mentions confidential files), **no glossary**, model asked only if unknown (never guess from a product name), stack chosen by you from the goal (one sentence with the reason; a constraint the user named wins). **Size large** (user says so or the goal clearly needs it): offer the glossary and architecture map in one question; large also turns the design interview and vision on in full depth.
+
+Apply the profile: replace the whole `Communication` block in `AGENTS.md` (the three bullets after `**Communication**`) with the chosen variant below, nothing else added. Keep the last bullet (direct way to test, review or decide) in every variant.
 
 1. Expert: `- Be brief: results, state, decisions the user must make, problems. No reasoning per step unless asked; one sentence per interim update. The user's own instructions override this.` Also set `"outputStyle": "Concise"` in `.claude/settings.json` (Claude Code only; the text covers other tools).
 2. Technical: `- Explain technically what changed, why and what comes next; name files, commands and trade-offs; not every tool call. After each phase (setup step, finished task, session end) summarize it. Ask questions with options and a recommendation. The user's own instructions override this.`
@@ -21,41 +28,25 @@ Ask in one short message how the agent should write to the user: "**1** Expert (
 
 Record the profile under `Project setup` in `docs/agent/NEXT_RETRO.md`. Later change: the user tells the agent, which rewrites the block (and the `outputStyle` entry). Step 3 keeps assuming a non-technical user for installs, whatever the profile.
 
-## 1a-2. Backlog language (ask after 1a, before 1b)
-Ask in one short message: "Do you want to read the backlog yourself (in a web page on your computer)? If yes, I write task titles, descriptions and acceptance criteria in your language instead of English; my working notes and the instruction files stay English. **I recommend yes** if you want to follow the progress." If unsure or unanswered: no. Then replace the `**Language:**` line in `AGENTS.md`:
+
+Apply the language: Then replace the `**Language:**` line in `AGENTS.md`:
 
 1. No: leave the line as it is.
 2. Yes: `**Language:** talk to the user in the user's language; write task and doc titles, descriptions and acceptance criteria in the user's language too (the user reads the backlog). Keep instruction files, rule text, implementation notes and evidence lines in English.`
 
 Record the answer under `Project setup` in `docs/agent/NEXT_RETRO.md`. If yes, remember step 8 item 5 (web view and optional autostart). Later change: the user tells the agent, which rewrites the line.
 
-## 1b. Project size and modules (ask first, before step 2)
-Ask in one short message: "Is the project **small** (a script, a small tool, a few days), **medium** (an app or service with several features, weeks) or **large** (many parts, several people or long-running)? If unsure: medium." After the answer, in a separate message, show the checklist below with the size's preselection, each line with its effect in plain words, and let the user toggle any item. The core is always on and is not offered as a choice: tasks (Backlog.md), commit guard, handoff and session start, `scripts/run.sh`, `AGENTS.md`.
 
-| Module | What it gives you / what it costs | Small | Medium | Large |
-| --- | --- | --- | --- | --- |
-| Vision and milestones (see `R-ROADMAP`) | Written goal and a thin first slice, so work does not drift. Costs ~10 min up front. Small: one-sentence vision and M1 only. | short | on | on |
-| Design interview (`alignment`) | The agent asks one question at a time before building, which avoids rework from misunderstandings. Costs your time: 2-4 questions small, 5-12 medium, 10-20 in rounds large. | on | on | on |
-| UX designer and concept phase | Mockups and screen reviews before UI code. Only useful with a user interface. | off | if UI | if UI |
-| Context warning hook (needs Python) | Warns when a session gets long and costly and suggests a fresh one. Costs a few lines of context only when it fires. | off | on | on |
-| Market analysis skill (`market-analysis`) | Web search for existing alternatives and a one-page build-adapt-use recommendation, so you do not rebuild what exists. Costs a few searches. | off | on | on |
-| Glossary (`docs/GLOSSARY.md`) | One list of domain terms and their code and UI names; worth it with many terms or several languages. | off | many terms only | on |
-| Architecture map (`docs/ARCHITECTURE.md`) | Short module overview that the agent reads instead of the code. Must be kept current. | off | off | on |
-| Tron mode (autonomous run, `tron`) | Lets you hand one approved milestone to unattended agent sessions (`scripts/tron.py`): a gate checks every task, an independent evaluator judges, and you read a report and merge afterwards. Costs real money per run (you set a budget) and needs a sandbox or allowlist; nothing runs until you start it. | off | ask (recommend off until a first milestone is done) | ask |
-| Shell sandbox (macOS/Linux/WSL2) | Limits what commands can touch, which protects your files from agent mistakes; may block installs or network. Recommended for every project; enabled only on your yes. | recommend | recommend | recommend |
+## 1b. Modules (defaults, no questions)
+Do not show a module checklist. Use the medium preselection; the user may ask for any module later ("turn on Tron", "add a glossary"). Core (always on): tasks (Backlog.md), commit guard, handoff and session start, `scripts/run.sh`, `AGENTS.md`.
+- On by default: vision and milestones (`R-ROADMAP`), design interview (`alignment`, used at the first feature, see step 7), context warning hook (needs Python), market analysis skill (offer at the first feature, not now).
+- Off by default: `tron` (`python3 scripts/module.py disable tron`, files archived under `docs/agent/modules/tron/files/`), `ux-designer` (on only if the goal has a user interface: then leave it on), glossary, architecture map (large: offered, see 1a).
+- Context warning off: write `{"context_warning": false}` to `docs/agent/stem-config.json`; **never edit hook files** (`.claude/settings.json` hook entries, `.codex/hooks.json`): Codex binds its trust to them and the host blocks the edit.
+- **Tron and sandbox:** when the user turns Tron on later (the `tron` skill), offer the shell sandbox with it (Claude Code `sandbox.enabled`, macOS/Linux/WSL2; may block installs or network; enabled only on the user's yes). Without Tron setup makes no sandbox recommendation. Tron on: fill `DECISION_FRAME.md` and `INVARIANTS.md` with the user (skill `tron`, step 1).
+- Record the answers and defaults under `Project setup` in `docs/agent/NEXT_RETRO.md` (profile, language, size, modules, agents, model).
 
-What to do with the answers: switch off the modules with a manifest via `python3 scripts/module.py disable <name>` (currently `ux-designer`, `market-analysis`, `tron`; it archives the files under `docs/agent/modules/<name>/files/` instead of deleting them, so they stay findable; see `docs/agent/modules/INDEX.md`). Tron mode off is `module.py disable tron` (the inert `STEM_TRON` lines in `scripts/session-start.sh` stay). Tron mode on: fill `DECISION_FRAME.md` and `INVARIANTS.md` with the user (the `tron` skill, step 1, asks the questions: adjust the default lists, add project-specific invariants), keep the rest; glossary and architecture are only created when on). Switch the context warning off by writing `{"context_warning": false}` to `docs/agent/stem-config.json` (the scripts read it; leave the hook entries in `.claude/settings.json` and `.codex/hooks.json` untouched, Codex binds its trust to that file and may block the edit) (`AGENTS.md` names no optional skills or agents, so nothing points at archived files). Record the chosen size and modules under `Project setup` in `docs/agent/NEXT_RETRO.md` (retro checks which were used).
-
-## 2. Ask the user (one question per message, in this order)
-Ask the topics below one at a time and wait for each answer; propose a default where one is given. Scale to the size from step 1b: small = goal in 1-2 sentences, confidential inputs, GitHub; skip horizons beyond the vertical slice, agents and model questions (use defaults); medium/large = all questions.
-- Project goal in 3–5 sentences (what, for whom, what "done" looks like). Expert and technical profile: add "name technical constraints if you have any (language, framework, hosting)"; non-technical profile: do not mention technology.
-- Agree the four horizons in `R-ROADMAP`: **vertical slice**, **MVP**, **1.0**, then **Moonshot**. Ask for the scope and observable completion boundary of each; propose answers from the goal if needed. Keep distant horizons brief and revisable. Small projects defer horizons beyond the slice.
-- Stack (programming language, framework): not a question. Use a constraint the user named; otherwise choose it yourself once the goal is clear and say so in one sentence with the reason, and that it can still be changed before the first task (non-technical profile: plain language, no list of alternatives).
-- Which agents will be used (Claude Code / Codex / DeutschlandGPT Code)? Keep all adapters regardless (including the `.agents/skills` and `.deutschlandgpt/skills` symlinks and `dgpt.md`); note the answer under `Project setup` in `docs/agent/NEXT_RETRO.md`.
-- Model and effort in use: do not ask when you already know them, from a `MODEL IN USE:` line in the session-start output or from what your agent told you about itself (never guess from a product name; ask only for the part that is missing and that the recommendation at the end needs). Otherwise ask: which model and effort level do you use today (e.g. the largest available one)? Note the answer for the recommendation at the end.
-- Confidential inputs (customer documents, scripts, exports)? Which folder holds them? Default: `inputs/`.
-- Optional glossary of domain terms (term, definition, code name, UI text)? Recommend it only for apps with many domain terms or several languages (e.g. German UI, English code); for small apps say it is not worth it. If yes, create `docs/GLOSSARY.md` from the interview.
-- Create a GitHub repository now? Default: private, none yet.
+## 2. Derive the rest yourself
+No further questions. From the goal propose the four horizons in `R-ROADMAP` (**vertical slice**, **MVP**, **1.0**, **Moonshot**; distant ones brief) and confirm them in one sentence ("I plan it like this; say if you want it different"). Create the confidential folder and the glossary only when step 1a says so.
 
 ## 3. Check and install prerequisites (assume a non-technical user)
 Detect the OS (`uname -s`, or `$OS`/`ver` on Windows). Check: `git --version`, `node --version`, `npm --version`, `backlog --version`, `python3 --version` (optional); optionally `gh --version`.
@@ -89,15 +80,15 @@ backlog config get autoCommit   # must be false: code and task changes are commi
 - Make sure there is one obvious final verification command and fast targeted ones; document them in `AGENTS.md`. Always via `scripts/run.sh <label> <command>`.
 - Claude Code: add the project's verification commands to `permissions.allow` in `.claude/settings.json` as narrow patterns (e.g. `Bash(scripts/run.sh test npm test)`); never a wildcard on `scripts/run.sh` (it runs arbitrary commands).
 - `AGENTS.md` stays minimal: no project overview or architecture prose, only requirements the agent cannot infer from the code (`R-SECURITY`, retro budget check).
-- Recommend (every project size), enable only on the user's yes: the tool's shell sandbox for macOS/Linux/WSL2 (Claude Code `sandbox.enabled`, see its docs; it can block installs or network access; not available on native Windows).
+- Do not edit hook files (see 1b). The sandbox is offered only with Tron (see 1b).
 - Adapt the summary `grep` in `scripts/run.sh` to the test runner's output format, if needed.
 - Establish the independent project version per `R-LIFECYCLE` 1.8: preserve an existing version/source, otherwise initialize 0.1.0 in the native manifest or root `VERSION` fallback, and document that source in the project README. Keep `STEM_VERSION` for the adopted harness version. Do not create a release or tag during initialization.
 - Create `docs/agent/HANDOFF.md` (max 2 KB, format in the `handoff` skill: state with SHA, approvals, next step, open evidence, blockers). `scripts/session-start.sh` prints it.
 - Add stack-specific pitfalls to `docs/agent/PITFALLS.md` only if already known.
-- Do not add further agents, skills, hooks or telemetry now (`R-DECISION`); the modules chosen in step 1b are the only optional pieces. Remove what is off.
+- Do not add further agents, skills, hooks or telemetry now (`R-DECISION`); the modules kept in step 1b are the only optional pieces. Remove what is off.
 
 ## 7. First backlog
-If the goal is still vague, run the `alignment` skill (stoppable) with the depth from step 1b (small 2-4, medium 5-12, large 10-20 questions in rounds) before writing the vision.
+Setup itself runs no design interview. The `alignment` skill (stoppable; 2-4 questions small, 5-12 medium, 10-20 in rounds large) belongs to the first feature or task: tell the user once that it runs there if something is unclear. Only if the goal is too vague to write a vision, ask the minimum questions needed.
 If the direction is unclear or the project has a user interface, follow `R-CONCEPT` first (concept phase); the `ux-designer` agent prepares the mockup rounds. Also check whether existing skill collections offer skills that fit the stack.
 Follow `R-ROADMAP`: write the vision (audience, core value, non-goals, moonshot ideas) as a Backlog.md doc (`backlog doc create "Vision"`, check `--help`), then create the milestones `backlog milestone add "M1 Vertical slice" -d "<goal + exit criterion>"`, `M2 MVP`, `M3 1.0`, and `M4 Moonshot` (later horizons: descriptions only). For small projects create only M1 initially. Existing projects adopt the model through the user-reviewed migration in `R-ROADMAP`, without automatic renumbering.
 **Optional technical analysis** (after the milestones, before the M1 tasks): offer it in one question; for medium and large projects recommend doing it, for small ones recommend skipping it; skipping is a fine answer. If accepted, analyse the technical side of the goal yourself from the vision, milestones and stack (for example stack fit, architecture and modules, technical risks, tests and CI, data and security; pick what matters for this project) and ask the user only what you cannot decide, one question per message with options and a recommendation. Stop when no open technical question would change the M1 tasks, or when the user says stop; then list your assumptions. Record each technical decision as a decision record (`backlog decision create`, `R-DECISION`). Propose the resulting work as one list (title, size label `size-S|M|L`, milestone) and create the tasks only after the user agrees; the M1 tasks below include them.
@@ -113,7 +104,7 @@ Finish all project files first, then commit once, so the setup commit is the com
 2. Set `Setup status:` in `AGENTS.md` to `DONE` and delete the line `If TODO: follow ...` and the HTML comment after it; delete `SETUP.md` (its description would otherwise cost context in every session).
 3. Commit "Set up agentic harness"; `git status` must be clean afterwards. Optionally push if the user agreed to a remote.
 4. Tell the user what exists, the milestones, which commands to use and which task comes first (~12 lines with a one-line explanation per item). Mention that the first retro (after the first milestone) revisits the way of working, including how much the agent explains and whether links and explanations were helpful.
-5. Only if the user wants to read the backlog (step 1a-2): pick a free port (default 6420), add the start command `backlog browser -p <port>` (opens `http://127.0.0.1:<port>`, this computer only; stop with Ctrl+C) to the project README before the commit, then open the web view with the user and show where tasks are. Then offer autostart (ask, change nothing before the yes, say how to undo it, record the result in the README):
+5. Only if the user wants to read the backlog (step 1a): pick a free port (default 6420), add the start command `backlog browser -p <port>` (opens `http://127.0.0.1:<port>`, this computer only; stop with Ctrl+C) to the project README before the commit, then open the web view with the user and show where tasks are. Then offer autostart (ask, change nothing before the yes, say how to undo it, record the result in the README):
    - macOS: a launchd user agent `~/Library/LaunchAgents/<project>.backlog.plist` (outside the project folder) that runs `backlog browser --no-open --non-interactive -p <port>` in the project folder at login. Undo: `launchctl bootout gui/$(id -u) <plist>`, delete the file.
    - Windows: a `SessionStart` hook in the project `.claude/settings.json` that starts the same command in the background unless the port already answers (Claude Code only; untested). Undo: delete the hook entry.
    - Other systems or "no": README start command only.
