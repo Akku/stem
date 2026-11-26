@@ -450,7 +450,7 @@ class TronMode(Sandbox):
             self.assertTrue((copy / "docs/agent/modules/tron/files" / rel).is_file(), rel)
         ag = copy / "AGENTS.md"
         ag.write_text(ag.read_text().replace("`tron` (Tron mode), ", ""))
-        skip = ("CHANGELOG.md", "SETUP.md", "README.md", "README.de.md", "scripts/session-start.sh")
+        skip = ("CHANGELOG.md", "SETUP.md", "README.md", "README.de.md", "docs/TRON-GUIDE.md", "docs/TRON-GUIDE.de.md", "scripts/session-start.sh")  # user docs name Tron like the README
         needles = list(gone) + ["R-TRON"]
         hits = []
         for f in copy.rglob("*"):
