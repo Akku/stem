@@ -1230,6 +1230,9 @@ class Tron(unittest.TestCase):
         self.tron("run", "--milestone", "m-1", "--max-tasks", "1")
         brief = (self.td / "brief_copy.txt").read_text()
         self.assertIn("## Acceptance platform", brief); self.assertIn("Only this platform counts", brief); self.assertIn("WordPress plugin", brief)
+        self.assertIn("platform of every 'AC#<n>: E2' line", brief)  # TASK-437 AC#2
+        wp = [c["prompt"] for c in self.calls() if c.get("task") == "TASK-1"][0]  # TASK-437 AC#1
+        self.assertIn("Acceptance platform: WordPress plugin", wp); self.assertIn("at most 'AC#<n>: E1", wp)
         sys.path.insert(0, str(ROOT / "scripts"))
         import tron
         self.assertIn("## Acceptance platform", tron.sweep_brief(self.proj, "m-1"))
@@ -1861,6 +1864,15 @@ class Tron(unittest.TestCase):
         self.assertLess(i_none, i_p3); self.assertLess(i_none, i_fr)
         self.assertIn("needs your ruling", rep)
         self.assertLess(rep.index("CSV is fine"), i_p3); self.assertLess(rep.index("no basis at all  [no basis named]"), i_p3)
+
+    def test_identical_assumption_of_one_task_is_listed_and_asked_once(self):  # TASK-406 AC#2
+        self.sample_journal()
+        f = self.proj / "backlog/tasks/task-1 - x.md"
+        f.write_text(f.read_text().replace("Assumption: CSV is fine\n", "Assumption: CSV is fine (basis: none)\nAssumption: CSV is fine (basis: none)\n"))
+        self.tron("report", "--run-id", "s1")
+        rep = (self.proj / "docs/agent/tron/REPORT-s1.md").read_text()
+        self.assertEqual(rep.count("Assumption: CSV is fine"), 2)  # once in 'Assumptions made', once as V1 in the question
+        self.assertIn("Assumptions without a basis (1)", rep)
 
     def test_assumption_without_basis_is_a_journal_warning(self):
         self.behavior({"TASK-1": "assume_nobasis"})

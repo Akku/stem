@@ -274,6 +274,8 @@ def run_session(root, tron, role, task_id, run_id, milestone, prompt=None):
             prompt += predecided_prompt(root, milestone, task_id)
     if role == "worker" and re.fullmatch(r"TASK-\d+", task_id):  # first session and repairs alike
         prompt += decision_prompt(root)
+        plat = scenario_platform(scenario_text(root, tron, milestone)) if milestone else None
+        prompt += worker_platform_note(plat) if plat else ""
     cmd = fill(command_for(tron, role), {"prompt": prompt, "session_id": session_id, "task_id": task_id,
                                          "run_id": run_id, "milestone": milestone})
     env = dict(os.environ, STEM_TRON="1", STEM_TRON_RUN=run_id, STEM_TRON_TASK=task_id, STEM_TRON_ROLE=role)
@@ -676,7 +678,14 @@ def scenario_platform(text):
 def platform_note(platform):
     return (f"Acceptance platform: {platform} (the scenario's 'Platform:' line, approved before the run). Only this platform counts: "
             f"exercise every AC and scenario step on {platform}. A flow that works only on another platform does not meet the AC: "
-            f"report it as a defect naming {platform}, not as a pass.")
+            f"report it as a defect naming {platform}, not as a pass. Check the platform of every 'AC#<n>: E2' line in the task notes: "
+            f"an E2 line whose check ran on another platform counts at most as E1 (TASK-437); report it as a finding.")
+
+
+def worker_platform_note(platform):
+    """Worker prompt addition (TASK-437): an E2 line must come from a run on the scenario's platform."""
+    return (f"\n\nAcceptance platform: {platform}. An 'AC#<n>: E2 <pointer>' line must name a check that ran on {platform} (say so in the line); "
+            f"a test of another platform (e.g. a local stand-in app) is at most 'AC#<n>: E1 <why>' and does not pass the gate.")
 
 
 SCENARIO_CONFLICT = "acceptance scenario"  # prefix of an assumption flag's conflict that a repair session can fix (TASK-382)
