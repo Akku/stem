@@ -1330,12 +1330,41 @@ class RetroTopics(Sandbox):
         _, got = self.topics_of("--retro", "r3", "--fill", "2", now="2026-11-01")
         self.assertEqual(got, [("vis", "signal"), ("d", "rotation")])  # signal first, then the never-given topic by rotation
 
+    def test_rotating_open_question_is_an_extra_slot_and_rotates(self):
+        rot = [{"id": f"q{i}", "kind": "rotating", "title": f"Q{i}", "ask": f"ask{i}"} for i in (1, 2)]
+        self.catalog([t for t in self.topics if t["id"] in ("once-a", "rep-b")] + rot)
+        _, got = self.topics_of("--retro", "r1", "--fill", "2")
+        self.assertEqual(got, [("once-a", "once"), ("q1", "open-question")])  # extra slot on top of the fills (repeatables wait until no once topic is left)
+        _, got = self.topics_of("--retro", "r2", "--fill", "0", "--max", "0", now="2026-10-31")
+        self.assertEqual(got, [("q2", "open-question")])  # not capped; the one given longest ago (never) comes next
+        _, got = self.topics_of("--retro", "r3", "--fill", "0", now="2026-11-01")
+        self.assertEqual(got, [("q1", "open-question")])  # wraps around
+        _, again = self.topics_of("--retro", "r3", "--fill", "0", now="2026-11-02")
+        self.assertEqual(again, [("q1", "given-before")])  # resumable
+
+    def test_min_retro_gates_a_topic_until_that_retro(self):
+        self.catalog([{"id": "late", "kind": "repeatable", "title": "Late", "ask": "q", "min_retro": 3},
+                      {"id": "rep-b", "kind": "repeatable", "title": "Rep B", "ask": "qb"}], cooldown=None)
+        for n, label in ((1, "r1"), (2, "r2")):
+            _, got = self.topics_of("--retro", label, "--fill", "1", now=f"2026-10-{20 + n}")
+            self.assertNotIn("late", [i for i, _ in got])  # retros 1 and 2: gated
+        _, got = self.topics_of("--retro", "r3", "--fill", "2", now="2026-10-25")
+        self.assertIn(("late", "rotation"), got)  # retro 3: offered (never given, so first by rotation)
+
+    def test_min_retro_must_be_an_integer(self):
+        self.catalog([{"id": "bad", "kind": "once", "title": "B", "ask": "q", "min_retro": "3"}])
+        r, _ = self.topics_of("--dry-run")
+        self.assertEqual(r.returncode, 2)
+
     def test_shipped_catalog_is_valid_and_has_reasons(self):
         shutil.copy(ROOT / "docs/agent/retro-topics.json", self.tmp / "docs/agent/retro-topics.json")
         r, got = self.topics_of("--dry-run")
         self.assertEqual(r.returncode, 0, r.stderr)
         data = json.loads((ROOT / "docs/agent/retro-topics.json").read_text())["topics"]
         self.assertGreaterEqual(len(data), 10)
+        by = {t["id"]: t for t in data}
+        self.assertEqual(by["test-methodology"]["min_retro"], 3)
+        self.assertGreaterEqual(len([t for t in data if t["kind"] == "rotating"]), 6)
         self.assertTrue(all(t.get("why") for t in data), "every threshold needs a documented reason")
 
 

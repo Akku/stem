@@ -6,13 +6,16 @@ Catalog: docs/agent/retro-topics.json (STEM-owned) + docs/agent/retro-topics.loc
 Selection, at most --max topics (default 2) in this rank order: (1) due triggers, (2) topics whose signal fired, both strongest
 first; then fill up to --fill (default 2) with (3) never-given `once` topics and, only when no such topic is left, (4) `repeatable`
 topics, longest ago first.
+Kind `rotating` (open questions, TASK-439): never part of the ranking above; after it, exactly one rotating topic is added on top
+(never counted against --fill or --max), the one given longest ago (never given first, then catalog order).
+Optional `min_retro: N` on any topic: not offered before the N-th retro (retro number = recorded retros + 1).
 Topics cut by the cap are named but not recorded, so they can return in the next retro.
 A topic given in the previous retro is skipped for signals (`cooldown_retros`, default 3: a persistent signal returns at most every 4th retro). Re-running with the same --retro label repeats
 the earlier answer (resumable). --dry-run records nothing. Exit 2: unusable catalog or state."""
 import argparse, datetime as dt, json, pathlib, re, subprocess, sys
 
 CATALOG, LOCAL, STATE = "docs/agent/retro-topics.json", "docs/agent/retro-topics.local.json", "docs/agent/retro-topics-state.json"
-KINDS = {"once", "repeatable"}
+KINDS = {"once", "repeatable", "rotating"}
 
 
 def die(msg):
@@ -46,6 +49,8 @@ def load_catalog(root):
                 continue
             if t.get("kind") not in KINDS:
                 die(f"{rel}: topic {t['id']}: kind must be one of {sorted(KINDS)}")
+            if t.get("min_retro") is not None and not isinstance(t["min_retro"], int):
+                die(f"{rel}: topic {t['id']}: min_retro must be an integer")
             if not t.get("title") or not t.get("ask"):
                 die(f"{rel}: topic {t['id']}: title and ask are required")
             topics[t["id"]] = t
@@ -233,8 +238,14 @@ def evaluate(c, t):
 
 def select(c, topics, fill, cap):
     cooldown_hit = lambda t: any(t["id"] in r["topics"] for r in c.state["runs"][-t.get("cooldown_retros", 3):])
-    due, signal, once, rep = [], [], [], []
+    due, signal, once, rep, rotating = [], [], [], [], []
+    retro_no = len(c.state["runs"]) + 1
     for t in topics:
+        if t.get("min_retro") and retro_no < t["min_retro"]:
+            continue
+        if t["kind"] == "rotating":
+            rotating.append((c.last_run(t["id"]) or dt.date.min, len(rotating), t))
+            continue
         ev = evaluate(c, t)
         last = c.last_run(t["id"])
         if ev and ev[1] and ev[0] == "trigger" and (last is None or t["kind"] == "repeatable") and not cooldown_hit(t):
@@ -249,7 +260,11 @@ def select(c, topics, fill, cap):
     picked, held = ranked[:cap], [t["id"] for _, t, _, _ in ranked[cap:]]
     for pool in (once, [] if once else sorted(rep, key=lambda x: x[0])):  # repeatable topics return only after every once topic was given
         picked += pool[:max(min(fill, cap) - len(picked), 0)]
-    return [(t, why, reason) for _, t, why, reason in picked], held
+    out = [(t, why, reason) for _, t, why, reason in picked]
+    if rotating:
+        last, _, t = min(rotating, key=lambda x: x[:2])
+        out.append((t, "open-question", "open question, extra slot: " + ("never given" if last == dt.date.min else f"last given {last}")))
+    return out, held
 
 
 def sizes_for(c, topics):

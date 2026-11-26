@@ -12,7 +12,9 @@ Besides measured data, task learnings and your own input, each retro gets a few 
 1. Topics whose **trigger** is due or whose **signal** fired come first, strongest first (at most 2).
 2. Remaining slots (up to 2) are filled with `once` topics never asked, then `repeatable` topics asked longest ago.
 3. A topic asked in the previous retro is skipped for signals for 3 retros, so one lasting signal does not repeat every time.
-4. Each picked topic ends as a decision, a task, or a dropped item with a reason.
+4. On top of that, **one open question** is added every retro (kind `rotating`, `open-*` ids): the one asked longest ago. It does not count against the 2 slots. Add your own in `retro-topics.local.json` with `"kind": "rotating"`.
+5. A topic with `min_retro: N` is not offered before the N-th retro.
+6. Each picked topic ends as a decision, a task, or a dropped item with a reason.
 
 ## The questions
 
@@ -28,6 +30,8 @@ Besides measured data, task learnings and your own input, each retro gets a few 
 | `vision` | Is there a current vision? Do the milestones still describe the next steps and have ready tasks? | vision older than 60 days, or a milestone without To Do tasks |
 | `llm-structure` | Where did an agent load too much, miss a rule or search too long? Which file should be split, indexed or shortened? | key instruction files grew 20 % |
 | `harness-features` | Which new hooks, settings or skill features of Claude Code or Codex could replace a written rule with a machine check? | CLI version changed, or 30 days |
+| `test-methodology` | Which failures got through although tests were green, and which test kind (integration, end-to-end, behaviour, contract, property-based, snapshot, mutation) would have caught them? | from retro 3 on, by rotation |
+| `open-*` (8 questions) | Open questions such as "What could we change that we have not talked about yet?" | one every retro, rotating |
 | `determinism` | Which rules were skipped or depend on judgment although a script, hook or test could enforce them? | 2 Learning notes about skipped rules, or 45 days |
 
 The authoritative wording and thresholds are in the catalog; each topic also carries a `why` explaining its threshold. If this table and the catalog disagree, the catalog wins.
