@@ -5,7 +5,7 @@ description: Run a short process retrospective for the agentic harness - turn me
 
 # Retro
 
-Rules: `R-RETRO`, `R-LEARNING` (`docs/agent/OPERATING_MODEL.md`), `R-MEASUREMENT` (`docs/agent/ADVANCED.md`), loaded by ID (AGENTS.md). Read no other files in full.
+Rules: `R-RETRO`, `R-LEARNING` (`docs/agent/OPERATING_MODEL.md`), `R-MEASUREMENT` (`docs/agent/ADVANCED.md`), loaded by ID (AGENTS.md). Read no other files in full except the ones this skill names.
 
 **Stage.** *Light* (default, e.g. after "RETRO DUE" or recurring friction): the sections up to *Close*. *Full*: also read `full-stage.md` (next to this file) and do its sections, when a milestone was completed, a STEM update was adopted, about 20 or more tasks have passed since the last retro, or the user asks. No retro notes yet means the first retro: also do "First retro". Name the stage first.
 
