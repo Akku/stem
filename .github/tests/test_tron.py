@@ -1854,6 +1854,26 @@ class Tron(unittest.TestCase):
         self.assertIn("Basis: none, already ruled by P-7 (info)", rep)
         self.assertIn("## Follow-ups (info; nothing to answer now)\n\n- Load real customer data later (backlog/drafts/draft-1 - f.md)", rep)
 
+    def test_report_shows_the_accepted_e2_line_block_scalar_titles_and_no_resume_for_split_out(self):  # TASK-411
+        self.sample_journal()
+        f = self.proj / "backlog/tasks/task-1 - x.md"
+        f.write_text(f.read_text().replace("AC#1: E2 test_a passes\n", "AC#1: E1 not run yet\nAC#1: E2 test_a passes\n"))
+        jp = self.proj / "docs/agent/tron/run-s1.json"
+        j = json.loads(jp.read_text()); j["split_out"] = [{"task": "TASK-2", "new": "TASK-9", "acs": ["x"], "question": "which?"}]
+        jp.write_text(json.dumps(j))
+        d = self.proj / "backlog/drafts"; d.mkdir(parents=True, exist_ok=True)
+        (d / "draft-1 - q.md").write_text("---\nid: DRAFT-1\ntitle: >-\n  Question from the Doctor about TASK-2:\n  which format?\nstatus: Draft\nlabels:\n  - tron-doctor\n---\n")
+        (d / "draft-2 - r.md").write_text("---\nid: DRAFT-2\ntitle: 'Question about TASK-1: the worker blocked it'\nstatus: Draft\n---\n")
+        git(self.proj, "add", "-A"); git(self.proj, "commit", "-qm", "run work")
+        self.tron("report", "--run-id", "s1")
+        rep = (self.proj / "docs/agent/tron/REPORT-s1.md").read_text()
+        self.assertIn("evidence: E2 test_a passes)", rep); self.assertNotIn("evidence: E1 not run", rep)
+        block = rep.split("## Questions for you")[1].split("\n## ")[0]
+        self.assertNotIn(">-", block)
+        self.assertIn("Question from the Doctor about TASK-2: which format? (backlog/drafts/draft-1 - q.md) a) answer it when you pick up TASK-9", block)
+        self.assertNotIn("which format? (backlog/drafts/draft-1 - q.md) a) answer it as the draft proposes", block)
+        self.assertIn("Question about TASK-1: the worker blocked it (backlog/drafts/draft-2 - r.md) a) answer it as the draft proposes", block)
+
     def test_report_groups_assumptions_by_basis_none_first(self):
         self.sample_journal()
         f = self.proj / "backlog/tasks/task-1 - x.md"

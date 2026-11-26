@@ -796,6 +796,23 @@ def ruled_by(line, precs):
 FOLLOW_UP = re.compile(r"^\s*-\s*(?:tron-)?follow-?up\s*$", re.M | re.I)
 
 
+def draft_title(text):
+    """Title of a draft's front matter; a YAML block scalar ('>-', '|', continuation lines) is joined into one line (TASK-411)."""
+    m = re.search(r"^title:[ \t]*(.*)$", text.split("\n---", 1)[0] if text.startswith("---") else text, re.M)
+    if not m:
+        return None
+    first, rest = m.group(1).strip(), text[m.end():].split("\n")
+    lines = []
+    for l in rest[1:] if rest and rest[0] == "" else rest:
+        if l.startswith((" ", "\t")) and l.strip():
+            lines.append(l.strip())
+        else:
+            break
+    if re.fullmatch(r"[>|][+-]?", first) or not first:
+        return " ".join(lines) or None
+    return " ".join([first] + lines).strip(chr(39) + chr(34)) or None
+
+
 def run_drafts(root, journal):
     """[(rel, title, text)] of the drafts this run added, in number order."""
     d, out = root / "backlog/drafts", []
@@ -806,8 +823,7 @@ def run_drafts(root, journal):
         p = root / rel
         if p.is_file():
             text = p.read_text()
-            title = re.search(r"^title: *(.+?) *$", text, re.M)
-            out.append((rel, title.group(1).strip(chr(39) + chr(34)) if title else rel, text))
+            out.append((rel, draft_title(text) or rel, text))
     return out
 
 
@@ -1716,6 +1732,9 @@ def questions_block(root, journal, al, precs=()):
             continue
         if re.search(r"^\s*-\s*tron-risk\s*$", text, re.M):
             q.append(f"{title} ({rel}) a) accept the risk b) create a task for it. Recommendation: b because it touches a 'Must come back' line of the frame")
+        elif (so := next((x for x in journal.get("split_out", []) if x["task"] in title), None)):
+            q.append(f"{title} ({rel}) a) answer it when you pick up {so['new']}; nothing to run again, the rest of {so['task']} is built b) drop it. "
+                     "Recommendation: a because the new task carries the decision")  # TASK-411: no resume option
         else:
             again = ("run again (this run is complete: a new run on the same branch picks the released task up)" if journal.get("complete")
                      else "run again (it resumes)")  # TASK-429: a complete run is never resumed
@@ -1783,7 +1802,7 @@ def build_report(root, journal, tron):
                 shas = ["(range not in this checkout)"]
             out.append(f"- commits: {', '.join(shas) or '(none)'}" + (f"; undo with `{undo_command(i, rg[0], rg[1], [x['new'] for x in journal.get('split_out', []) if x.get('task') == i])}`" if shas else ""))
         for ticked, n, text in acs:
-            ev = re.search(rf"^\s*AC#{n}: (E\d.*)$", notes, re.M)
+            ev = re.search(rf"^\s*AC#{n}: (E2\b.*)$", notes, re.M) or re.search(rf"^\s*AC#{n}: (E\d.*)$", notes, re.M)  # TASK-411: the line the gate accepted
             out.append(f"- [{'x' if ticked else ' '}] AC#{n} {text}" + (f" (evidence: {ev.group(1)[:160]})" if ev else " (no evidence line)"))
     if not acc:
         out.append("(none)")
