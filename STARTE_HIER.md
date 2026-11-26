@@ -42,6 +42,7 @@ STEM ist ein Startpunkt für agentische Entwicklung mit Git und Backlog.md. Du g
 - Hat ein Meilenstein keine Tasks mehr, schlägt der Agent die nächsten vor; du entscheidest.
 - Sagt der Agent, dass der Kontext groß ist, hat er das Handoff geschrieben; öffne eine neue Sitzung und sage „Mach mit dem Handoff weiter“ (die neue Sitzung startet informiert). Optional: Eine Statuszeile kann in Claude Code die Kontextnutzung anzeigen (siehe deren Dokumentation).
 - Eine Sitzung endet mit dem Skill `handoff`; die nächste beginnt mit `docs/agent/HANDOFF.md`.
+- Optional, Vorschau: Agenten bauen einen vorbereiteten Meilenstein unbeaufsichtigt, z. B. über Nacht in einer Sandbox (Tron-Modus, standardmäßig aus): siehe [Tron-Anleitung](docs/TRON-GUIDE.de.md).
 - Nach dem ersten Meilenstein: Retro (Skill `retro`). Sie prüft auch das Harness selbst, inklusive allem, was dafür in `docs/agent/NEXT_RETRO.md` gesammelt ist.
 - Keine Zugangsdaten ins Repository.
 

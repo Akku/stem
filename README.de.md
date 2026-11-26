@@ -91,7 +91,7 @@ scripts/sandbox.sh start meinprojekt    # später fortsetzen; außerdem: stop, e
 
 ## Optional: Tron-Modus (ein Meilenstein, unbeaufsichtigt gebaut)
 
-Für einen freigegebenen Meilenstein lässt du Agenten-Sitzungen ohne dich arbeiten, in drei Phasen. **Davor:** der Skill `tron` bereitet den Lauf mit dir vor (Entscheidungsrahmen, Invarianten, Abnahmeszenario, Budget); `python3 scripts/tron.py check --milestone <id>` listet, was noch fehlt. **Währenddessen:** `scripts/tron.py run` arbeitet Aufgabe für Aufgabe auf einem eigenen Branch, prüft jedes Ergebnis mit einem Gate und einem unabhängigen Evaluator, hält deine Limits ein und pusht, taggt oder mergt nie. **Danach:** du liest den Bericht in `docs/agent/tron/`, beantwortest die Fragen blockierter Aufgaben und mergst selbst. Ein Lauf kostet echtes Geld; im Sandbox-Container ausführen. Auswahl beim Setup (Modultabelle), für kleine Projekte standardmäßig aus.
+Für einen freigegebenen Meilenstein lässt du Agenten-Sitzungen ohne dich arbeiten, in drei Phasen. **Davor:** der Skill `tron` bereitet den Lauf mit dir vor (Entscheidungsrahmen, Invarianten, Abnahmeszenario, Budget); `python3 scripts/tron.py check --milestone <id>` listet, was noch fehlt. **Währenddessen:** `scripts/tron.py run` arbeitet Aufgabe für Aufgabe auf einem eigenen Branch, prüft jedes Ergebnis mit einem Gate und einem unabhängigen Evaluator, hält deine Limits ein und pusht, taggt oder mergt nie. **Danach:** du liest den Bericht in `docs/agent/tron/`, beantwortest die Fragen blockierter Aufgaben und mergst selbst. Ein Lauf kostet echtes Geld; im Sandbox-Container ausführen. Standardmäßig aus; bitte den Agenten, es einzuschalten. Vorbereiten, starten, beobachten, Bericht lesen: [Tron-Anleitung](docs/TRON-GUIDE.de.md). **Vorschau:** der dritte echte Lauf endete vollständig (3 von 3 Aufgaben angenommen, 1,16 USD pro Aufgabe); Zahlen und Grenzen in der Anleitung.
 
 ## Aktuell bleiben
 
@@ -153,6 +153,7 @@ Stand laut eigener Dokumentation der Projekte, November 2026; diese Projekte än
 | `docs/agent/model-classes.json` | Welche Modellfamilien beim Sitzungsstart die kürzeren `lean`-Hinweise bekommen; jedes andere Modell bekommt die vollen Regeln |
 | `docs/agent/ADVANCED.md` | Selten gebrauchte Regeln (Parallelität, Messung, Routing, lokale Modelle) |
 | `docs/agent/TRON.md` | Tron-Modus-Regel `R-TRON` (Modul `tron`) |
+| `docs/TRON-GUIDE.md` / `docs/TRON-GUIDE.de.md` | Anleitung zum Tron-Modus (EN/DE) |
 | `docs/agent/EXPERIMENTS.md` | Hypothesen, Messgrößen, Basislinien und Evidenzgrade für dauerhaft kostenwirksame Regeln |
 | `docs/agent/NEXT_RETRO.md` | Alles für die nächste Retro an einem Ort: fällige Prüfungen, Beobachtungen, Punkte für die erste Retro |
 | `docs/agent/PITFALLS.md` | Wachsende Liste technischer Stolperfallen |
