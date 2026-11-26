@@ -3943,7 +3943,8 @@ def check_milestone(root, milestone, cfg_path=None, smoke=True, uid=None):
         warns.append("tron.retro is on but tron.retro_cmd is missing: the analyst falls back to worker_cmd, which may edit files")
     prot_lits = sorted(x for x in protected_paths(root, dict(tron, verify_cmd=tron.get("verify_cmd") or [])) if "*" not in x) + ["scripts/hooks/", "scripts/githooks/"]
     for tid in ids:
-        named = [x for x in prot_lits if x in files[tid].read_text()]
+        acted = re.sub(r"<!-- DOD:BEGIN -->.*?<!-- DOD:END -->", "", files[tid].read_text(), flags=re.S)  # DoD template lines are not acted on
+        named = [x for x in prot_lits if x in acted]
         if named and parse_task(files[tid].read_text())[0] != "Done":
             warns.append(f"{tid} names protected paths ({', '.join(named[:3])}): a session that changes them stops the run; do it by hand or take the task out")
     if tron.get("retro_apply") == "on" and tron.get("retro") != "on":

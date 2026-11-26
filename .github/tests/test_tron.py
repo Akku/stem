@@ -2585,6 +2585,15 @@ class Check(unittest.TestCase):
         self.task("TASK-2", acs="- [ ] #1 scripts/githooks/pre-commit refuses x\n"); self.commit()
         self.assertIn("TASK-2 names protected paths", self.check().stdout)
 
+    def test_check_ignores_protected_path_in_the_dod_but_warns_in_description(self):  # TASK-401 AC#1, AC#2
+        self.task("TASK-2"); f = next((self.proj / "backlog/tasks").glob("task-2 - *"))
+        dod = "<!-- DOD:BEGIN -->\n- [ ] #1 verification ran via scripts/run.sh\n<!-- DOD:END -->\n"
+        f.write_text(f.read_text() + dod); self.commit()
+        self.assertNotIn("TASK-2 names protected paths", self.check().stdout)
+        self.task("TASK-3", acs="- [ ] #1 scripts/githooks/pre-commit refuses x\n"); g = next((self.proj / "backlog/tasks").glob("task-3 - *"))
+        g.write_text(g.read_text() + dod); self.commit()
+        self.assertIn("TASK-3 names protected paths", self.check().stdout)
+
     def test_check_warns_about_an_evaluator_turn_limit(self):  # TASK-403 AC#2
         self.cfg(evaluator="milestone", evaluator_cmd=["claude", "-p", "{prompt}", "--max-turns", "40"]); self.commit()
         self.assertIn("evaluator command carries --max-turns", self.check().stdout)
