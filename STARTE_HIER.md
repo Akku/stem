@@ -2,7 +2,7 @@
 
 *STEM – An Agile Agentic Coding Process Harness Layer*
 
-**Version 1.20.1** · 🇬🇧 **English version: [START_HERE.md](START_HERE.md)**
+**Version 2.0.0** · 🇬🇧 **English version: [START_HERE.md](START_HERE.md)**
 
 STEM ist ein Startpunkt für agentische Entwicklung mit Git und Backlog.md. Du gibst dem Agenten dein Projektziel; er installiert, was fehlt, richtet die Werkzeuge ein, passt die Regeln an dein Ziel an und arbeitet danach Task für Task. Im Standardweg installiert und erklärt der Agent die Werkzeuge für dich.
 

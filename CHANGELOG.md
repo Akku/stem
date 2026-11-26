@@ -2,7 +2,7 @@
 
 Newest first. Projects read the entries newer than their `STEM_VERSION` (see `stem-update` skill). Each entry: what changed and who benefits; renames and removals get a `Migration:` line (what to rename or delete) that `stem-update` carries out.
 
-## Unreleased
+## 2.0.0
 - **Major release: Tron mode (preview).** 2.0.0 is the first release with Tron mode, an optional module that builds one prepared milestone unattended (entries below). User guide: `docs/TRON-GUIDE.md` (EN) and `docs/TRON-GUIDE.de.md` (DE), linked from the README and START_HERE/STARTE_HIER. Projects that do not want Tron need nothing beyond the other migrations.
 - **Setup asks three things only:** `SETUP.md` step 1a asks goal, writing profile and backlog language in one message, each with a default; size medium, modules, horizons and stack are derived without questions (Tron off, so no sandbox offer; the sandbox is offered when Tron is turned on); setup never edits hook files and runs no design interview (`alignment` belongs to the first feature). Benefits: a new project is ready after one answer. Migration: none (`SETUP.md` is deleted after setup).
 - **Plan check for size-M/L tasks:** `R-LIFECYCLE` asks a `size-M` or `size-L` plan for one more line: the adjacent states of the changed behaviour (resume, complete, re-offer, new run) and the defect class with the other places that could carry the same defect. Benefits: fewer follow-up tasks for the same defect. Migration: copy `docs/agent/OPERATING_MODEL.md`.

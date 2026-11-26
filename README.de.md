@@ -4,7 +4,7 @@
 
 **An Agile Agentic Coding Process Harness Layer**
 
-**Version 1.20.1** · ![License](https://img.shields.io/badge/license-MIT-green) ![Claude Code](https://img.shields.io/badge/Claude%20Code-getestet-green) ![Codex](https://img.shields.io/badge/Codex-getestet-green)
+**Version 2.0.0** · ![License](https://img.shields.io/badge/license-MIT-green) ![Claude Code](https://img.shields.io/badge/Claude%20Code-getestet-green) ![Codex](https://img.shields.io/badge/Codex-getestet-green)
 
 [🇬🇧 English](README.md) · [Warum](#warum-stem) · [Evolution](#wie-stem-sich-weiterentwickelt) · [Für dich?](#ist-stem-etwas-für-dich) · [Loslegen](#loslegen) · [Inhalt](#inhalt)
 
