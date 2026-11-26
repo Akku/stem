@@ -1759,5 +1759,46 @@ class ModuleTests(Sandbox):
             self.assertIn("- %s: " % man["name"], (ROOT / "docs/agent/modules/INDEX.md").read_text())
 
 
+class MemoryReport(Sandbox):
+    def mem(self, name, desc, links=""):
+        (self.tmp / f"{name}.md").write_text(f"---\nname: {name}\ndescription: {desc}\n---\nbody {links}\n")
+
+    def report(self, *extra, d=None):
+        return run([sys.executable, str(SCRIPTS / "memory-report.py"), "--dir", str(d or self.tmp), *extra], self.tmp)
+
+    def test_cost_and_candidates_without_printing_memory_text(self):
+        self.mem("alpha", "Ask questions as plain text with options", "[[missing]]")
+        self.mem("beta", "Ask questions as plain text with options and a recommendation")
+        self.mem("gamma", "Unrelated topic about retros", "[[alpha]]")
+        (self.tmp / "MEMORY.md").write_text("- [Alpha](alpha.md) - x\n- [Gone](gone.md) - y\n")
+        r = self.report(); out = r.stdout
+        self.assertEqual(r.returncode, 0)
+        self.assertIn("3 memories", out)
+        self.assertIn("dangling: alpha: [[missing]]", out)
+        self.assertIn("orphan: beta: not listed", out); self.assertIn("orphan: gamma", out)
+        self.assertIn("orphan: gone.md: index line without a file", out)
+        self.assertIn("similar: alpha / beta", out)
+        self.assertNotIn("dangling: gamma", out)
+        self.assertNotIn("recommendation", out)
+
+    def test_stale_by_age_and_missing_folder_names_scope(self):
+        self.mem("alpha", "x"); (self.tmp / "MEMORY.md").write_text("- [A](alpha.md)\n")
+        self.assertIn("stale: alpha", self.report("--now", "2099-01-01").stdout)
+        self.assertNotIn("stale:", self.report().stdout)
+        r = self.report(d=self.tmp / "nope")
+        self.assertEqual(r.returncode, 2); self.assertIn("Claude Code only", r.stderr)
+
+    def test_default_dir_maps_project_path_and_catalog_topic_names_scope(self):
+        home = self.tmp / "home"; proj = self.tmp / "my.proj"
+        (proj / "scripts").mkdir(parents=True); shutil.copy(SCRIPTS / "memory-report.py", proj / "scripts")
+        key = re.sub(r"[^A-Za-z0-9]", "-", str(proj.resolve()))
+        mem = home / ".claude/projects" / key / "memory"; mem.mkdir(parents=True)
+        (mem / "MEMORY.md").write_text("")
+        r = run([sys.executable, str(proj / "scripts/memory-report.py")], proj, {"HOME": str(home)})
+        self.assertEqual(r.returncode, 0, r.stderr); self.assertIn("0 memories", r.stdout)
+        topics = {t["id"]: t for t in json.loads((ROOT / "docs/agent/retro-topics.json").read_text())["topics"]}
+        self.assertIn("scripts/memory-report.py", topics["memories"]["ask"]); self.assertIn("Claude Code only", topics["memories"]["ask"])
+
+
 if __name__ == "__main__":
     import shard; shard.main()
