@@ -22,7 +22,7 @@
       "purpose": "Notice when the context is large and a new session is due",
       "fallback": "scripts/run.sh prints the notice after a run when the session log is found; else instruction: core rule 9",
       "wiring": {
-        "claude-code": {"event": "UserPromptSubmit"},
+        "claude-code": [{"event": "UserPromptSubmit"}, {"event": "PostToolUse"}],
         "codex": {"event": "UserPromptSubmit"}
       }
     },

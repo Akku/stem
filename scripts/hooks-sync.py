@@ -27,17 +27,22 @@ def owned(command, scripts):
     return any(re.search(r"(^|[\s\"'/])" + re.escape(s) + r"($|[\s\"'])", command) for s in scripts)
 
 
+def wirings(guard, agent):
+    """The guard's wiring for one agent as a list (a manifest entry may be one object or a list of events)."""
+    w = guard.get("wiring", {}).get(agent) or []
+    return w if isinstance(w, list) else [w]
+
+
 def build(existing, manifest, agent):
     """The agent's config with STEM's hook entries replaced by the manifest's; everything else kept."""
     scripts = [g["script"] for g in manifest["guards"]]
     hooks = {}
     for g in manifest["guards"]:  # STEM entries first, in manifest order
-        w = g.get("wiring", {}).get(agent)
-        if not w: continue
         kind = "py" if g["script"].endswith(".py") else "sh"
-        entry = {"matcher": w["matcher"]} if w.get("matcher") else {}
-        entry["hooks"] = [{"type": "command", "command": TEMPLATES[(agent, kind)].format(s=g["script"])}]
-        hooks.setdefault(w["event"], []).append(entry)
+        for w in wirings(g, agent):
+            entry = {"matcher": w["matcher"]} if w.get("matcher") else {}
+            entry["hooks"] = [{"type": "command", "command": TEMPLATES[(agent, kind)].format(s=g["script"])}]
+            hooks.setdefault(w["event"], []).append(entry)
     for event, entries in (existing.get("hooks") or {}).items():  # then what the user added
         for e in entries if isinstance(entries, list) else []:
             keep = [h for h in e.get("hooks", []) if not owned(str(h.get("command", "")), scripts)]
@@ -56,9 +61,9 @@ def matrix(manifest):
     for g in manifest["guards"]:
         cells = []
         for key in agents:
-            w = g.get("wiring", {}).get(key)
+            w = wirings(g, key)
             if g.get("git"): cells.append("git hook")
-            elif w: cells.append("`%s`" % w["event"] + (" on `%s`" % w["matcher"].replace("|", "\\|") if w.get("matcher") else ""))
+            elif w: cells.append(" and ".join("`%s`" % x["event"] + (" on `%s`" % x["matcher"].replace("|", "\\|") if x.get("matcher") else "") for x in w))
             else: cells.append("no hook")
         lines.append("| `%s` | %s | %s | %s |" % (g["script"], g["purpose"], " | ".join(cells), g["fallback"]))
     lines += ["", "## Evidence per agent", ""] + ["- **%s:** %s." % (a["name"], a["evidence"]) for a in agents.values()]

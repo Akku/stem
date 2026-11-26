@@ -77,6 +77,27 @@ class ContextCheck(Sandbox):
         self.assertIn("CONTEXT NOTICE", hook())
         self.assertEqual(hook(), "")  # same size: no second notice
 
+    def test_post_tool_use_delivers_json_context_once_per_level(self):
+        t = self.tmp / "t.jsonl"; write_jsonl(t, [assistant("claude-sonnet-5-5", 10000), assistant("claude-sonnet-5-5", 140000)])
+        hook = lambda: run([sys.executable, str(SCRIPTS / "context-check.py")], self.tmp, {"TMPDIR": str(self.tmp)}, stdin=json.dumps({"hook_event_name": "PostToolUse", "tool_name": "Bash", "transcript_path": str(t), "session_id": "pt"})).stdout
+        out = json.loads(hook())["hookSpecificOutput"]
+        self.assertEqual(out["hookEventName"], "PostToolUse"); self.assertIn("CONTEXT NOTICE", out["additionalContext"])
+        self.assertEqual(hook(), "")  # same level: silent
+        write_jsonl(t, [assistant("claude-sonnet-5-5", 10000), assistant("claude-sonnet-5-5", 210000)])
+        self.assertIn("Do not wait", json.loads(hook())["hookSpecificOutput"]["additionalContext"])  # urgent level once more
+        self.assertEqual(hook(), "")
+
+    def test_post_tool_use_silent_below_threshold_and_on_bad_input(self):
+        t = self.tmp / "t.jsonl"; write_jsonl(t, [assistant("claude-sonnet-5-5", 10000), assistant("claude-sonnet-5-5", 60000)])
+        r = run([sys.executable, str(SCRIPTS / "context-check.py")], self.tmp, {"TMPDIR": str(self.tmp)}, stdin=json.dumps({"hook_event_name": "PostToolUse", "transcript_path": str(t), "session_id": "q"}))
+        self.assertEqual((r.returncode, r.stdout), (0, ""))
+        r = run([sys.executable, str(SCRIPTS / "context-check.py")], self.tmp, {"TMPDIR": str(self.tmp)}, stdin=json.dumps({"hook_event_name": "PostToolUse", "transcript_path": str(self.tmp / "none.jsonl"), "session_id": "q"}))
+        self.assertEqual((r.returncode, r.stdout), (0, ""))
+
+    def test_claude_wires_context_check_after_tool_calls_codex_does_not(self):
+        c = json.loads((ROOT / ".claude/settings.json").read_text())["hooks"]; x = json.loads((ROOT / ".codex/hooks.json").read_text())["hooks"]
+        self.assertTrue(any("context-check.py" in h["command"] for e in c["PostToolUse"] for h in e["hooks"]))
+        self.assertNotIn("PostToolUse", x)
 
     def test_codex_log_uses_window_from_log(self):
         tc = lambda n, w: {"type": "event_msg", "payload": {"type": "token_count", "info": {"last_token_usage": {"input_tokens": n, "total_tokens": n + 5}, "model_context_window": w}}}
@@ -1632,6 +1653,11 @@ class StemConfig(Sandbox):
         shutil.rmtree(self.tmp / "proj")
         read, ctx = self.outputs('{"large_read_warning": false}')
         self.assertEqual(read, ""); self.assertIn("CONTEXT NOTICE", ctx)
+
+    def test_context_warning_off_silences_the_post_tool_use_hook_too(self):
+        p, _, prompt = self.project('{"context_warning": false}')
+        d = json.loads(prompt); d["hook_event_name"] = "PostToolUse"
+        self.assertEqual(run([sys.executable, "scripts/context-check.py"], p, {"TMPDIR": str(self.tmp / "tmp-pt")}, stdin=json.dumps(d)).stdout, "")
 
     def test_setup_does_not_tell_the_agent_to_edit_hook_files(self):
         s = (ROOT / "SETUP.md").read_text()

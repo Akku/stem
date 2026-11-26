@@ -6,7 +6,7 @@ Read when adding an agent, when a hook API changed, or in the `port-check` skill
 | Guard | Purpose | Claude Code | Codex | DeutschlandGPT Code | Without a hook |
 | --- | --- | --- | --- | --- | --- |
 | `scripts/session-start.sh` | State summary at the start of a session | `SessionStart` on `^(startup\|clear)$` | `SessionStart` on `^(startup\|clear)$` | no hook | instruction: the agent runs the script itself (AGENTS.md, Session start) |
-| `scripts/context-check.py` | Notice when the context is large and a new session is due | `UserPromptSubmit` | `UserPromptSubmit` | no hook | scripts/run.sh prints the notice after a run when the session log is found; else instruction: core rule 9 |
+| `scripts/context-check.py` | Notice when the context is large and a new session is due | `UserPromptSubmit` and `PostToolUse` | `UserPromptSubmit` | no hook | scripts/run.sh prints the notice after a run when the session log is found; else instruction: core rule 9 |
 | `scripts/large-read-warn.py` | Warning before a whole-file read of a large file | `PreToolUse` on `Read\|Bash` | `PreToolUse` on `^Bash$` | no hook | instruction: read files over 8 KB in parts; command output goes through scripts/run.sh |
 | `scripts/deny-guard.py` | No destructive git command, no skipped git hooks, no read of .env files or SSH keys | no hook | `PreToolUse` on `^Bash$` | no hook | Claude Code: deny rules in .claude/settings.json (same list); elsewhere pre-push hook and core rules 6 and 8 |
 | `scripts/detach-reminder.py` | Reminder to detach a session started for a handoff (Claude desktop app only) | `PostToolUse` on `mcp__ccd_session__start_session` | no hook | no hook | not applicable outside the Claude desktop app |

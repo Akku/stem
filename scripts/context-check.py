@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Context watchdog for Claude Code and Codex (UserPromptSubmit hook). Prints a short notice into the agent's context when the
+"""Context watchdog for Claude Code and Codex (UserPromptSubmit and, in Claude Code, PostToolUse hook, TASK-408). Prints a short notice into the agent's context when the
 current context exceeds a threshold: one notice, and one urgent notice at max(200k, 1.5x the threshold), each once per session (TASK-203, TASK-413).
 Threshold = larger of 130k (env CONTEXT_WARN_TOKENS) and first-turn context of the session + 50k (the fixed floor of system prompt,
 tools and instructions is not session growth); with a known window (Claude: model from the transcript; Codex: model_context_window
 from the session log) at most 90 % of it.
-Reads the hook JSON from stdin through hooklib.py (transcript_path, session_id); manual use: --transcript FILE; task-end check: --auto finds the current
+After a tool call (PostToolUse) the notice reaches the model as JSON additionalContext, so it also arrives during long work without a new prompt; the same once-per-level state applies and
+an already printed urgent level ends the hook before the log is read. Reads the hook JSON from stdin through hooklib.py (transcript_path, session_id); manual use: --transcript FILE; task-end check: --auto finds the current
 session log itself (Codex: CODEX_THREAD_ID; Claude: newest transcript of this directory) and also prints one line below the threshold;
 --auto --notice-only (used by scripts/run.sh, so agents without a prompt hook get the notice too) stays silent below it.
 Switched off per project with "context_warning": false in docs/agent/stem-config.json (the hook entry stays).
@@ -74,9 +75,19 @@ def current_log():
     hits = glob.glob(os.path.join(os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude"), "projects", slug, "*.jsonl"))
     return max(hits, key=os.path.getmtime) if hits else ""
 
+def state_path(sid):
+    return os.path.join(os.environ.get("TMPDIR", "/tmp"), "agent-logs", "ctx-" + "".join(c for c in sid if c.isalnum())[:40])
+
+def read_state(sid):
+    """Highest level already printed in this session: 1 or 2, anything else (missing or broken file) counts as none (0)."""
+    try: n = int(open(state_path(sid)).read().strip() or 0)
+    except Exception: return 0
+    return n if n in (1, 2) else 0
+
 def main():
     args = sys.argv[1:]
     quiet = "--notice-only" in args  # scripts/run.sh: like the hook (silent below the threshold, one notice and one urgent per session), log found like --auto
+    event = ""
     manual = ("--transcript" in args or "--auto" in args) and not quiet
     if "--transcript" not in args and hooklib.config("context_warning", True) is False: return 0  # module switched off at setup
     try:
@@ -85,7 +96,8 @@ def main():
         elif "--auto" in args:
             path = current_log(); sid = os.path.splitext(os.path.basename(path))[0] if quiet else "manual"
         else:
-            f = hooklib.fields(hooklib.read_input()); path, sid = f["transcript"], f["session"] or "x"
+            f = hooklib.fields(hooklib.read_input()); path, sid = f["transcript"], f["session"] or "x"; event = f["event"]
+            if event == "PostToolUse" and read_state(sid) == 2: return 0  # urgent notice already given: nothing more to say, skip the log read
         tokens, first, model = scan(path)
         THRESHOLD = threshold(first, model)
     except Exception:
@@ -93,21 +105,20 @@ def main():
     if tokens < THRESHOLD:
         if "--auto" in args and tokens and not quiet: print("context check: about %dk tokens, threshold %dk: continue." % (tokens // 1000, THRESHOLD // 1000))
         return 0
-    state = os.path.join(os.environ.get("TMPDIR", "/tmp"), "agent-logs", "ctx-" + "".join(c for c in sid if c.isalnum())[:40])
+    state = state_path(sid)
     level = 2 if tokens >= max(URGENT, THRESHOLD * 3 // 2) else 1
-    last = 0  # highest level already printed in this session (state file holds 1 or 2; anything else counts as none)
-    try: last = int(open(state).read().strip() or 0)
-    except Exception: pass
-    if last not in (1, 2): last = 0
+    last = read_state(sid)
     if not manual and level <= last: return 0
     try:
         os.makedirs(os.path.dirname(state), exist_ok=True); open(state, "w").write(str(level))
     except Exception: pass
     urgent = level == 2
-    print("CONTEXT NOTICE (%s): the context holds about %dk tokens (threshold %dk, session started at %dk). %s" % ("run.sh" if quiet else "hook", tokens // 1000, THRESHOLD // 1000, (first or 0) // 1000,
-          "Do not wait for the task end: interrupt your work at the next sensible point and hand off the rest to a new session, even inside a related batch. Finish first only if very little is left." if urgent else
-          "If at least ~5 turns of the current task remain, interrupt it at a sensible point and hand off the rest to a new session. Otherwise finish it, then hand off only if at least ~5 turns of unrelated work are ahead. Continue in this session if the rest is short, closely related (batch) or needs hard-won context."),
+    advice = ("Do not wait for the task end: interrupt your work at the next sensible point and hand off the rest to a new session, even inside a related batch. Finish first only if very little is left." if urgent else
+              "If at least ~5 turns of the current task remain, interrupt it at a sensible point and hand off the rest to a new session. Otherwise finish it, then hand off only if at least ~5 turns of unrelated work are ahead. Continue in this session if the rest is short, closely related (batch) or needs hard-won context.")
+    msg = "CONTEXT NOTICE (%s): the context holds about %dk tokens (threshold %dk, session started at %dk). %s %s" % ("run.sh" if quiet else "hook", tokens // 1000, THRESHOLD // 1000, (first or 0) // 1000, advice,
           "Hand-off (R-BATCHING, which defines a sensible point): run the handoff skill; it always ends by starting a fresh session yourself, detached (no fork of this conversation) and stopping. Inside an approved batch do it without asking; otherwise tell the user (in their language) the context is large and that they may say Handoff.")
+    if event == "PostToolUse": hooklib.emit_context(event, msg)  # JSON additionalContext: plain stdout does not reach the model after a tool call
+    else: print(msg)
     return 0
 
 if __name__ == "__main__":

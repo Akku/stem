@@ -28,13 +28,13 @@
   "hooks": {
     "SessionStart": [
       {
+        "matcher": "^(startup|clear)$",
         "hooks": [
           {
             "type": "command",
             "command": "cd \"$CLAUDE_PROJECT_DIR\" && bash \"$CLAUDE_PROJECT_DIR/scripts/session-start.sh\""
           }
-        ],
-        "matcher": "^(startup|clear)$"
+        ]
       }
     ],
     "UserPromptSubmit": [
@@ -47,6 +47,25 @@
         ]
       }
     ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "for p in python3 python \"py -3\"; do $p -c \"import sys; sys.exit(sys.version_info[0] < 3)\" 2>/dev/null && { $p \"$CLAUDE_PROJECT_DIR/scripts/context-check.py\" 2>/dev/null; break; }; done; true"
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__ccd_session__start_session",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "for p in python3 python \"py -3\"; do $p -c \"import sys; sys.exit(sys.version_info[0] < 3)\" 2>/dev/null && { $p \"$CLAUDE_PROJECT_DIR/scripts/detach-reminder.py\" 2>/dev/null; break; }; done; true"
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Read|Bash",
@@ -54,17 +73,6 @@
           {
             "type": "command",
             "command": "for p in python3 python \"py -3\"; do $p -c \"import sys; sys.exit(sys.version_info[0] < 3)\" 2>/dev/null && { $p \"$CLAUDE_PROJECT_DIR/scripts/large-read-warn.py\" 2>/dev/null; break; }; done; true"
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "mcp__ccd_session__start_session",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "for p in python3 python \"py -3\"; do $p -c \"import sys; sys.exit(sys.version_info[0] < 3)\" 2>/dev/null && { $p \"$CLAUDE_PROJECT_DIR/scripts/detach-reminder.py\" 2>/dev/null; break; }; done; true"
           }
         ]
       }
